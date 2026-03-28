@@ -132,6 +132,17 @@
                 "type": "string"
               },
               "description": "Keywords to exclude"
+            },
+            "github_query": {
+              "type": "string",
+              "description": "Legacy single query for GitHub trending search"
+            },
+            "github_queries": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Preferred query list for GitHub trending search"
             }
           }
         },

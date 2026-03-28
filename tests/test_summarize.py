@@ -91,7 +91,7 @@ class TestDebugDirectoryResolution(unittest.TestCase):
     def test_default_uses_temp_dir(self):
         run_dir = run_pipeline_mod.resolve_debug_dir(None)
         self.assertTrue(run_dir.exists())
-        self.assertIn("td-pipeline-", run_dir.name)
+        self.assertIn("news-digest-pipeline-", run_dir.name)
 
 
 if __name__ == "__main__":

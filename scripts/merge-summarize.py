@@ -98,7 +98,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Summarize merged data into compact JSON")
     parser.add_argument("--input", "-i", type=Path, required=True, help="Internal pipeline JSON input")
     parser.add_argument("--output", "-o", type=Path, required=True, help="Summary JSON output path")
-    parser.add_argument("--top", "-n", type=int, default=15, help="Top N articles per topic")
+    parser.add_argument("--top", "-n", type=int, default=5, help="Top N articles per topic")
     parser.add_argument("--topic", "-t", type=str, default=None, help="Filter to specific topic")
     args = parser.parse_args()
 

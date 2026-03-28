@@ -30,18 +30,23 @@ A quality-scored, deduplicated digest built from a single pipeline entrypoint:
 | Layer | Sources | What |
 |-------|---------|------|
 | RSS | Config-driven feeds | OpenAI, NVIDIA, TechCrunch, BBC, Fed, 36氪 |
-| GitHub | 11 repos | Releases from key projects, grouped under the `github` topic |
-| API Sources | 4 endpoints | Weibo Hot Search, WallStreetCN, Tencent News, Hacker News |
+| GitHub | Releases + Trending | Key repos and GitHub Trending, grouped under the `github` topic |
+| Social / Search | Twitter, Reddit, Google News, V2EX | High-signal community and search-driven discovery |
+| API Sources | Multiple endpoints | Weibo Hot Search, WallStreetCN, Tencent News, Hacker News |
 
 ### Pipeline
 
 ```text
-       run-pipeline.py (~30s)
+       run-pipeline.py
               ↓
   RSS ────────┐
   GitHub ─────┤── parallel fetch ──→ merge-sources.py
-  GitHub Tr. ─┤                          ↓
-  API ────────┘
+  GitHub Tr. ─┤
+  API ────────┤
+  Twitter ────┤
+  Reddit ─────┤
+  Google ─────┤
+  V2EX ───────┘                          ↓
               Quality Scoring → Dedup → Topic Grouping
                              ↓
                     summary.json → Markdown report
@@ -53,6 +58,10 @@ The intended flow is:
 - run `scripts/run-pipeline.py` once
 - read only the generated `summary.json`
 - write the final Markdown digest from that summary
+
+For diagnostics:
+- current-run health comes from step metadata in the debug directory
+- 7-day history comes from archived `meta/` files under `workspace/archive/news-digest/<DATE>/`
 
 ## Configuration
 
@@ -97,9 +106,24 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 
 - The pipeline produces `summary.json` as the only intended LLM input.
 - The final user-facing output is a Markdown digest.
-- JSON summaries are archived in `workspace/archive/news-digest/json/`.
-- User-facing Markdown is archived in `workspace/archive/news-digest/markdown/`.
+- JSON summaries are archived in `workspace/archive/news-digest/<DATE>/json/`.
+- User-facing Markdown is archived in `workspace/archive/news-digest/<DATE>/markdown/`.
+- Step diagnostics are archived in `workspace/archive/news-digest/<DATE>/meta/`.
 - If you want delivery to other systems, consume the generated Markdown archive externally.
+
+## Diagnostics
+
+Current run:
+
+```bash
+uv run scripts/source-health.py --input-dir workspace/archive/news-digest/<DATE> --verbose
+```
+
+Recent history:
+
+```bash
+uv run scripts/source-health.py --input-dir workspace/archive/news-digest --verbose
+```
 
 ## Repository
 

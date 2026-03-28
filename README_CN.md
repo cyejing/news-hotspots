@@ -30,18 +30,23 @@ clawhub install news-digest
 | 层级 | 数量 | 内容 |
 |------|------|------|
 | RSS | 配置驱动订阅源 | OpenAI、NVIDIA、TechCrunch、BBC、Fed、36氪 |
-| GitHub | 11 个仓库 | 关键项目的 Release 跟踪，统一归到 `github` topic |
-| API 源 | 4 个接口 | 微博热搜、华尔街见闻、腾讯新闻、Hacker News |
+| GitHub | Releases + Trending | 关键项目更新和 GitHub Trending，统一归到 `github` topic |
+| 社区 / 搜索 | Twitter、Reddit、Google News、V2EX | 高信号社区内容与搜索发现 |
+| API 源 | 多个接口 | 微博热搜、华尔街见闻、腾讯新闻、Hacker News |
 
 ### 数据管道
 
 ```text
-       run-pipeline.py (~30秒)
+       run-pipeline.py
               ↓
   RSS ────────┐
   GitHub ─────┤── 并行采集 ──→ merge-sources.py
-  GitHub Tr. ─┤                          ↓
-  API ────────┘
+  GitHub Tr. ─┤
+  API ────────┤
+  Twitter ────┤
+  Reddit ─────┤
+  Google ─────┤
+  V2EX ───────┘                          ↓
               质量评分 → 去重 → 主题分组
                              ↓
                       summary.json → Markdown 摘要
@@ -53,6 +58,10 @@ clawhub install news-digest
 - 只执行一次 `scripts/run-pipeline.py`
 - 只读取产出的 `summary.json`
 - 基于 `summary.json` 写最终 Markdown 摘要
+
+诊断方面：
+- 当前运行诊断来自当天归档目录中的 `meta/` 步骤元数据
+- 最近 7 天历史诊断来自 `workspace/archive/news-digest/<DATE>/meta/`
 
 ## 配置
 
@@ -97,9 +106,24 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 
 - 管道先产出 `summary.json`，这是提供给大模型的唯一推荐输入。
 - 最终对用户输出的是 Markdown 摘要。
-- JSON 摘要归档到 `workspace/archive/news-digest/json/`。
-- 用户 Markdown 归档到 `workspace/archive/news-digest/markdown/`。
+- JSON 摘要归档到 `workspace/archive/news-digest/<DATE>/json/`。
+- 用户 Markdown 归档到 `workspace/archive/news-digest/<DATE>/markdown/`。
+- 步骤诊断元数据归档到 `workspace/archive/news-digest/<DATE>/meta/`。
 - 如需同步到其他系统，请由外部自动化消费生成的 Markdown 归档。
+
+## 健康诊断
+
+查看当前运行：
+
+```bash
+uv run scripts/source-health.py --input-dir workspace/archive/news-digest/<DATE> --verbose
+```
+
+查看最近 7 天历史：
+
+```bash
+uv run scripts/source-health.py --input-dir workspace/archive/news-digest --verbose
+```
 
 ## 仓库地址
 

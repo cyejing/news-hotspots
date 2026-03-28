@@ -4,6 +4,7 @@
 import importlib.util
 import io
 import json
+import os
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,10 +19,36 @@ spec.loader.exec_module(fetch_github_trending)
 
 
 class TestFetchGithubTrending(unittest.TestCase):
+    def test_get_github_trending_cooldown_seconds(self):
+        with patch.dict(os.environ, {"NEWS_DIGEST_GITHUB_TRENDING_COOLDOWN_SECONDS": "3.5"}):
+            self.assertEqual(fetch_github_trending.get_github_trending_cooldown_seconds(), 3.5)
+
     def test_load_queries_only_reads_github_topic(self):
         queries = fetch_github_trending.load_github_trending_queries(DEFAULTS_DIR)
-        self.assertEqual(len(queries), 1)
-        self.assertEqual(queries[0]["topic"], "github")
+        self.assertEqual(len(queries), 6)
+        self.assertTrue(all(query["topic"] == "github" for query in queries))
+        self.assertTrue(all(" OR " not in query["q"] for query in queries))
+
+    def test_load_queries_falls_back_to_single_legacy_query(self):
+        with patch.object(fetch_github_trending, "load_topics_config", return_value=[
+            {
+                "id": "github",
+                "search": {
+                    "queries": [],
+                    "github_query": "legacy github query",
+                },
+            },
+            {
+                "id": "ai-models",
+                "search": {
+                    "queries": [],
+                    "github_query": "ignored query",
+                },
+            },
+        ]):
+            queries = fetch_github_trending.load_github_trending_queries(DEFAULTS_DIR)
+
+        self.assertEqual(queries, [{"topic": "github", "q": "legacy github query"}])
 
     def test_trending_results_only_use_github_topic(self):
         payload = {

@@ -259,7 +259,15 @@
           "open source",
           "开源更新"
         ],
-        "github_query": "open-source developer tooling ai infrastructure in:topics,name,description",
+        "github_queries": [
+          "llm large-language-model in:topics,name,description",
+          "ai-agent autonomous-agent in:topics,name,description",
+          "machine-learning deep-learning in:topics,name,description",
+          "developer programming in:topics,name,description",
+          "finance trading in:topics,name,description",
+          "security cybersecurity in:topics,name,description"
+        ],
+        "github_query": "",
         "exclude": []
       },
       "display": {

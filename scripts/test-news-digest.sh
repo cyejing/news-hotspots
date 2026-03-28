@@ -8,27 +8,24 @@ DEBUG_DIR="$TMP_DIR/debug"
 
 DEFAULTS_DIR="$ROOT_DIR/config/defaults"
 DEFAULT_CONFIG_DIR="$ROOT_DIR/workspace/config"
-DEFAULT_ARCHIVE_JSON_DIR="$ROOT_DIR/workspace/archive/news-digest/json"
+DEFAULT_ARCHIVE_ROOT_DIR="$ROOT_DIR/workspace/archive/news-digest"
 
 SUMMARY_JSON="$TMP_DIR/summary.json"
-MERGED_JSON="$TMP_DIR/merged.json"
-SOURCE_CHECK_JSON="$TMP_DIR/source-check.json"
-RSS_JSON="$TMP_DIR/rss.json"
-GITHUB_JSON="$TMP_DIR/github.json"
-TRENDING_JSON="$TMP_DIR/trending.json"
-API_JSON="$TMP_DIR/api.json"
-TWITTER_JSON="$TMP_DIR/twitter.json"
-REDDIT_JSON="$TMP_DIR/reddit.json"
-V2EX_JSON="$TMP_DIR/v2ex.json"
-GOOGLE_JSON="$TMP_DIR/google.json"
+MERGED_JSON="$DEBUG_DIR/merged.json"
+RSS_JSON="$DEBUG_DIR/rss.json"
+GITHUB_JSON="$DEBUG_DIR/github.json"
+TRENDING_JSON="$DEBUG_DIR/trending.json"
+API_JSON="$DEBUG_DIR/api.json"
+TWITTER_JSON="$DEBUG_DIR/twitter.json"
+REDDIT_JSON="$DEBUG_DIR/reddit.json"
+V2EX_JSON="$DEBUG_DIR/v2ex.json"
+GOOGLE_JSON="$DEBUG_DIR/google.json"
 
 HOURS=48
 CONFIG_DIR=""
 VERBOSE=false
 FORCE=false
 SKIP_STEPS=""
-CHECK_IDS=""
-CHECK_TYPES=""
 UNIT_MODULES=""
 
 usage() {
@@ -38,22 +35,47 @@ Unified maintainer test entrypoint for news-digest.
 USAGE:
   ./scripts/test-news-digest.sh full [--hours N] [--config DIR] [--verbose] [--force] [--skip a,b]
   ./scripts/test-news-digest.sh step <rss|github|trending|api|twitter|reddit|v2ex|google|merge|summarize|validate> [--hours N] [--config DIR] [--verbose] [--force]
-  ./scripts/test-news-digest.sh check [--ids a,b] [--types rss,github,api] [--verbose]
+  ./scripts/test-news-digest.sh health [--verbose]
   ./scripts/test-news-digest.sh unit [tests.test_summarize tests.test_merge ...]
 
 OUTPUTS:
-  /tmp/news-digest/summary.json
-  /tmp/news-digest/debug/pipeline.meta.json
-  /tmp/news-digest/rss.json
-  /tmp/news-digest/github.json
-  /tmp/news-digest/trending.json
-  /tmp/news-digest/api.json
-  /tmp/news-digest/twitter.json
-  /tmp/news-digest/reddit.json
-  /tmp/news-digest/v2ex.json
-  /tmp/news-digest/google.json
-  /tmp/news-digest/merged.json
-  /tmp/news-digest/source-check.json
+  full:
+    /tmp/news-digest/summary.json
+    /tmp/news-digest/debug/pipeline.meta.json
+    /tmp/news-digest/debug/rss.meta.json
+    /tmp/news-digest/debug/twitter.meta.json
+    /tmp/news-digest/debug/google.meta.json
+    /tmp/news-digest/debug/github.meta.json
+    /tmp/news-digest/debug/trending.meta.json
+    /tmp/news-digest/debug/api.meta.json
+    /tmp/news-digest/debug/v2ex.meta.json
+    /tmp/news-digest/debug/reddit.meta.json
+    /tmp/news-digest/debug/merge.meta.json
+    /tmp/news-digest/debug/summarize.meta.json
+    /tmp/news-digest/debug/rss.json
+    /tmp/news-digest/debug/twitter.json
+    /tmp/news-digest/debug/google.json
+    /tmp/news-digest/debug/github.json
+    /tmp/news-digest/debug/trending.json
+    /tmp/news-digest/debug/api.json
+    /tmp/news-digest/debug/v2ex.json
+    /tmp/news-digest/debug/reddit.json
+    /tmp/news-digest/debug/merged.json
+    workspace/archive/news-digest/<DATE>/json/summary.json
+    workspace/archive/news-digest/<DATE>/meta/*.meta.json
+  step:
+    /tmp/news-digest/debug/rss.json
+    /tmp/news-digest/debug/github.json
+    /tmp/news-digest/debug/trending.json
+    /tmp/news-digest/debug/api.json
+    /tmp/news-digest/debug/twitter.json
+    /tmp/news-digest/debug/reddit.json
+    /tmp/news-digest/debug/v2ex.json
+    /tmp/news-digest/debug/google.json
+    /tmp/news-digest/debug/merged.json
+    /tmp/news-digest/debug/summary.json
+  health:
+    直接输出诊断报告到控制台
 HELP
 }
 
@@ -89,8 +111,6 @@ parse_common_args() {
       --verbose|-v) VERBOSE=true; shift ;;
       --force) FORCE=true; shift ;;
       --skip) SKIP_STEPS="$2"; shift 2 ;;
-      --ids) CHECK_IDS="$2"; shift 2 ;;
-      --types) CHECK_TYPES="$2"; shift 2 ;;
       --help|-h) usage; exit 0 ;;
       *)
         if [ -z "$UNIT_MODULES" ]; then
@@ -110,7 +130,7 @@ run_full() {
     uv run "$SCRIPT_DIR/run-pipeline.py"
     --defaults "$DEFAULTS_DIR"
     --hours "$HOURS"
-    --archive-dir "$DEFAULT_ARCHIVE_JSON_DIR"
+    --archive-dir "$DEFAULT_ARCHIVE_ROOT_DIR"
     --output "$SUMMARY_JSON"
     --debug-dir "$DEBUG_DIR"
   )
@@ -135,7 +155,7 @@ run_fetch_step() {
   local output_path="$1"
   shift
 
-  mkdir -p "$TMP_DIR"
+  mkdir -p "$TMP_DIR" "$DEBUG_DIR"
   local cmd=(uv run "$@")
   run_cmd "${cmd[@]}"
   [ -f "$output_path" ] || { echo "Missing output: $output_path" >&2; exit 1; }
@@ -182,7 +202,7 @@ run_step() {
       run_fetch_step "$step" "$GOOGLE_JSON" "$SCRIPT_DIR/fetch-google.py" --defaults "$DEFAULTS_DIR" $(config_args) --hours "$HOURS" --output "$GOOGLE_JSON" $(bool_flag --verbose "$VERBOSE") $(bool_flag --force "$FORCE")
       ;;
     merge)
-      local cmd=(uv run "$SCRIPT_DIR/merge-sources.py" --output "$MERGED_JSON" --archive-dir "$DEFAULT_ARCHIVE_JSON_DIR")
+      local cmd=(uv run "$SCRIPT_DIR/merge-sources.py" --output "$MERGED_JSON" --archive-dir "$DEFAULT_ARCHIVE_ROOT_DIR")
       for pair in \
         "--rss:$RSS_JSON" \
         "--github:$GITHUB_JSON" \
@@ -206,9 +226,10 @@ run_step() {
       ;;
     summarize)
       [ -f "$MERGED_JSON" ] || { echo "Missing input: $MERGED_JSON" >&2; exit 1; }
-      local cmd=(uv run "$SCRIPT_DIR/merge-summarize.py" --input "$MERGED_JSON" --output "$SUMMARY_JSON" --top 15)
+      local summary_output="$DEBUG_DIR/summary.json"
+      local cmd=(uv run "$SCRIPT_DIR/merge-summarize.py" --input "$MERGED_JSON" --output "$summary_output" --top 15)
       run_cmd "${cmd[@]}"
-      [ -f "$SUMMARY_JSON" ] || { echo "Missing output: $SUMMARY_JSON" >&2; exit 1; }
+      [ -f "$summary_output" ] || { echo "Missing output: $summary_output" >&2; exit 1; }
       ;;
     *)
       echo "Unknown step: $step" >&2
@@ -217,26 +238,10 @@ run_step() {
   esac
 }
 
-run_check() {
-  mkdir -p "$TMP_DIR"
-  local cmd=(uv run "$ROOT_DIR/tests/check-sources.py" --defaults "$DEFAULTS_DIR" --output "$SOURCE_CHECK_JSON")
-  if [ -n "$CONFIG_DIR" ] && [ -d "$CONFIG_DIR" ]; then
-    cmd+=(--config "$CONFIG_DIR")
-  fi
-  if [ -n "$CHECK_IDS" ]; then
-    cmd+=(--ids "$CHECK_IDS")
-  fi
-  if [ -n "$CHECK_TYPES" ]; then
-    cmd+=(--types "$CHECK_TYPES")
-  fi
-  if [ "$VERBOSE" = true ]; then
-    cmd+=(--verbose)
-  fi
-  run_cmd "${cmd[@]}"
-}
-
 run_unit() {
   local modules=(
+    tests.test_source_health
+    tests.test_run_pipeline
     tests.test_summarize
     tests.test_merge
     tests.test_config
@@ -246,6 +251,15 @@ run_unit() {
     modules=($UNIT_MODULES)
   fi
   run_cmd uv run python -m unittest "${modules[@]}"
+}
+
+run_health() {
+  mkdir -p "$DEBUG_DIR"
+  local cmd=(uv run "$SCRIPT_DIR/source-health.py" --input-dir "$DEBUG_DIR")
+  if [ "$VERBOSE" = true ]; then
+    cmd+=(--verbose)
+  fi
+  run_cmd "${cmd[@]}"
 }
 
 main() {
@@ -272,13 +286,13 @@ main() {
       parse_common_args "$@"
       run_step "$step_name"
       ;;
-    check)
-      parse_common_args "$@"
-      run_check
-      ;;
     unit)
       parse_common_args "$@"
       run_unit
+      ;;
+    health)
+      parse_common_args "$@"
+      run_health
       ;;
     --help|-h|help)
       usage

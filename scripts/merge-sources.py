@@ -673,8 +673,10 @@ def load_previous_digests(archive_dir: Path, days: int = 14) -> List[str]:
     seen_titles: List[str] = []
     cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).date()
     try:
-        for file_path in archive_dir.glob("*.json"):
-            match = re.search(r"(\d{4}-\d{2}-\d{2})", file_path.name)
+        for file_path in sorted(archive_dir.rglob("*.json")):
+            if file_path.parent.name != "json":
+                continue
+            match = re.search(r"(\d{4}-\d{2}-\d{2})", str(file_path))
             if match:
                 try:
                     file_date = datetime.strptime(match.group(1), "%Y-%m-%d").date()
@@ -692,7 +694,7 @@ def load_previous_digests(archive_dir: Path, days: int = 14) -> List[str]:
     except Exception as exc:
         logging.debug("Failed to load previous digests: %s", exc)
 
-    logging.info("Loaded %d titles from previous %d days", len(seen_titles), days)
+    logging.info("Loaded %d titles from previous %d days under %s", len(seen_titles), days, archive_dir)
     return seen_titles
 
 

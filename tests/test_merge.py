@@ -306,6 +306,8 @@ class TestDateHandling(unittest.TestCase):
     def test_load_previous_digests_uses_timezone_safe_cutoff(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             archive_dir = Path(tmpdir)
+            dated_json_dir = archive_dir / "2026-03-27" / "json"
+            dated_json_dir.mkdir(parents=True)
             recent_name = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
             payload = {
                 "topics": [
@@ -320,7 +322,7 @@ class TestDateHandling(unittest.TestCase):
                     }
                 ]
             }
-            (archive_dir / f"daily-{recent_name}.json").write_text(
+            (dated_json_dir / f"daily-{recent_name}.json").write_text(
                 json.dumps(payload),
                 encoding="utf-8",
             )

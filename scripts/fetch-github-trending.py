@@ -44,6 +44,8 @@ from urllib.error import HTTPError, URLError
 # ==================== 常量配置 ====================
 TIMEOUT = 60  # 请求超时时间（秒）
 USER_AGENT = "NewsDigest/3.0 (bot; +https://github.com/cyejing/news-digest)"
+GITHUB_TRENDING_COOLDOWN_ENV = "NEWS_DIGEST_GITHUB_TRENDING_COOLDOWN_SECONDS"
+GITHUB_TRENDING_COOLDOWN_DEFAULT = 2.0
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -63,6 +65,18 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
         datefmt='%H:%M:%S'
     )
     return logging.getLogger(__name__)
+
+
+def get_github_trending_cooldown_seconds() -> float:
+    """Get sequential request cooldown for GitHub trending search."""
+    raw = os.environ.get(
+        GITHUB_TRENDING_COOLDOWN_ENV,
+        str(GITHUB_TRENDING_COOLDOWN_DEFAULT),
+    )
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return GITHUB_TRENDING_COOLDOWN_DEFAULT
 
 
 def parse_github_date(date_str: str) -> Optional[datetime]:
@@ -165,25 +179,40 @@ def load_github_trending_queries(defaults_dir: Path, config_dir: Optional[Path] 
     返回:
         查询列表，每个元素包含 topic 和 q 字段
     """
-    sys.path.insert(0, str(Path(__file__).parent))
-    from config_loader import load_merged_topics
-    
-    topics = load_merged_topics(defaults_dir, config_dir)
+    topics = load_topics_config(defaults_dir, config_dir)
     queries = []
     
     for topic in topics:
         if topic.get("id") != "github":
             continue
         search_config = topic.get("search", {})
-        github_query = search_config.get("github_query")
-        if github_query:
-            queries.append({
-                "topic": "github",
-                "q": github_query
-            })
+        github_queries = search_config.get("github_queries") or []
+        if isinstance(github_queries, list):
+            for github_query in github_queries:
+                if github_query:
+                    queries.append({
+                        "topic": "github",
+                        "q": github_query,
+                    })
+
+        if not queries:
+            github_query = search_config.get("github_query")
+            if github_query:
+                queries.append({
+                    "topic": "github",
+                    "q": github_query,
+                })
 
     logging.info(f"从配置加载了 {len(queries)} 个 GitHub Trending 查询")
     return queries
+
+
+def load_topics_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    """Load merged topics from defaults and optional workspace overrides."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    from config_loader import load_merged_topics
+
+    return load_merged_topics(defaults_dir, config_dir)
 
 
 def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
@@ -225,7 +254,12 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
     else:
         # 回退到硬编码查询（向后兼容）
         trending_queries = [
-            {"topic": "github", "q": "open-source developer tooling ai infrastructure in:topics,name,description"},
+            {"topic": "github", "q": "llm large-language-model in:topics,name,description"},
+            {"topic": "github", "q": "ai-agent autonomous-agent in:topics,name,description"},
+            {"topic": "github", "q": "machine-learning deep-learning in:topics,name,description"},
+            {"topic": "github", "q": "developer programming in:topics,name,description"},
+            {"topic": "github", "q": "finance trading in:topics,name,description"},
+            {"topic": "github", "q": "security cybersecurity in:topics,name,description"},
         ]
     
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -240,8 +274,16 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
 
     all_repos = []
     seen_repos = set()
+    cooldown_s = get_github_trending_cooldown_seconds()
+    last_finished_at: Optional[float] = None
+    logging.info("GitHub trending sequential cooldown: %.1fs", cooldown_s)
 
     for tq in trending_queries:
+        if last_finished_at is not None and cooldown_s > 0:
+            elapsed_since_last = time.time() - last_finished_at
+            if elapsed_since_last < cooldown_s:
+                time.sleep(cooldown_s - elapsed_since_last)
+
         q = f"{tq['q']} pushed:>{cutoff_str} stars:>{min_stars}"
         url = f"https://api.github.com/search/repositories?q={quote(q)}&sort=stars&order=desc&per_page={per_topic}"
 
@@ -278,12 +320,13 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
                 })
 
             logging.debug(f"Trending [{tq['topic']}]: {len(data.get('items', []))} repos")
-            time.sleep(0.5)  # 速率限制礼貌延迟
 
         except HTTPError as e:
             logging.warning(f"GitHub trending search error [{tq['topic']}]: HTTP {e.code}")
         except Exception as e:
             logging.warning(f"GitHub trending search error [{tq['topic']}]: {e}")
+        finally:
+            last_finished_at = time.time()
 
     # 按星标数降序排序
     all_repos.sort(key=lambda x: -x["stars"])
@@ -325,11 +368,12 @@ Examples:
         "source_type": "github_trending",
         "hours": args.hours,
         "min_stars": args.min_stars,
+        "cooldown_s": get_github_trending_cooldown_seconds(),
         "total": len(repos),
         "repos": repos,
     }
 
-    out_path = args.output or Path(tempfile.mkstemp(prefix="td-trending-", suffix=".json")[1])
+    out_path = args.output or Path(tempfile.mkstemp(prefix="news-digest-trending-", suffix=".json")[1])
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 
