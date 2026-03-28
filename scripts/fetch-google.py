@@ -187,14 +187,24 @@ Examples:
         topic_results = [fetch_topic(topic, logger) for topic in topics if topic.get("search", {}).get("queries")]
         ok_topics = sum(1 for result in topic_results if result["status"] == "ok")
         total_articles = sum(result.get("count", 0) for result in topic_results)
+        total_queries = sum(len(result.get("query_stats", [])) for result in topic_results)
+        ok_queries = sum(
+            1
+            for result in topic_results
+            for stat in result.get("query_stats", [])
+            if isinstance(stat, dict) and stat.get("status") == "ok"
+        )
         output = {
             "generated": datetime.now(timezone.utc).isoformat(),
             "source_type": "google",
             "defaults_dir": str(args.defaults),
             "config_dir": str(args.config) if args.config else None,
-            "calls_total": len(topic_results),
-            "calls_ok": ok_topics,
+            "calls_total": total_queries,
+            "calls_ok": ok_queries,
+            "calls_kind": "queries",
             "items_total": total_articles,
+            "queries_total": total_queries,
+            "queries_ok": ok_queries,
             "topics_total": len(topic_results),
             "topics_ok": ok_topics,
             "total_articles": total_articles,

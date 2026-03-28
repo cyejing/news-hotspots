@@ -106,6 +106,24 @@ class TestRunPipeline(unittest.TestCase):
 
         self.assertEqual(call_stats, {"kind": "queries", "total_calls": 2, "ok_calls": 1, "failed_calls": 1})
 
+    def test_extract_call_stats_prefers_explicit_top_level_call_fields(self):
+        payload = {
+            "calls_total": 6,
+            "calls_ok": 4,
+            "calls_kind": "queries",
+            "topics": [
+                {
+                    "topic_id": "ai-models",
+                    "status": "ok",
+                    "query_stats": [{"query": "openai", "status": "ok", "count": 3}],
+                }
+            ],
+        }
+
+        call_stats = run_pipeline.extract_call_stats(payload, step_key="google", status="warn")
+
+        self.assertEqual(call_stats, {"kind": "queries", "total_calls": 6, "ok_calls": 4, "failed_calls": 2})
+
     def test_build_diagnostics_includes_merge_deduplication_details(self):
         payload = {
             "input_sources": {"total_input": 10},
