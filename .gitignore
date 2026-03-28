@@ -1,0 +1,7 @@
+/target
+.local-history
+.idea
+.DS_Store
+logs
+temp
+__pycache__
