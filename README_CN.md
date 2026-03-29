@@ -1,6 +1,6 @@
 # News Hotspots
 
-> 自动化全球科技与 AI 热点汇总，采用单入口管道与 `hotspots.json` 优先流程生成最终 Markdown 热点报告。
+> 自动化全球科技与 AI 热点汇总，采用单入口管道与脚本生成最终热点产物的流程输出 Markdown 热点报告。
 
 [English](README.md) | **中文**
 
@@ -49,15 +49,19 @@ clawhub install news-hotspots
   V2EX ───────┘                          ↓
               质量评分 → 去重 → 主题分组
                              ↓
-                      hotspots.json → Markdown 热点报告
+           merge-hotspots.py → 归档 JSON + Markdown
 ```
 
 **质量评分**：采用分层评分。`source priority` 只作为轻量基础信号，再叠加 fetch 内部排序、有限封顶的跨源热点加分、少量时效性加分，并对与历史内容高度相似的条目做强惩罚。主题输出阶段还会做一次来源多样性重排，避免单一抓取链路占满前排。
 
 推荐流程是：
 - 只执行一次 `scripts/run-pipeline.py`
-- 只读取产出的 `hotspots.json`
-- 基于 `hotspots.json` 写最终 Markdown 热点报告
+- 由 `merge-hotspots.py` 生成并归档最终热点 JSON 和 Markdown
+- 对外输出时读取归档 Markdown 原文
+
+归档文件：
+- `merge-hotspots.py` 生成最终 JSON 和 Markdown
+- `run-pipeline.py` 归档 `meta` 诊断文件
 
 诊断方面：
 - 当前运行诊断来自当天归档目录中的 `meta/` 步骤元数据
@@ -104,7 +108,7 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 
 ## 输出
 
-- 管道先产出 `hotspots.json`，这是提供给大模型的唯一推荐输入。
+- `merge-hotspots.py` 会生成并归档最终热点 JSON 和 Markdown。
 - 最终对用户输出的是 Markdown 热点报告。
 - JSON 热点归档到 `workspace/archive/news-hotspots/<DATE>/json/`。
 - 用户 Markdown 归档到 `workspace/archive/news-hotspots/<DATE>/markdown/`。
@@ -116,13 +120,13 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 查看当前运行：
 
 ```bash
-uv run scripts/source-health.py --input-dir workspace/archive/news-hotspots/<DATE> --verbose
+uv run scripts/source-health.py --input workspace/archive/news-hotspots/<DATE>/meta --verbose
 ```
 
 查看最近 7 天历史：
 
 ```bash
-uv run scripts/source-health.py --input-dir workspace/archive/news-hotspots --verbose
+uv run scripts/source-health.py --input workspace/archive/news-hotspots --verbose
 ```
 
 ## 仓库地址

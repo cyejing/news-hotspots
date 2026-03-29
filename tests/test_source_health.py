@@ -192,7 +192,7 @@ class TestSourceHealth(unittest.TestCase):
             try:
                 source_health.sys.argv = [
                     "source-health.py",
-                    "--input-dir",
+                    "--input",
                     str(tmp_path),
                 ]
                 self.assertEqual(source_health.main(), 0)
@@ -280,7 +280,7 @@ class TestSourceHealth(unittest.TestCase):
             try:
                 source_health.sys.argv = [
                     "source-health.py",
-                    "--input-dir",
+                    "--input",
                     str(input_dir),
                 ]
                 self.assertEqual(source_health.main(), 0)

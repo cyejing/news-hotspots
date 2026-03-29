@@ -207,8 +207,7 @@ def validate_source_types(sources_data: Dict[str, Any]) -> bool:
         return True
 
 
-def main():
-    """Main validation function."""
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Validate news-hotspots configuration files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -218,29 +217,18 @@ Examples:
     python3 validate-config.py --defaults config/defaults --config workspace/config --verbose
     """
     )
-    
-    parser.add_argument(
-        "--defaults",
-        type=Path,
-        default=Path("config/defaults"),
-        help="Default configuration directory with skill defaults (default: config/defaults)"
-    )
-    
-    parser.add_argument(
-        "--config",
-        type=Path,
-        help="User configuration directory for overlays (optional)"
-    )
-    
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true", 
-        help="Enable verbose logging"
-    )
-    
-    args = parser.parse_args()
+    parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Default configuration directory with skill defaults (default: config/defaults)")
+    parser.add_argument("--config", type=Path, help="User configuration directory for overlays (optional)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+
+    return parser.parse_args()
+
+
+def main():
+    """Main validation function."""
+    args = parse_args()
     logger = setup_logging(args.verbose)
-    
+
     # Load config_loader for merged configurations
     try:
         from config_loader import load_merged_sources, load_merged_topics

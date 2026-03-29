@@ -416,12 +416,7 @@ def render_run_details(diagnostics: List[DiagnosticRecord]) -> List[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Read step metadata and report pipeline health diagnostics.")
-    parser.add_argument(
-        "--input-dir",
-        type=Path,
-        default=DEFAULT_INPUT_DIR,
-        help="Directory to inspect. Reads direct *.meta*.json files in this directory and recent <DATE>/meta/*.meta*.json below it.",
-    )
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT_DIR, help="Directory to inspect. Reads direct *.meta*.json files in this directory and recent <DATE>/meta/*.meta*.json below it.")
     parser.add_argument("--verbose", "-v", action="store_true")
     return parser.parse_args()
 
@@ -431,8 +426,8 @@ def main() -> int:
     logger = setup_logging(args.verbose)
     now = time.time()
     current_diagnostics: List[DiagnosticRecord] = []
-    meta_files = discover_all_meta_files(args.input_dir, HISTORY_DAYS)
-    direct_run_label = build_direct_run_label(args.input_dir, now)
+    meta_files = discover_all_meta_files(args.input, HISTORY_DAYS)
+    direct_run_label = build_direct_run_label(args.input, now)
     for path in meta_files:
         payload = load_json(path)
         if not payload:

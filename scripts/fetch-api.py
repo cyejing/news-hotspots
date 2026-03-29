@@ -319,56 +319,32 @@ def fetch_source(source: Dict[str, Any], limit: int = 15) -> Dict[str, Any]:
             "articles": [],
         }
 
-
-def main():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch news from API sources.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    
-    parser.add_argument(
-        "--limit",
-        type=int,
-        default=15,
-        help="Max items per source (default: 15)"
-    )
-    
-    parser.add_argument(
-        "--output", "-o",
-        type=Path,
-        help="Output JSON path"
-    )
-    
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
-    
-    parser.add_argument(
-        "--hours",
-        type=int,
-        default=48,
-        help="Time window in hours (ignored for API sources - they fetch real-time hot items)"
-    )
-    
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force re-fetch (ignored for API sources)"
-    )
-    
-    args = parser.parse_args()
+    parser.add_argument("--limit", type=int, default=15, help="Max items per source (default: 15)")
+    parser.add_argument("--output", "-o", type=Path, help="Output JSON path")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--hours", type=int, default=48, help="Time window in hours (ignored for API sources - they fetch real-time hot items)")
+    parser.add_argument("--force", action="store_true", help="Force re-fetch (ignored for API sources)")
+
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
     logger = setup_logging(args.verbose)
-    
+
     if not args.output:
         fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-api-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
-    
+
     try:
         sources = load_api_sources()
-        
+
         logger.info(f"Fetching {len(sources)} API sources")
         
         results = []

@@ -365,9 +365,7 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
         "queries_ok": sum(1 for stat in query_stats if stat.get("status") == "ok"),
     }
 
-
-def main():
-    """CLI 入口函数。"""
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch GitHub trending repos via Search API",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -385,7 +383,11 @@ Examples:
     parser.add_argument("--output", "-o", type=Path, help="Output JSON path")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument("--force", action="store_true", help="Ignored (pipeline compat)")
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
 
     setup_logging(args.verbose)
     github_token = resolve_github_token()

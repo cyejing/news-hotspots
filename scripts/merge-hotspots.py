@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Render merged pipeline output into a compact hotspots JSON.
+Render merged pipeline output into compact hotspots JSON and Markdown.
 
 Usage:
-    python3 merge-hotspots.py --input <merged.json> --output <hotspots.json> [--top <n>] [--topic <id>]
+    python3 merge-hotspots.py --input <merged.json> --archive <archive-root> [--top <n>] [--topic <id>]
 """
 
 import argparse
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def get_sorted_articles(topic_data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -57,6 +58,33 @@ def hotspot_item(article: Dict[str, Any], rank: int) -> Dict[str, Any]:
     }
 
 
+def render_metrics(metrics: Dict[str, Any]) -> str:
+    ordered_keys = ["likes", "comments", "replies", "retweets", "score"]
+    parts = [f"{key}={metrics[key]}" for key in ordered_keys if key in metrics]
+    return ", ".join(parts)
+
+
+def build_markdown(hotspots: Dict[str, Any], mode: str = "daily", extra_sections: str = "") -> str:
+    lines: List[str] = [f"# {hotspots.get('generated_at', '')[:10] or '<DATE>'} {mode} 全球科技与 AI 热点"]
+    for topic in hotspots.get("topics", []):
+        topic_title = topic.get("title") or humanize_topic_id(str(topic.get("id", "")))
+        lines.append(f"## {topic_title}")
+        for item in topic.get("items", []):
+            score = item.get("score", 0)
+            link = item.get("link", "")
+            title = item.get("title", "")
+            source_name = item.get("source_name") or item.get("display_name") or item.get("source_type", "")
+            lines.append(f"- {item.get('rank', 0)}. ⭐{score:.1f} | [{title}]({link})")
+            metrics = item.get("metrics", {}) if isinstance(item.get("metrics"), dict) else {}
+            if metrics:
+                lines.append(f"  指标：{render_metrics(metrics)} | 来源：{source_name}")
+            else:
+                lines.append(f"  来源：{source_name}")
+    if extra_sections:
+        lines.append(extra_sections)
+    return "\n".join(lines).strip() + "\n"
+
+
 def build_hotspots(data: Dict[str, Any], top_n: int = 15, topic_filter: Optional[str] = None) -> Dict[str, Any]:
     topics = data.get("topics", {})
     topic_order: List[str] = []
@@ -94,13 +122,50 @@ def build_hotspots(data: Dict[str, Any], top_n: int = 15, topic_filter: Optional
     }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Render merged data into compact hotspots JSON")
+def resolve_debug_output(debug_dir: Optional[Path]) -> Optional[Path]:
+    if not debug_dir:
+        return None
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    return debug_dir / "merge-hotspots.json"
+
+
+def ensure_archive_dirs(archive_root: Path) -> Tuple[Path, Path, Path]:
+    date_dir = archive_root / datetime.now(timezone.utc).date().isoformat()
+    json_dir = date_dir / "json"
+    markdown_dir = date_dir / "markdown"
+    meta_dir = date_dir / "meta"
+    json_dir.mkdir(parents=True, exist_ok=True)
+    markdown_dir.mkdir(parents=True, exist_ok=True)
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    return date_dir, json_dir, markdown_dir
+
+
+def resolve_archive_pair(json_dir: Path, markdown_dir: Path, stem: str = "hotspots") -> Tuple[Path, Path]:
+    counter = 0
+    while True:
+        suffix = "" if counter == 0 else str(counter)
+        basename = f"{stem}{suffix}"
+        json_path = json_dir / f"{basename}.json"
+        markdown_path = markdown_dir / f"{basename}.md"
+        if not json_path.exists() and not markdown_path.exists():
+            return json_path, markdown_path
+        counter += 1
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Render merged data into compact hotspots JSON and archived Markdown")
     parser.add_argument("--input", "-i", type=Path, required=True, help="Internal pipeline JSON input")
-    parser.add_argument("--output", "-o", type=Path, required=True, help="Hotspots JSON output path")
+    parser.add_argument("--archive", dest="archive", type=Path, required=True, help="Archive root dir for final hotspots outputs")
+    parser.add_argument("--debug", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--top", "-n", type=int, default=5, help="Top N articles per topic")
     parser.add_argument("--topic", "-t", type=str, default=None, help="Filter to specific topic")
-    args = parser.parse_args()
+    parser.add_argument("--mode", type=str, default="daily", help="Markdown mode label")
+    parser.add_argument("--extra-sections", type=str, default="", help="Optional Markdown tail section")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
 
     if not args.input.exists():
         print(f"Error: {args.input} not found.")
@@ -114,8 +179,19 @@ def main() -> int:
         return 1
 
     hotspots_json = build_hotspots(data, top_n=args.top, topic_filter=args.topic)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(hotspots_json, ensure_ascii=False, indent=2), encoding="utf-8")
+    debug_output = resolve_debug_output(args.debug)
+    if debug_output:
+        debug_output.write_text(json.dumps(hotspots_json, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    _, json_dir, markdown_dir = ensure_archive_dirs(args.archive)
+    json_output, markdown_output = resolve_archive_pair(json_dir, markdown_dir)
+    json_output.write_text(json.dumps(hotspots_json, ensure_ascii=False, indent=2), encoding="utf-8")
+    markdown = build_markdown(hotspots_json, mode=args.mode, extra_sections=args.extra_sections)
+    markdown_output.write_text(markdown, encoding="utf-8")
+    print(f"ARCHIVED_JSON={json_output}")
+    print(f"ARCHIVED_MARKDOWN={markdown_output}")
+    if debug_output:
+        print(f"DEBUG_JSON={debug_output}")
     return 0
 
 

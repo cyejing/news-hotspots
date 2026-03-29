@@ -489,7 +489,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "AI 工具与产品简报"
       },
       {
         "id": "the-decoder-rss",
@@ -501,7 +502,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "AI 模型与产业新闻"
       },
       {
         "id": "v2ex-rss",
@@ -1247,31 +1249,6 @@
         "note": "Hugging Face 官方账号"
       },
       {
-        "id": "langchain-twitter",
-        "type": "twitter",
-        "name": "LangChain official",
-        "handle": "LangChain",
-        "enabled": true,
-        "priority": 3,
-        "topics": [
-          "ai-agents"
-        ],
-        "note": "LangChain 官方账号"
-      },
-      {
-        "id": "llamaindex-twitter",
-        "type": "twitter",
-        "name": "LlamaIndex official",
-        "handle": "llama_index",
-        "enabled": true,
-        "priority": 3,
-        "topics": [
-          "ai-models",
-          "ai-agents"
-        ],
-        "note": "LlamaIndex 官方账号"
-      },
-      {
         "id": "emad-twitter",
         "type": "twitter",
         "name": "Emad Mostaque",
@@ -1368,18 +1345,6 @@
         "note": "AI 新闻通讯创始人，57.6 万关注者"
       },
       {
-        "id": "yudkowsky-twitter",
-        "type": "twitter",
-        "name": "Eliezer Yudkowsky",
-        "handle": "ESYudkowsky",
-        "enabled": true,
-        "priority": 3,
-        "topics": [
-          "ai-models"
-        ],
-        "note": "AI 安全先驱"
-      },
-      {
         "id": "demis-twitter",
         "type": "twitter",
         "name": "Demis Hassabis (DeepMind CEO)",
@@ -1428,18 +1393,6 @@
         "note": "AI Engineer 社区，Latent Space 播客"
       },
       {
-        "id": "erikbryn-twitter",
-        "type": "twitter",
-        "name": "Erik Brynjolfsson",
-        "handle": "erikbryn",
-        "enabled": true,
-        "priority": 3,
-        "topics": [
-          "technology"
-        ],
-        "note": "斯坦福数字经济实验室"
-      },
-      {
         "id": "balaji-twitter",
         "type": "twitter",
         "name": "Balaji Srinivasan",
@@ -1461,7 +1414,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "Hugging Face 首席执行官"
       },
       {
         "id": "twitter-gaborhm",
@@ -1473,7 +1427,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "OpenAI 联合创始人"
       },
       {
         "id": "twitter-zuck",
@@ -1485,7 +1440,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "Meta 首席执行官"
       },
       {
         "id": "openclaw-twitter",
@@ -1619,7 +1575,8 @@
         "priority": 4,
         "topics": [
           "github"
-        ]
+        ],
+        "note": "DeepSeek 开源大模型"
       },
       {
         "id": "mem0-github",
@@ -1660,7 +1617,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "机器学习研究社区"
       },
       {
         "id": "reddit-localllama",
@@ -1674,7 +1632,8 @@
         "priority": 3,
         "topics": [
           "ai-models"
-        ]
+        ],
+        "note": "本地大模型社区"
       },
       {
         "id": "reddit-artificial",
@@ -1689,7 +1648,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "AI 综合讨论社区"
       },
       {
         "id": "reddit-chatgpt",
@@ -1703,7 +1663,8 @@
         "priority": 4,
         "topics": [
           "ai-models"
-        ]
+        ],
+        "note": "ChatGPT 用户社区"
       },
       {
         "id": "reddit-singularity",
@@ -1717,7 +1678,8 @@
         "priority": 3,
         "topics": [
           "ai-ecosystem"
-        ]
+        ],
+        "note": "AI 未来趋势讨论"
       },
       {
         "id": "reddit-openai",
@@ -1731,7 +1693,8 @@
         "priority": 4,
         "topics": [
           "ai-models"
-        ]
+        ],
+        "note": "OpenAI 用户社区"
       },
       {
         "id": "reddit-programming",
@@ -1746,7 +1709,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "编程与开发者社区"
       },
       {
         "id": "reddit-anthropic",
@@ -1760,7 +1724,8 @@
         "priority": 4,
         "topics": [
           "ai-models"
-        ]
+        ],
+        "note": "Anthropic 用户社区"
       },
       {
         "id": "reddit-experienceddevs",
@@ -1775,7 +1740,8 @@
         "topics": [
           "ai-models",
           "ai-agents"
-        ]
+        ],
+        "note": "资深开发者讨论社区"
       }
     ]
   }

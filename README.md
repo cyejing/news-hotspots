@@ -1,6 +1,6 @@
 # News Hotspots
 
-> Automated global tech and AI hotspots built around a single pipeline and `hotspots.json`-first workflow.
+> Automated global tech and AI hotspots built around a single pipeline and a script-generated final hotspots workflow.
 
 **English** | [中文](README_CN.md)
 
@@ -49,15 +49,19 @@ A quality-scored, deduplicated hotspots feed built from a single pipeline entryp
   V2EX ───────┘                          ↓
               Quality Scoring → Dedup → Topic Grouping
                              ↓
-                    hotspots.json → Markdown report
+          merge-hotspots.py → archived JSON + Markdown
 ```
 
 **Quality scoring**: layered scoring with source priority as a light base signal, fetch-local ranking, capped cross-source hotness bonus, recency bonus, and a strong history-similarity penalty. Topic output is then diversity-reranked so one fetch type does not dominate the top of a section.
 
 The intended flow is:
 - run `scripts/run-pipeline.py` once
-- read only the generated `hotspots.json`
-- write the final Markdown hotspots report from that file
+- let `merge-hotspots.py` generate and archive the final hotspots JSON and Markdown
+- read the archived Markdown for delivery
+
+Archived files:
+- `merge-hotspots.py` generates the final JSON and Markdown outputs
+- `run-pipeline.py` archives the `meta` diagnostic files
 
 For diagnostics:
 - current-run health comes from step metadata in the debug directory
@@ -104,7 +108,7 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 
 ## Output
 
-- The pipeline produces `hotspots.json` as the only intended LLM input.
+- `merge-hotspots.py` produces the final archived hotspots JSON and Markdown outputs.
 - The final user-facing output is a Markdown hotspots report.
 - JSON hotspots are archived in `workspace/archive/news-hotspots/<DATE>/json/`.
 - User-facing Markdown is archived in `workspace/archive/news-hotspots/<DATE>/markdown/`.
@@ -116,13 +120,13 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 Current run:
 
 ```bash
-uv run scripts/source-health.py --input-dir workspace/archive/news-hotspots/<DATE> --verbose
+uv run scripts/source-health.py --input workspace/archive/news-hotspots/<DATE>/meta --verbose
 ```
 
 Recent history:
 
 ```bash
-uv run scripts/source-health.py --input-dir workspace/archive/news-hotspots --verbose
+uv run scripts/source-health.py --input workspace/archive/news-hotspots --verbose
 ```
 
 ## Repository

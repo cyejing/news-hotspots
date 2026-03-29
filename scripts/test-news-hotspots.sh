@@ -92,7 +92,9 @@ OUTPUTS:
     /tmp/news-hotspots/debug/v2ex.json
     /tmp/news-hotspots/debug/reddit.json
     /tmp/news-hotspots/debug/merged.json
+    /tmp/news-hotspots/debug/hotspots.md
     workspace/archive/news-hotspots/<DATE>/json/hotspots.json
+    workspace/archive/news-hotspots/<DATE>/markdown/hotspots.md
     workspace/archive/news-hotspots/<DATE>/meta/*.meta.json
   step:
     /tmp/news-hotspots/debug/rss.json
@@ -105,6 +107,7 @@ OUTPUTS:
     /tmp/news-hotspots/debug/google.json
     /tmp/news-hotspots/debug/merged.json
     /tmp/news-hotspots/debug/hotspots.json
+    /tmp/news-hotspots/debug/hotspots.md
   health:
     直接输出诊断报告到控制台
 HELP
@@ -173,9 +176,9 @@ run_full() {
     uv run "$SCRIPT_DIR/run-pipeline.py"
     --defaults "$DEFAULTS_DIR"
     --hours "$HOURS"
-    --archive-dir "$DEFAULT_ARCHIVE_ROOT_DIR"
+    --archive "$DEFAULT_ARCHIVE_ROOT_DIR"
     --output "$HOTSPOTS_JSON"
-    --debug-dir "$DEBUG_DIR"
+    --debug "$DEBUG_DIR"
   )
   if [ -n "$CONFIG_DIR" ] && [ -d "$CONFIG_DIR" ]; then
     cmd+=(--config "$CONFIG_DIR")
@@ -238,7 +241,7 @@ run_step() {
       run_fetch_step "$step"
       ;;
     merge)
-      local cmd=(uv run "$SCRIPT_DIR/merge-sources.py" --output "$MERGED_JSON" --archive-dir "$DEFAULT_ARCHIVE_ROOT_DIR")
+      local cmd=(uv run "$SCRIPT_DIR/merge-sources.py" --output "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR")
       for pair in \
         "--rss:$RSS_JSON" \
         "--github:$GITHUB_JSON" \
@@ -291,7 +294,7 @@ run_unit() {
 
 run_health() {
   mkdir -p "$STEP_OUTPUT_DIR"
-  local cmd=(uv run "$SCRIPT_DIR/source-health.py" --input-dir "$DEBUG_DIR")
+  local cmd=(uv run "$SCRIPT_DIR/source-health.py" --input "$DEBUG_DIR")
   if [ "$VERBOSE" = true ]; then
     cmd+=(--verbose)
   fi

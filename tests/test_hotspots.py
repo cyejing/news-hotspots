@@ -2,6 +2,7 @@
 """Tests for merge-hotspots.py and run-pipeline helpers."""
 
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -78,6 +79,60 @@ class TestMergeHotspotsJson(unittest.TestCase):
         self.assertEqual(metrics["replies"], 12)
         self.assertEqual(metrics["comments"], 8)
         self.assertEqual(metrics["score"], 123)
+
+    def test_build_markdown_uses_two_line_items(self):
+        hotspots = {
+            "generated_at": "2026-03-28T12:00:00+00:00",
+            "topics": [
+                {
+                    "title": "Ai Models",
+                    "items": [
+                        {
+                            "rank": 1,
+                            "score": 12.3,
+                            "title": "OpenAI ships a new model",
+                            "link": "https://example.com/openai",
+                            "source_name": "OpenAI Blog",
+                            "metrics": {"likes": 999, "score": 123},
+                        },
+                        {
+                            "rank": 2,
+                            "score": 10.0,
+                            "title": "Another model story",
+                            "link": "https://example.com/other",
+                            "source_name": "The Verge",
+                            "metrics": {},
+                        },
+                    ],
+                }
+            ],
+        }
+        markdown = hotspots_mod.build_markdown(hotspots, mode="daily")
+        self.assertIn("# 2026-03-28 daily 全球科技与 AI 热点", markdown)
+        self.assertIn("- 1. ⭐12.3 | [OpenAI ships a new model](https://example.com/openai)", markdown)
+        self.assertIn("  指标：likes=999, score=123 | 来源：OpenAI Blog", markdown)
+        self.assertIn("  来源：The Verge", markdown)
+
+    def test_archive_pair_uses_matching_suffixes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            json_dir = root / "json"
+            markdown_dir = root / "markdown"
+            json_dir.mkdir()
+            markdown_dir.mkdir()
+            (json_dir / "hotspots.json").write_text("{}", encoding="utf-8")
+            (markdown_dir / "hotspots.md").write_text("# sample\n", encoding="utf-8")
+
+            json_path, markdown_path = hotspots_mod.resolve_archive_pair(json_dir, markdown_dir)
+
+            self.assertEqual(json_path.name, "hotspots1.json")
+            self.assertEqual(markdown_path.name, "hotspots1.md")
+
+    def test_debug_output_is_merge_hotspots_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output = hotspots_mod.resolve_debug_output(Path(tmpdir))
+            self.assertEqual(output, Path(tmpdir) / "merge-hotspots.json")
+            self.assertTrue(Path(tmpdir).exists())
 
 
 class TestDebugDirectoryResolution(unittest.TestCase):

@@ -200,7 +200,7 @@ def fetch_source(source: Dict[str, Any], cutoff: datetime) -> Dict[str, Any]:
         }
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Sequential Twitter/X fetcher via bb-browser site adapters.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -216,7 +216,11 @@ Examples:
     parser.add_argument("--output", "-o", type=Path, help="Output JSON path")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument("--force", action="store_true", help="Accepted for CLI consistency; this fetcher always refreshes")
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
 
     logger = setup_logging(args.verbose)
     if not args.output:

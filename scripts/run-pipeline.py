@@ -30,7 +30,7 @@ DEFAULT_HOTSPOTS_TOP = 5
 ARCHIVE_RETENTION_DAYS = 90
 ERROR_TEXT_LIMIT = 180
 STEP_COOLDOWN_DEFAULTS = {
-    "fetch-twitter.py": ("BB_BROWSER_TWITTER_COOLDOWN_SECONDS", 10.0),
+    "fetch-twitter.py": ("BB_BROWSER_TWITTER_COOLDOWN_SECONDS", 15.0),
     "fetch-reddit.py": ("BB_BROWSER_REDDIT_COOLDOWN_SECONDS", 8.0),
     "fetch-google.py": ("BB_BROWSER_GOOGLE_COOLDOWN_SECONDS", 10.0),
     "fetch-v2ex.py": ("BB_BROWSER_V2EX_COOLDOWN_SECONDS", 8.0),
@@ -129,8 +129,6 @@ def resolve_debug_dir(debug_dir: Optional[Path]) -> Path:
 
 
 def resolve_unique_output_path(path: Path) -> Path:
-    if path == Path("/tmp/hotspots.json"):
-        return path
     if not path.exists():
         return path
     parent = path.parent
@@ -162,9 +160,8 @@ def cleanup_archive_root(archive_root: Path, retention_days: int = ARCHIVE_RETEN
     return removed
 
 
-def archive_outputs(
+def archive_meta_outputs(
     archive_root: Optional[Path],
-    hotspots_output: Path,
     pipeline_meta_output: Path,
     step_meta_paths: Dict[str, str],
 ) -> Dict[str, Any]:
@@ -172,23 +169,13 @@ def archive_outputs(
         return {}
 
     today_dir = archive_root / datetime.now(timezone.utc).date().isoformat()
-    json_dir = today_dir / "json"
-    markdown_dir = today_dir / "markdown"
     meta_dir = today_dir / "meta"
-    json_dir.mkdir(parents=True, exist_ok=True)
     meta_dir.mkdir(parents=True, exist_ok=True)
 
     archived: Dict[str, Any] = {
         "date_dir": str(today_dir),
-        "json_dir": str(json_dir),
-        "markdown_dir": str(markdown_dir),
         "meta_dir": str(meta_dir),
     }
-
-    if hotspots_output.exists():
-        archived_hotspots = resolve_unique_output_path(json_dir / hotspots_output.name)
-        shutil.copy2(hotspots_output, archived_hotspots)
-        archived["hotspots_json"] = str(archived_hotspots)
 
     if pipeline_meta_output.exists():
         archived_pipeline_meta = resolve_unique_output_path(meta_dir / pipeline_meta_output.name)
@@ -205,6 +192,19 @@ def archive_outputs(
         archived_step_metas[step_key] = str(archived_path)
     archived["step_meta_paths"] = archived_step_metas
     return archived
+
+
+def parse_step_output_paths(stdout_tail: Sequence[str]) -> Dict[str, str]:
+    parsed: Dict[str, str] = {}
+    for line in stdout_tail:
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key and value:
+            parsed[key] = value
+    return parsed
 
 
 def extract_items_from_payload(payload: Optional[Dict[str, Any]], fallback: int = 0) -> int:
@@ -504,9 +504,9 @@ def resolve_script_path(script: str) -> Path:
     return SCRIPTS_DIR / script
 
 
-def run_step_process(spec: StepSpec, *, timeout: int, force: bool = False, output_flag: str = "--output") -> ProcessResult:
+def run_step_process(spec: StepSpec, *, timeout: int, force: bool = False, output_flag: Optional[str] = "--output") -> ProcessResult:
     cmd = [sys.executable, str(resolve_script_path(spec.script)), *spec.args]
-    if spec.output_path is not None:
+    if spec.output_path is not None and output_flag:
         cmd += [output_flag, str(spec.output_path)]
     if force:
         cmd.append("--force")
@@ -711,7 +711,7 @@ def build_merge_args(debug_dir: Path, archive_dir: Optional[Path], verbose: bool
         if path.exists():
             merge_args += [flag, str(path)]
     if archive_dir:
-        merge_args += ["--archive-dir", str(archive_dir)]
+        merge_args += ["--archive", str(archive_dir)]
     return merge_args
 
 
@@ -722,21 +722,22 @@ def run_merge_step(debug_dir: Path, archive_dir: Optional[Path], verbose: bool) 
     return spec, result, meta_path
 
 
-def run_hotspots_step(debug_dir: Path, hotspots_output: Path, hotspots_top: int) -> Tuple[StepSpec, Dict[str, Any], Path]:
+def run_hotspots_step(debug_dir: Path, archive_dir: Path, hotspots_top: int) -> Tuple[StepSpec, Dict[str, Any], Path, Dict[str, str]]:
+    debug_output = debug_dir / "merge-hotspots.json"
     spec = StepSpec(
-        "hotspots",
+        "merge-hotspots",
         "Hotspots",
         "merge-hotspots.py",
-        ["--input", str(debug_dir / "merged.json"), "--top", str(hotspots_top)],
-        hotspots_output,
+        ["--input", str(debug_dir / "merged.json"), "--archive", str(archive_dir), "--debug", str(debug_dir), "--top", str(hotspots_top)],
+        debug_output,
         None,
     )
     if not (debug_dir / "merged.json").exists():
         process_result = make_process_result(spec=spec, status="skipped", timeout=SUMMARY_TIMEOUT)
     else:
-        process_result = run_step_process(spec, timeout=SUMMARY_TIMEOUT, force=False)
+        process_result = run_step_process(spec, timeout=SUMMARY_TIMEOUT, force=False, output_flag=None)
     result, meta_path = finalize_step(debug_dir, spec, process_result)
-    return spec, result, meta_path
+    return spec, result, meta_path, parse_step_output_paths(process_result.stdout_tail)
 
 
 def build_pipeline_failed_items(step_results: List[Dict[str, Any]], extra_results: Sequence[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -769,7 +770,8 @@ def write_pipeline_meta(
     step_meta_paths: Dict[str, str],
     merge_result: Dict[str, Any],
     hotspots_result: Dict[str, Any],
-    hotspots_output: Path,
+    hotspots_output: Optional[Path],
+    markdown_output: Optional[Path],
     fetch_elapsed: float,
     total_elapsed: float,
 ) -> Path:
@@ -806,7 +808,8 @@ def write_pipeline_meta(
         "hotspots_format": "json",
         "hotspots_status": hotspots_result.get("status"),
         "hotspots_elapsed_s": hotspots_result.get("elapsed_s"),
-        "hotspots_output": str(hotspots_output),
+        "hotspots_output": str(hotspots_output) if hotspots_output else None,
+        "markdown_output": str(markdown_output) if markdown_output else None,
     }
     write_json(meta_output, meta)
     return meta_output
@@ -819,7 +822,8 @@ def log_pipeline_summary(
     step_results: List[Dict[str, Any]],
     merge_result: Dict[str, Any],
     hotspots_result: Dict[str, Any],
-    hotspots_output: Path,
+    hotspots_output: Optional[Path],
+    markdown_output: Optional[Path],
     meta_output: Path,
     debug_dir: Path,
 ) -> None:
@@ -827,7 +831,10 @@ def log_pipeline_summary(
     logger.info("📊 Pipeline Summary (%.1fs total)", total_elapsed)
     for result in [*step_results, merge_result, hotspots_result]:
         logger.info("   %-14s %-8s %4d items %6.1fs", result["name"], result["status"], result["items"], result["elapsed_s"])
-    logger.info("   Hotspots: %s", hotspots_output)
+    if hotspots_output:
+        logger.info("   Hotspots: %s", hotspots_output)
+    if markdown_output:
+        logger.info("   Markdown: %s", markdown_output)
     logger.info("   Meta: %s", meta_output)
     logger.info("   Debug Dir: %s", debug_dir)
 
@@ -840,9 +847,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Skill defaults config dir")
     parser.add_argument("--config", type=Path, default=Path("workspace/config"), help="User config overlay dir (default: workspace/config)")
     parser.add_argument("--hours", type=int, default=48, help="Time window in hours")
-    parser.add_argument("--archive-dir", type=Path, default=Path("workspace/archive/news-hotspots"), help="Archive root dir for previous hotspots JSON files (default: workspace/archive/news-hotspots)")
-    parser.add_argument("--output", "-o", type=Path, required=True, help="Required output path for hotspots.json")
-    parser.add_argument("--debug-dir", type=Path, default=None, help="Directory for debug and intermediate files")
+    parser.add_argument("--archive", dest="archive", type=Path, default=Path("workspace/archive/news-hotspots"), help="Archive root dir for final hotspots outputs (default: workspace/archive/news-hotspots)")
+    parser.add_argument("--debug", type=Path, default=None, help="Directory for debug and intermediate files")
     parser.add_argument("--hotspots-top", type=int, default=DEFAULT_HOTSPOTS_TOP, help="Top N items per topic in hotspots output")
     parser.add_argument("--step-timeout", type=int, default=DEFAULT_TIMEOUT, help="Per-step timeout in seconds (default: 1800)")
     parser.add_argument("--verbose", "-v", action="store_true")
@@ -856,19 +862,16 @@ def main() -> int:
     logger = setup_logging(args.verbose)
     skip_steps = {item.strip().lower() for item in args.skip.split(",") if item.strip()}
     config_dir = args.config if args.config and args.config.exists() else None
-    debug_dir = resolve_debug_dir(args.debug_dir)
-    hotspots_output = resolve_unique_output_path(args.output)
-
-    if args.archive_dir:
-        args.archive_dir.mkdir(parents=True, exist_ok=True)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
+    debug_dir = resolve_debug_dir(args.debug)
+    if args.archive:
+        args.archive.mkdir(parents=True, exist_ok=True)
 
     logger.info("📁 Debug directory: %s", debug_dir)
-    logger.info("📝 Hotspots JSON output: %s", hotspots_output)
+    logger.info("📝 Final hotspots outputs will be archived under: %s", args.archive)
     if args.config and not args.config.exists():
         logger.info("ℹ️ Config overlay not found, using defaults only: %s", args.config)
-    if args.archive_dir:
-        logger.info("🗄️ Archive root: %s", args.archive_dir)
+    if args.archive:
+        logger.info("🗄️ Archive root: %s", args.archive)
 
     steps = build_fetch_steps(
         defaults_dir=args.defaults,
@@ -892,17 +895,20 @@ def main() -> int:
     logger.info("📡 Fetch phase done in %.1fs", fetch_elapsed)
 
     logger.info("🔀 Merging & scoring...")
-    _, merge_result, merge_meta_path = run_merge_step(debug_dir, args.archive_dir, args.verbose)
+    _, merge_result, merge_meta_path = run_merge_step(debug_dir, args.archive, args.verbose)
     step_meta_paths["merge"] = str(merge_meta_path)
 
     if merge_result["status"] == "ok":
         logger.info("🧾 Rendering hotspots...")
-        _, hotspots_result, hotspots_meta_path = run_hotspots_step(debug_dir, hotspots_output, args.hotspots_top)
+        _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(debug_dir, args.archive, args.hotspots_top)
     else:
-        hotspots_spec = StepSpec("hotspots", "Hotspots", "merge-hotspots.py", [], hotspots_output, None)
+        hotspots_outputs = {}
+        hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
         skipped_hotspots = make_process_result(spec=hotspots_spec, status="skipped", timeout=SUMMARY_TIMEOUT)
         hotspots_result, hotspots_meta_path = finalize_step(debug_dir, hotspots_spec, skipped_hotspots)
     step_meta_paths["hotspots"] = str(hotspots_meta_path)
+    hotspots_output = Path(hotspots_outputs["ARCHIVED_JSON"]) if hotspots_outputs.get("ARCHIVED_JSON") else None
+    markdown_output = Path(hotspots_outputs["ARCHIVED_MARKDOWN"]) if hotspots_outputs.get("ARCHIVED_MARKDOWN") else None
 
     total_elapsed = time.time() - t_start
     meta_output = write_pipeline_meta(
@@ -912,24 +918,29 @@ def main() -> int:
         merge_result=merge_result,
         hotspots_result=hotspots_result,
         hotspots_output=hotspots_output,
+        markdown_output=markdown_output if markdown_output.exists() else None,
         fetch_elapsed=fetch_elapsed,
         total_elapsed=total_elapsed,
     )
 
-    removed_archive_dirs = cleanup_archive_root(args.archive_dir) if args.archive_dir else 0
-    archived_outputs = archive_outputs(args.archive_dir, hotspots_output, meta_output, step_meta_paths)
+    removed_archive_dirs = cleanup_archive_root(args.archive) if args.archive else 0
+    archived_outputs = archive_meta_outputs(args.archive, meta_output, step_meta_paths)
     if removed_archive_dirs:
         logger.info("🧹 Removed %d expired archive date directories", removed_archive_dirs)
-    if archived_outputs.get("hotspots_json"):
-        logger.info("🗂️  Archived hotspots JSON: %s", archived_outputs["hotspots_json"])
+    if hotspots_output:
+        logger.info("🗂️  Archived hotspots JSON: %s", hotspots_output)
+    if markdown_output:
+        logger.info("🗂️  Archived hotspots Markdown: %s", markdown_output)
     if archived_outputs.get("pipeline_meta"):
         logger.info("🗂️  Archived meta dir: %s", archived_outputs.get("meta_dir"))
 
     meta = load_json_file(meta_output) or {}
     meta["archive"] = {
-        "root": str(args.archive_dir) if args.archive_dir else None,
+        "root": str(args.archive) if args.archive else None,
         "retention_days": ARCHIVE_RETENTION_DAYS,
         "removed_expired_date_dirs": removed_archive_dirs,
+        "hotspots_json": str(hotspots_output) if hotspots_output else None,
+        "hotspots_markdown": str(markdown_output) if markdown_output else None,
         **archived_outputs,
     }
     write_json(meta_output, meta)
@@ -941,6 +952,7 @@ def main() -> int:
         merge_result=merge_result,
         hotspots_result=hotspots_result,
         hotspots_output=hotspots_output,
+        markdown_output=markdown_output if markdown_output.exists() else None,
         meta_output=meta_output,
         debug_dir=debug_dir,
     )
@@ -952,10 +964,11 @@ def main() -> int:
         logger.error("❌ Hotspots failed: %s", hotspots_result["stderr_tail"])
         return 1
 
-    final_markdown_dir = str((args.archive_dir or Path("workspace/archive/news-hotspots")) / datetime.now(timezone.utc).date().isoformat() / "markdown")
+    final_markdown_path = str(markdown_output) if markdown_output else None
+    logger.info("📣 Final Markdown: %s", final_markdown_path)
     logger.info("📣 Subagent instruction: do not return a compressed summary to the main session.")
-    logger.info("📣 Subagent instruction: write the final Markdown report under %s, then return the complete Markdown content verbatim to the main session.", final_markdown_dir)
-    logger.info("✅ Done → %s", hotspots_output)
+    logger.info("📣 Subagent instruction: return only a short completion message plus the archived Markdown path, then let the main session read that file.")
+    logger.info("✅ Done → %s", final_markdown_path or args.archive)
     return 0
 
 

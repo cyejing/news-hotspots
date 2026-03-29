@@ -248,10 +248,6 @@ class TestRunPipeline(unittest.TestCase):
 
         self.assertEqual(failed_items, [{"id": "google", "error": "[error] site google/news: timeout | Hint: retry"}])
 
-    def test_tmp_summary_path_stays_stable(self):
-        resolved = run_pipeline.resolve_unique_output_path(Path("/tmp/hotspots.json"))
-        self.assertEqual(resolved, Path("/tmp/hotspots.json"))
-
     def test_resolve_unique_output_path_appends_counter_suffix(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             path = Path(tmpdir) / "daily.json"
@@ -272,36 +268,42 @@ class TestRunPipeline(unittest.TestCase):
             self.assertFalse(expired.exists())
             self.assertTrue(fresh.exists())
 
-    def test_archive_outputs_writes_json_and_meta_dirs(self):
+    def test_archive_meta_outputs_writes_meta_dir(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            summary = root / "hotspots.json"
             pipeline_meta = root / "pipeline.meta.json"
             step_meta = root / "rss.meta.json"
-            summary.write_text("{}", encoding="utf-8")
             pipeline_meta.write_text("{}", encoding="utf-8")
             step_meta.write_text("{}", encoding="utf-8")
 
-            archived = run_pipeline.archive_outputs(root / "archive", summary, pipeline_meta, {"rss": str(step_meta)})
+            archived = run_pipeline.archive_meta_outputs(root / "archive", pipeline_meta, {"rss": str(step_meta)})
 
-            self.assertTrue(Path(archived["hotspots_json"]).exists())
             self.assertTrue(Path(archived["pipeline_meta"]).exists())
             self.assertTrue(Path(archived["step_meta_paths"]["rss"]).exists())
 
-    def test_archive_outputs_creates_archive_root(self):
+    def test_archive_meta_outputs_creates_archive_root(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             archive_root = root / "missing" / "archive"
-            summary = root / "hotspots.json"
             pipeline_meta = root / "pipeline.meta.json"
-            summary.write_text("{}", encoding="utf-8")
             pipeline_meta.write_text("{}", encoding="utf-8")
 
-            archived = run_pipeline.archive_outputs(archive_root, summary, pipeline_meta, {})
+            archived = run_pipeline.archive_meta_outputs(archive_root, pipeline_meta, {})
 
             self.assertTrue(archive_root.exists())
-            self.assertTrue(Path(archived["json_dir"]).exists())
             self.assertTrue(Path(archived["meta_dir"]).exists())
+
+    def test_parse_step_output_paths_extracts_archive_paths(self):
+        parsed = run_pipeline.parse_step_output_paths(
+            [
+                "ARCHIVED_JSON=/tmp/a.json",
+                "ARCHIVED_MARKDOWN=/tmp/a.md",
+                "ignored line",
+            ]
+        )
+
+        self.assertEqual(parsed["ARCHIVED_JSON"], "/tmp/a.json")
+        self.assertEqual(parsed["ARCHIVED_MARKDOWN"], "/tmp/a.md")
 
 
 if __name__ == "__main__":

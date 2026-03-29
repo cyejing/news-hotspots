@@ -258,7 +258,7 @@ def fetch_v2ex_hot(logger: logging.Logger) -> Dict[str, Any]:
     }
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Fetch V2EX hot topics via bb-browser.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -274,7 +274,11 @@ Examples:
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument("--hours", type=int, default=48, help="Accepted for CLI consistency; not used by V2EX fetch")
     parser.add_argument("--force", action="store_true", help="Accepted for CLI consistency; this fetcher always refreshes")
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
 
     logger = setup_logging(args.verbose)
     if not args.output:

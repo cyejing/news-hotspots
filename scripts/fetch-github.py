@@ -431,9 +431,7 @@ def load_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[
     logging.info(f"Loaded {len(github_sources)} enabled GitHub sources")
     return github_sources
 
-
-def main():
-    """Main GitHub releases fetching function."""
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Sequential GitHub releases fetcher for news-hotspots. "
                    "Fetches enabled GitHub sources from unified configuration, "
@@ -448,54 +446,22 @@ Environment Variables:
     GITHUB_TOKEN    GitHub personal access token (optional, improves rate limits)
         """
     )
-    
-    parser.add_argument(
-        "--defaults",
-        type=Path,
-        default=Path("config/defaults"),
-        help="Default configuration directory with skill defaults (default: config/defaults)"
-    )
-    
-    parser.add_argument(
-        "--config",
-        type=Path,
-        help="User configuration directory for overlays (optional)"
-    )
-    
-    parser.add_argument(
-        "--hours",
-        type=int,
-        default=168,  # 1 week default for releases
-        help="Time window in hours for releases (default: 168 = 1 week)"
-    )
-    
-    parser.add_argument(
-        "--output", "-o",
-        type=Path,
-        help="Output JSON path (default: auto-generated temp file)"
-    )
-    
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Enable verbose logging"
-    )
-    
-    parser.add_argument(
-        "--no-cache",
-        action="store_true",
-        help="Bypass ETag/Last-Modified conditional request cache"
-    )
-    
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force re-fetch even if cached output exists"
-    )
-    
-    args = parser.parse_args()
+    parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Default configuration directory with skill defaults (default: config/defaults)")
+    parser.add_argument("--config", type=Path, help="User configuration directory for overlays (optional)")
+    parser.add_argument("--hours", type=int, default=168, help="Time window in hours for releases (default: 168 = 1 week)")
+    parser.add_argument("--output", "-o", type=Path, help="Output JSON path (default: auto-generated temp file)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--no-cache", action="store_true", help="Bypass ETag/Last-Modified conditional request cache")
+    parser.add_argument("--force", action="store_true", help="Force re-fetch even if cached output exists")
+
+    return parser.parse_args()
+
+
+def main():
+    """Main GitHub releases fetching function."""
+    args = parse_args()
     logger = setup_logging(args.verbose)
-    
+
     # Resume support: skip if output exists, is valid JSON, and < 1 hour old
     if args.output and args.output.exists() and not args.force:
         try:

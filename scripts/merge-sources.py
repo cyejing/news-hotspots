@@ -1022,7 +1022,7 @@ def build_merged_output(
     }
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Merge articles from all sources with quality scoring and deduplication.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -1037,9 +1037,13 @@ def main() -> int:
     parser.add_argument("--api", type=Path, help="API sources results JSON file")
     parser.add_argument("--v2ex", type=Path, help="V2EX hot topics results JSON file")
     parser.add_argument("--output", "-o", type=Path, help="Output JSON path (default: auto-generated temp file)")
-    parser.add_argument("--archive-dir", type=Path, help="Archive directory for previous hotspots penalty")
+    parser.add_argument("--archive", dest="archive_dir", type=Path, help="Archive directory for previous hotspots penalty")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
 
     logger = setup_logging(args.verbose)
     if not args.output:
