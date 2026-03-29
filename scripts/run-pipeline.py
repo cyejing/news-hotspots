@@ -812,6 +812,7 @@ def run_hotspots_step(
     debug_dir: Path,
     archive_dir: Path,
     hotspots_top: int,
+    mode: str,
     *,
     respect_interrupt: bool = True,
 ) -> Tuple[StepSpec, Dict[str, Any], Path, Dict[str, str]]:
@@ -820,7 +821,7 @@ def run_hotspots_step(
         "merge-hotspots",
         "Hotspots",
         "merge-hotspots.py",
-        ["--input", str(debug_dir / "merged.json"), "--archive", str(archive_dir), "--debug", str(debug_dir), "--top", str(hotspots_top)],
+        ["--input", str(debug_dir / "merged.json"), "--archive", str(archive_dir), "--debug", str(debug_dir), "--top", str(hotspots_top), "--mode", str(mode)],
         debug_output,
         None,
     )
@@ -838,6 +839,7 @@ def recover_partial_outputs(
     archive_dir: Optional[Path],
     verbose: bool,
     hotspots_top: int,
+    mode: str,
     logger: logging.Logger,
 ) -> Tuple[Dict[str, Any], Path, Dict[str, Any], Path, Dict[str, str]]:
     logger.info("🛟 Attempting partial recovery from completed step outputs...")
@@ -847,6 +849,7 @@ def recover_partial_outputs(
             debug_dir,
             archive_dir,
             hotspots_top,
+            mode,
             respect_interrupt=False,
         )
     else:
@@ -894,6 +897,7 @@ def write_pipeline_meta(
     hotspots_result: Dict[str, Any],
     hotspots_output: Optional[Path],
     markdown_output: Optional[Path],
+    hotspots_mode: str,
     fetch_elapsed: float,
     total_elapsed: float,
     interrupted: bool = False,
@@ -934,6 +938,7 @@ def write_pipeline_meta(
         "failed_items": build_pipeline_failed_items(step_results, [merge_result, hotspots_result]),
         "merge": merge_result,
         "hotspots_format": "json",
+        "hotspots_mode": hotspots_mode,
         "hotspots_status": hotspots_result.get("status"),
         "hotspots_elapsed_s": hotspots_result.get("elapsed_s"),
         "hotspots_output": str(hotspots_output) if hotspots_output else None,
@@ -979,7 +984,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hours", type=int, default=48, help="Time window in hours")
     parser.add_argument("--archive", dest="archive", type=Path, default=Path("workspace/archive/news-hotspots"), help="Archive root dir for final hotspots outputs (default: workspace/archive/news-hotspots)")
     parser.add_argument("--debug", type=Path, default=None, help="Directory for debug and intermediate files")
-    parser.add_argument("--hotspots-top", type=int, default=DEFAULT_HOTSPOTS_TOP, help="Top N items per topic in hotspots output")
+    parser.add_argument("--mode", type=str, default="daily", choices=["daily", "weekly"], help="Final hotspots mode label and archive file stem")
+    parser.add_argument("--top", type=int, default=DEFAULT_HOTSPOTS_TOP, help="Top N items per topic in hotspots output")
     parser.add_argument("--step-timeout", type=int, default=DEFAULT_TIMEOUT, help="Per-step timeout in seconds (default: 1800)")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force", action="store_true", help="Force re-fetch ignoring caches")
@@ -1002,6 +1008,7 @@ def main() -> int:
 
     logger.info("📁 Debug directory: %s", debug_dir)
     logger.info("📝 Final hotspots outputs will be archived under: %s", args.archive)
+    logger.info("🗂️ Hotspots mode: %s", args.mode)
     if args.config and not args.config.exists():
         logger.info("ℹ️ Config overlay not found, using defaults only: %s", args.config)
     if args.archive:
@@ -1035,7 +1042,8 @@ def main() -> int:
                 debug_dir=debug_dir,
                 archive_dir=args.archive,
                 verbose=args.verbose,
-                hotspots_top=args.hotspots_top,
+                hotspots_top=args.top,
+                mode=args.mode,
                 logger=logger,
             )
         else:
@@ -1043,7 +1051,7 @@ def main() -> int:
             _, merge_result, merge_meta_path = run_merge_step(debug_dir, args.archive, args.verbose)
             if merge_result["status"] == "ok":
                 logger.info("🧾 Rendering hotspots...")
-                _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(debug_dir, args.archive, args.hotspots_top)
+                _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(debug_dir, args.archive, args.top, args.mode)
             else:
                 hotspots_outputs = {}
                 hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
@@ -1055,7 +1063,8 @@ def main() -> int:
                     debug_dir=debug_dir,
                     archive_dir=args.archive,
                     verbose=args.verbose,
-                    hotspots_top=args.hotspots_top,
+                    hotspots_top=args.top,
+                    mode=args.mode,
                     logger=logger,
                 )
 
@@ -1073,6 +1082,7 @@ def main() -> int:
             hotspots_result=hotspots_result,
             hotspots_output=hotspots_output,
             markdown_output=markdown_output if markdown_output and markdown_output.exists() else None,
+            hotspots_mode=args.mode,
             fetch_elapsed=fetch_elapsed,
             total_elapsed=total_elapsed,
             interrupted=INTERRUPT_EVENT.is_set(),

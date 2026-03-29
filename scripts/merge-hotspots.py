@@ -65,7 +65,8 @@ def render_metrics(metrics: Dict[str, Any]) -> str:
 
 
 def build_markdown(hotspots: Dict[str, Any], mode: str = "daily", extra_sections: str = "") -> str:
-    lines: List[str] = [f"# {hotspots.get('generated_at', '')[:10] or '<DATE>'} {mode} 全球科技与 AI 热点"]
+    normalized_mode = str(mode or "daily").strip().lower() or "daily"
+    lines: List[str] = [f"# {hotspots.get('generated_at', '')[:10] or '<DATE>'} {normalized_mode} 全球科技与 AI 热点"]
     for topic in hotspots.get("topics", []):
         topic_title = topic.get("title") or humanize_topic_id(str(topic.get("id", "")))
         lines.append(f"## {topic_title}")
@@ -74,15 +75,16 @@ def build_markdown(hotspots: Dict[str, Any], mode: str = "daily", extra_sections
             link = item.get("link", "")
             title = item.get("title", "")
             source_name = item.get("source_name") or item.get("display_name") or item.get("source_type", "")
-            lines.append(f"- {item.get('rank', 0)}. ⭐{score:.1f} | [{title}]({link})")
+            lines.append(f"{item.get('rank', 0)}. ⭐{score:.1f} | [{title}]({link})  ")
             metrics = item.get("metrics", {}) if isinstance(item.get("metrics"), dict) else {}
             if metrics:
-                lines.append(f"  指标：{render_metrics(metrics)} | 来源：{source_name}")
+                lines.append(f"   来源：{source_name} | 指标：{render_metrics(metrics)}")
             else:
-                lines.append(f"  来源：{source_name}")
+                lines.append(f"   来源：{source_name}")
+        lines.append("")
     if extra_sections:
-        lines.append(extra_sections)
-    return "\n".join(lines).strip() + "\n"
+        lines.append(extra_sections.strip())
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def build_hotspots(data: Dict[str, Any], top_n: int = 15, topic_filter: Optional[str] = None) -> Dict[str, Any]:
@@ -140,7 +142,7 @@ def ensure_archive_dirs(archive_root: Path) -> Tuple[Path, Path, Path]:
     return date_dir, json_dir, markdown_dir
 
 
-def resolve_archive_pair(json_dir: Path, markdown_dir: Path, stem: str = "hotspots") -> Tuple[Path, Path]:
+def resolve_archive_pair(json_dir: Path, markdown_dir: Path, stem: str = "daily") -> Tuple[Path, Path]:
     counter = 0
     while True:
         suffix = "" if counter == 0 else str(counter)
@@ -159,7 +161,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--debug", type=Path, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--top", "-n", type=int, default=5, help="Top N articles per topic")
     parser.add_argument("--topic", "-t", type=str, default=None, help="Filter to specific topic")
-    parser.add_argument("--mode", type=str, default="daily", help="Markdown mode label")
+    parser.add_argument("--mode", type=str, default="daily", choices=["daily", "weekly"], help="Hotspots mode label and archive file stem")
     parser.add_argument("--extra-sections", type=str, default="", help="Optional Markdown tail section")
     return parser.parse_args()
 
@@ -184,7 +186,7 @@ def main() -> int:
         debug_output.write_text(json.dumps(hotspots_json, ensure_ascii=False, indent=2), encoding="utf-8")
 
     _, json_dir, markdown_dir = ensure_archive_dirs(args.archive)
-    json_output, markdown_output = resolve_archive_pair(json_dir, markdown_dir)
+    json_output, markdown_output = resolve_archive_pair(json_dir, markdown_dir, stem=args.mode)
     json_output.write_text(json.dumps(hotspots_json, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown = build_markdown(hotspots_json, mode=args.mode, extra_sections=args.extra_sections)
     markdown_output.write_text(markdown, encoding="utf-8")

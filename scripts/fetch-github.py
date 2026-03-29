@@ -20,7 +20,6 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError
-from urllib.parse import quote
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
@@ -52,61 +51,6 @@ def get_github_cooldown_seconds() -> float:
         return max(0.0, float(raw))
     except ValueError:
         return GITHUB_COOLDOWN_DEFAULT
-
-
-def _b64url(data: bytes) -> str:
-    """Base64url encode without padding."""
-    import base64
-    return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
-
-
-def _generate_github_app_token(app_id: str, install_id: str, key_file: str) -> str:
-    """Generate a GitHub App installation token using JWT (RS256 via openssl).
-    
-    No external scripts or pip dependencies required — uses openssl CLI for RSA signing.
-    Returns the token string, or empty string on failure.
-    """
-    import subprocess as _sp
-
-    with open(key_file) as f:
-        private_key = f.read()
-
-    # Build JWT
-    now = int(time.time())
-    header = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
-    payload = _b64url(json.dumps({"iat": now - 60, "exp": now + 600, "iss": app_id}).encode())
-    signing_input = f"{header}.{payload}"
-
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.pem', delete=False) as f:
-        f.write(private_key)
-        tmp_key = f.name
-    try:
-        result = _sp.run(
-            ['openssl', 'dgst', '-sha256', '-sign', tmp_key],
-            input=signing_input.encode(), capture_output=True, timeout=10,
-        )
-        if result.returncode != 0:
-            logging.debug(f"openssl sign failed: {result.stderr.decode()}")
-            return ""
-        signature = _b64url(result.stdout)
-    finally:
-        os.unlink(tmp_key)
-
-    jwt = f"{signing_input}.{signature}"
-
-    # Exchange JWT for installation token
-    req = Request(
-        f"https://api.github.com/app/installations/{install_id}/access_tokens",
-        method='POST',
-        headers={
-            'Authorization': f'Bearer {jwt}',
-            'Accept': 'application/vnd.github+json',
-            'User-Agent': 'news-hotspots',
-        },
-    )
-    with urlopen(req, timeout=15) as resp:
-        data = json.loads(resp.read().decode())
-    return data.get("token", "")
 
 
 def setup_logging(verbose: bool) -> logging.Logger:
@@ -164,62 +108,15 @@ def truncate_summary(text: str, max_chars: int = 500) -> str:
 
 
 def resolve_github_token() -> Optional[str]:
-    """Resolve GitHub token from multiple sources, in priority order:
-    
-    1. $GITHUB_TOKEN env var (PAT or pre-generated App token)
-    2. GitHub App installation token (auto-generated from App credentials)
-    3. `gh auth token` CLI fallback
-    4. None (unauthenticated, 60 req/hr)
-    """
-    # 1. Environment variable (PAT or externally-set App token)
+    """Resolve GitHub token from $GITHUB_TOKEN only."""
     token = os.environ.get("GITHUB_TOKEN")
     logging.info(f"🔍 GITHUB_TOKEN: {'set' if token else 'not set'}")
     if token:
-        if token.startswith("ghp_"):
-            logging.info("🔑 Using GitHub PAT (5000 req/hr)")
-        elif token.startswith("ghs_"):
-            logging.info("🔑 Using GitHub App installation token (5000 req/hr)")
-        else:
-            logging.info("🔑 Using GitHub token (5000 req/hr)")
+        logging.info("🔑 Using GitHub token (5000 req/hr)")
         return token
-    
-    # 2. GitHub App auto-generation (requires GH_APP_ID, GH_APP_INSTALL_ID, GH_APP_KEY_FILE env vars)
-    #    Generates a short-lived installation token using JWT + GitHub API. No external scripts needed.
-    app_id = os.environ.get("GH_APP_ID")
-    install_id = os.environ.get("GH_APP_INSTALL_ID")
-    key_file = os.environ.get("GH_APP_KEY_FILE")
-    logging.info(f"🔍 GH_APP_ID: {'set' if app_id else 'not set'}")
-    logging.info(f"🔍 GH_APP_INSTALL_ID: {'set' if install_id else 'not set'}")
-    logging.info(f"🔍 GH_APP_KEY_FILE: {'set' if key_file else 'not set'}{' (file exists)' if key_file and os.path.exists(key_file) else ' (file missing)' if key_file else ''}")
-    
-    if app_id and install_id and key_file and os.path.exists(key_file):
-        try:
-            token = _generate_github_app_token(app_id, install_id, key_file)
-            if token:
-                logging.info("🔑 GitHub App token auto-generated (5000 req/hr)")
-                return token
-        except Exception as e:
-            logging.debug(f"GitHub App token generation failed: {e}")
-    
-    # 3. gh CLI fallback
-    logging.info("🔍 Trying gh CLI fallback...")
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["gh", "auth", "token"], capture_output=True, text=True, timeout=5
-        )
-        token = result.stdout.strip()
-        if token and result.returncode == 0:
-            logging.info("🔑 Using gh CLI token (5000 req/hr)")
-            return token
-        else:
-            logging.info(f"🔍 gh auth token: exit={result.returncode}, output={'set' if token else 'empty'}")
-    except Exception as e:
-        logging.info(f"🔍 gh CLI not available: {e}")
-    
-    # 4. Unauthenticated
+
     logging.warning("⚠️ No GitHub token found — rate limit 60 req/hr (22 repos may fail)")
-    logging.warning("  Set $GITHUB_TOKEN or install GitHub App credentials to fix this")
+    logging.warning("  Set $GITHUB_TOKEN to improve rate limits")
     return None
 
 
@@ -443,7 +340,7 @@ Examples:
     python3 fetch-github.py --defaults config/defaults --config workspace/config --hours 168 -o results.json
     
 Environment Variables:
-    GITHUB_TOKEN    GitHub personal access token (optional, improves rate limits)
+    GITHUB_TOKEN    GitHub token (optional, improves rate limits)
         """
     )
     parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Default configuration directory with skill defaults (default: config/defaults)")
@@ -490,7 +387,7 @@ def main():
         
         logger.info(f"Fetching {len(sources)} GitHub repositories (window: {args.hours}h)")
         
-        # Resolve GitHub token (PAT → App → gh CLI → unauthenticated)
+        # Resolve GitHub token ($GITHUB_TOKEN → unauthenticated)
         github_token = resolve_github_token()
         
         # Initialize cache

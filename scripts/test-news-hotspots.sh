@@ -91,8 +91,8 @@ OUTPUTS:
     /tmp/news-hotspots/debug/reddit.json
     /tmp/news-hotspots/debug/merged.json
     /tmp/news-hotspots/debug/merge-hotspots.json
-    workspace/archive/news-hotspots/<DATE>/json/hotspots.json
-    workspace/archive/news-hotspots/<DATE>/markdown/hotspots.md
+    workspace/archive/news-hotspots/<DATE>/json/daily.json
+    workspace/archive/news-hotspots/<DATE>/markdown/daily.md
     workspace/archive/news-hotspots/<DATE>/meta/*.meta.json
   step:
     /tmp/news-hotspots/debug/rss.json
@@ -105,8 +105,8 @@ OUTPUTS:
     /tmp/news-hotspots/debug/google.json
     /tmp/news-hotspots/debug/merged.json
     /tmp/news-hotspots/debug/merge-hotspots.json
-    workspace/archive/news-hotspots/<DATE>/json/hotspots.json
-    workspace/archive/news-hotspots/<DATE>/markdown/hotspots.md
+    workspace/archive/news-hotspots/<DATE>/json/daily.json
+    workspace/archive/news-hotspots/<DATE>/markdown/daily.md
   health:
     直接输出诊断报告到控制台
 HELP
@@ -177,6 +177,7 @@ run_full() {
     --hours "$HOURS"
     --archive "$DEFAULT_ARCHIVE_ROOT_DIR"
     --debug "$DEBUG_DIR"
+    --mode daily
   )
   if [ -n "$CONFIG_DIR" ] && [ -d "$CONFIG_DIR" ]; then
     cmd+=(--config "$CONFIG_DIR")
@@ -263,7 +264,7 @@ run_step() {
       ;;
     hotspots)
       [ -f "$MERGED_JSON" ] || { echo "Missing input: $MERGED_JSON" >&2; exit 1; }
-      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --input "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR" --debug "$DEBUG_DIR" --top 15)
+      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --input "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR" --debug "$DEBUG_DIR" --top 15 --mode daily)
       run_cmd "${cmd[@]}"
       [ -f "$DEBUG_DIR/merge-hotspots.json" ] || { echo "Missing output: $DEBUG_DIR/merge-hotspots.json" >&2; exit 1; }
       ;;

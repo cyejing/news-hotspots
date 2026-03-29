@@ -112,6 +112,7 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 - 最终对用户输出的是 Markdown 热点报告。
 - JSON 热点归档到 `workspace/archive/news-hotspots/<DATE>/json/`。
 - 用户 Markdown 归档到 `workspace/archive/news-hotspots/<DATE>/markdown/`。
+- 归档文件名按 `mode` 命名，例如 `daily.json`、`daily.md`、`weekly.json`、`weekly1.md`。
 - 步骤诊断元数据归档到 `workspace/archive/news-hotspots/<DATE>/meta/`。
 - 如需同步到其他系统，请由外部自动化消费生成的 Markdown 归档。
 

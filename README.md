@@ -112,6 +112,7 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 - The final user-facing output is a Markdown hotspots report.
 - JSON hotspots are archived in `workspace/archive/news-hotspots/<DATE>/json/`.
 - User-facing Markdown is archived in `workspace/archive/news-hotspots/<DATE>/markdown/`.
+- Archived filenames use the selected mode, for example `daily.json`, `daily.md`, `weekly.json`, `weekly1.md`.
 - Step diagnostics are archived in `workspace/archive/news-hotspots/<DATE>/meta/`.
 - If you want delivery to other systems, consume the generated Markdown archive externally.
 

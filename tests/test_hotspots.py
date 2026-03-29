@@ -109,9 +109,10 @@ class TestMergeHotspotsJson(unittest.TestCase):
         }
         markdown = hotspots_mod.build_markdown(hotspots, mode="daily")
         self.assertIn("# 2026-03-28 daily 全球科技与 AI 热点", markdown)
-        self.assertIn("- 1. ⭐12.3 | [OpenAI ships a new model](https://example.com/openai)", markdown)
-        self.assertIn("  指标：likes=999, score=123 | 来源：OpenAI Blog", markdown)
-        self.assertIn("  来源：The Verge", markdown)
+        self.assertIn("1. ⭐12.3 | [OpenAI ships a new model](https://example.com/openai)  ", markdown)
+        self.assertIn("   来源：OpenAI Blog | 指标：likes=999, score=123", markdown)
+        self.assertIn("   来源：The Verge", markdown)
+        self.assertIn("## Ai Models\n1. ⭐12.3", markdown)
 
     def test_archive_pair_uses_matching_suffixes(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -120,13 +121,13 @@ class TestMergeHotspotsJson(unittest.TestCase):
             markdown_dir = root / "markdown"
             json_dir.mkdir()
             markdown_dir.mkdir()
-            (json_dir / "hotspots.json").write_text("{}", encoding="utf-8")
-            (markdown_dir / "hotspots.md").write_text("# sample\n", encoding="utf-8")
+            (json_dir / "daily.json").write_text("{}", encoding="utf-8")
+            (markdown_dir / "daily.md").write_text("# sample\n", encoding="utf-8")
 
-            json_path, markdown_path = hotspots_mod.resolve_archive_pair(json_dir, markdown_dir)
+            json_path, markdown_path = hotspots_mod.resolve_archive_pair(json_dir, markdown_dir, stem="daily")
 
-            self.assertEqual(json_path.name, "hotspots1.json")
-            self.assertEqual(markdown_path.name, "hotspots1.md")
+            self.assertEqual(json_path.name, "daily1.json")
+            self.assertEqual(markdown_path.name, "daily1.md")
 
     def test_debug_output_is_merge_hotspots_json(self):
         with tempfile.TemporaryDirectory() as tmpdir:

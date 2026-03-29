@@ -10,7 +10,7 @@ GitHub Trending 仓库抓取脚本 - 用于 news-hotspots 技能。
 - 使用 GitHub Search API 搜索热门仓库
 - 按时间窗口和最低星标数过滤
 - 估算每日星标增长率
-- 支持多种认证方式（GitHub Token、GitHub App）
+- 支持 GitHub Token 认证
 
 使用方法:
     python3 fetch-github-trending.py \
@@ -22,9 +22,6 @@ GitHub Trending 仓库抓取脚本 - 用于 news-hotspots 技能。
 
 环境变量:
     GITHUB_TOKEN - GitHub 个人访问令牌（可选，提高速率限制）
-    GH_APP_ID - GitHub App ID（可选）
-    GH_APP_INSTALL_ID - GitHub App Installation ID（可选）
-    GH_APP_KEY_FILE - GitHub App 私钥文件路径（可选）
 """
 
 import json
@@ -90,80 +87,12 @@ def parse_github_date(date_str: str) -> Optional[datetime]:
 
 
 def resolve_github_token() -> Optional[str]:
-    """
-    解析 GitHub token，支持多种认证方式。
-    
-    优先级:
-        1. GITHUB_TOKEN 环境变量
-        2. GitHub App 自动生成 token
-        3. gh CLI token
-        4. None (未认证，60 请求/小时)
-        
-    返回:
-        GitHub token 或 None
-    """
+    """解析 GitHub token，仅支持 GITHUB_TOKEN 环境变量。"""
     token = os.environ.get("GITHUB_TOKEN")
     if token:
         logging.debug("Using GITHUB_TOKEN from environment")
         return token
-    
-    # Try GitHub App token generation
-    app_id = os.environ.get("GH_APP_ID")
-    install_id = os.environ.get("GH_APP_INSTALL_ID")
-    key_file = os.environ.get("GH_APP_KEY_FILE")
-    
-    if app_id and install_id and key_file:
-        try:
-            import subprocess
-            # Generate JWT
-            now = int(time.time())
-            payload = f'{{"iat":{now-60},"exp":{now+540},"iss":{app_id}}}'
-            
-            jwt_result = subprocess.run(
-                ["openssl", "dgst", "-sha256", "-sign", key_file],
-                input=payload.encode(),
-                capture_output=True,
-                timeout=10
-            )
-            
-            if jwt_result.returncode == 0:
-                # Get installation token
-                jwt_token = jwt_result.stdout.hex()
-                req = Request(
-                    f"https://api.github.com/app/installations/{install_id}/access_tokens",
-                    headers={
-                        "Authorization": f"Bearer {jwt_token}",
-                        "Accept": "application/vnd.github.v3+json",
-                        "User-Agent": USER_AGENT,
-                    },
-                    method="POST"
-                )
-                with urlopen(req, timeout=10) as resp:
-                    data = json.loads(resp.read().decode())
-                    token = data.get("token")
-                    if token:
-                        logging.debug("Generated GitHub App installation token")
-                        return token
-        except Exception as e:
-            logging.debug(f"GitHub App token generation failed: {e}")
-    
-    # Try gh CLI
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["gh", "auth", "token"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0:
-            token = result.stdout.strip()
-            if token:
-                logging.debug("Using token from gh CLI")
-                return token
-    except Exception:
-        pass
-    
+
     logging.debug("No GitHub token found, using unauthenticated API (60 req/hour)")
     return None
 
