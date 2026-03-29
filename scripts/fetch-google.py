@@ -176,7 +176,7 @@ Examples:
 
     logger = setup_logging(args.verbose)
     if not args.output:
-        fd, temp_path = tempfile.mkstemp(prefix="news-digest-google-", suffix=".json")
+        fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-google-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
 

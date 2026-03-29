@@ -29,7 +29,7 @@ class TestSourceHealth(unittest.TestCase):
                 {"name": "Twitter", "status": "skipped"},
             ],
             "merge": {"status": "ok", "count": 42, "stderr_tail": []},
-            "summary_status": "ok",
+            "hotspots_status": "ok",
         }
 
         diagnostic = source_health.compute_step_state(meta)
@@ -270,7 +270,7 @@ class TestSourceHealth(unittest.TestCase):
                         "steps": [{"name": "Twitter", "status": "error", "stderr_tail": ["HTTP 429"]}],
                         "failed_items": [{"id": "twitter", "error": "HTTP 429"}],
                         "merge": {"status": "ok", "count": 1, "stderr_tail": []},
-                        "summary_status": "ok",
+                        "hotspots_status": "ok",
                     }
                 ),
                 encoding="utf-8",

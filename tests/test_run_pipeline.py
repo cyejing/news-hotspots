@@ -82,9 +82,9 @@ class TestRunPipeline(unittest.TestCase):
         self.assertEqual(result.status, "error")
         self.assertTrue(result.stderr_tail)
 
-    def test_summarize_payload_details_extracts_record_summary(self):
+    def test_collect_payload_details_extracts_record_summary(self):
         payload = {"total_articles": 4, "sources": [{"status": "ok"}, {"status": "error"}]}
-        details = run_pipeline.summarize_payload_details(payload)
+        details = run_pipeline.collect_payload_details(payload)
         self.assertEqual(details["record_summary"]["total"], 2)
         self.assertEqual(details["record_summary"]["error"], 1)
 
@@ -229,14 +229,14 @@ class TestRunPipeline(unittest.TestCase):
     def test_build_pipeline_failed_items_uses_step_keys(self):
         failed_items = run_pipeline.build_pipeline_failed_items(
             [{"step_key": "twitter", "name": "Twitter", "status": "error", "stderr_tail": ["HTTP 429"], "failed_items": []}],
-            [{"step_key": "summarize", "name": "Summarize", "status": "error", "stderr_tail": ["summary failed"], "failed_items": []}],
+            [{"step_key": "hotspots", "name": "Hotspots", "status": "error", "stderr_tail": ["hotspots failed"], "failed_items": []}],
         )
 
         self.assertEqual(
             failed_items,
             [
                 {"id": "twitter", "error": "HTTP 429"},
-                {"id": "summarize", "error": "summary failed"},
+                {"id": "hotspots", "error": "hotspots failed"},
             ],
         )
 
@@ -249,8 +249,8 @@ class TestRunPipeline(unittest.TestCase):
         self.assertEqual(failed_items, [{"id": "google", "error": "[error] site google/news: timeout | Hint: retry"}])
 
     def test_tmp_summary_path_stays_stable(self):
-        resolved = run_pipeline.resolve_unique_output_path(Path("/tmp/summary.json"))
-        self.assertEqual(resolved, Path("/tmp/summary.json"))
+        resolved = run_pipeline.resolve_unique_output_path(Path("/tmp/hotspots.json"))
+        self.assertEqual(resolved, Path("/tmp/hotspots.json"))
 
     def test_resolve_unique_output_path_appends_counter_suffix(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -275,7 +275,7 @@ class TestRunPipeline(unittest.TestCase):
     def test_archive_outputs_writes_json_and_meta_dirs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            summary = root / "summary.json"
+            summary = root / "hotspots.json"
             pipeline_meta = root / "pipeline.meta.json"
             step_meta = root / "rss.meta.json"
             summary.write_text("{}", encoding="utf-8")
@@ -284,7 +284,7 @@ class TestRunPipeline(unittest.TestCase):
 
             archived = run_pipeline.archive_outputs(root / "archive", summary, pipeline_meta, {"rss": str(step_meta)})
 
-            self.assertTrue(Path(archived["summary_json"]).exists())
+            self.assertTrue(Path(archived["hotspots_json"]).exists())
             self.assertTrue(Path(archived["pipeline_meta"]).exists())
             self.assertTrue(Path(archived["step_meta_paths"]["rss"]).exists())
 
@@ -292,7 +292,7 @@ class TestRunPipeline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             archive_root = root / "missing" / "archive"
-            summary = root / "summary.json"
+            summary = root / "hotspots.json"
             pipeline_meta = root / "pipeline.meta.json"
             summary.write_text("{}", encoding="utf-8")
             pipeline_meta.write_text("{}", encoding="utf-8")

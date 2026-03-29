@@ -673,7 +673,7 @@ def apply_domain_limits(articles: List[Dict[str, Any]], max_per_domain: int = 3)
 # History loading and topic grouping
 # ---------------------------------------------------------------------------
 
-def load_previous_digests(archive_dir: Path, days: int = 14) -> List[str]:
+def load_previous_hotspots(archive_dir: Path, days: int = 14) -> List[str]:
     if not archive_dir.exists():
         return []
 
@@ -699,7 +699,7 @@ def load_previous_digests(archive_dir: Path, days: int = 14) -> List[str]:
                     if title:
                         seen_titles.append(title)
     except Exception as exc:
-        logging.debug("Failed to load previous digests: %s", exc)
+        logging.debug("Failed to load previous hotspots: %s", exc)
 
     logging.info("Loaded %d titles from previous %d days under %s", len(seen_titles), days, archive_dir)
     return seen_titles
@@ -964,7 +964,7 @@ def process_articles(
     total_collected = len(all_articles)
     logging.info("Total articles collected: %d", total_collected)
 
-    previous_titles: List[str] = load_previous_digests(archive_dir) if archive_dir else []
+    previous_titles: List[str] = load_previous_hotspots(archive_dir) if archive_dir else []
     deduplicated_articles = deduplicate_articles(all_articles, previous_titles)
     topic_groups = group_by_topics(deduplicated_articles, dedup_across_topics=True)
 
@@ -1006,7 +1006,7 @@ def build_merged_output(
         "processing": {
             "deduplication_applied": True,
             "multi_source_merging": True,
-            "previous_digest_penalty": len(previous_titles) > 0,
+            "previous_hotspots_penalty": len(previous_titles) > 0,
             "quality_scoring": True,
             "scoring_version": "2.0",
         },
@@ -1037,13 +1037,13 @@ def main() -> int:
     parser.add_argument("--api", type=Path, help="API sources results JSON file")
     parser.add_argument("--v2ex", type=Path, help="V2EX hot topics results JSON file")
     parser.add_argument("--output", "-o", type=Path, help="Output JSON path (default: auto-generated temp file)")
-    parser.add_argument("--archive-dir", type=Path, help="Archive directory for previous digest penalty")
+    parser.add_argument("--archive-dir", type=Path, help="Archive directory for previous hotspots penalty")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     args = parser.parse_args()
 
     logger = setup_logging(args.verbose)
     if not args.output:
-        fd, temp_path = tempfile.mkstemp(prefix="news-digest-merged-", suffix=".json")
+        fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-merged-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
 

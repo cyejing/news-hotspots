@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Render merged pipeline output into a compact summary JSON.
+Render merged pipeline output into a compact hotspots JSON.
 
 Usage:
-    python3 merge-summarize.py --input <merged.json> --output <summary.json> [--top <n>] [--topic <id>]
+    python3 merge-hotspots.py --input <merged.json> --output <hotspots.json> [--top <n>] [--topic <id>]
 """
 
 import argparse
@@ -39,7 +39,7 @@ def normalize_metrics(article: Dict[str, Any]) -> Dict[str, Any]:
     return {key: value for key, value in normalized.items() if value not in (None, 0, "", [])}
 
 
-def summarize_item(article: Dict[str, Any], rank: int) -> Dict[str, Any]:
+def hotspot_item(article: Dict[str, Any], rank: int) -> Dict[str, Any]:
     link = article.get("link") or article.get("reddit_url") or article.get("external_url", "")
     return {
         "rank": rank,
@@ -57,7 +57,7 @@ def summarize_item(article: Dict[str, Any], rank: int) -> Dict[str, Any]:
     }
 
 
-def build_summary(data: Dict[str, Any], top_n: int = 15, topic_filter: Optional[str] = None) -> Dict[str, Any]:
+def build_hotspots(data: Dict[str, Any], top_n: int = 15, topic_filter: Optional[str] = None) -> Dict[str, Any]:
     topics = data.get("topics", {})
     topic_order: List[str] = []
     topic_entries: List[Dict[str, Any]] = []
@@ -69,7 +69,7 @@ def build_summary(data: Dict[str, Any], top_n: int = 15, topic_filter: Optional[
 
         sorted_articles = get_sorted_articles(topic_data)
         limited_articles = sorted_articles[:top_n]
-        items = [summarize_item(article, rank=index) for index, article in enumerate(limited_articles, start=1)]
+        items = [hotspot_item(article, rank=index) for index, article in enumerate(limited_articles, start=1)]
 
         for item in items:
             source_type = item.get("source_type", "")
@@ -95,9 +95,9 @@ def build_summary(data: Dict[str, Any], top_n: int = 15, topic_filter: Optional[
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Summarize merged data into compact JSON")
+    parser = argparse.ArgumentParser(description="Render merged data into compact hotspots JSON")
     parser.add_argument("--input", "-i", type=Path, required=True, help="Internal pipeline JSON input")
-    parser.add_argument("--output", "-o", type=Path, required=True, help="Summary JSON output path")
+    parser.add_argument("--output", "-o", type=Path, required=True, help="Hotspots JSON output path")
     parser.add_argument("--top", "-n", type=int, default=5, help="Top N articles per topic")
     parser.add_argument("--topic", "-t", type=str, default=None, help="Filter to specific topic")
     args = parser.parse_args()
@@ -113,9 +113,9 @@ def main() -> int:
         print(f"Error: failed to read {args.input}: {exc}")
         return 1
 
-    summary_json = build_summary(data, top_n=args.top, topic_filter=args.topic)
+    hotspots_json = build_hotspots(data, top_n=args.top, topic_filter=args.topic)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(summary_json, ensure_ascii=False, indent=2), encoding="utf-8")
+    args.output.write_text(json.dumps(hotspots_json, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0
 
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for merge-summarize.py and run-pipeline helpers."""
+"""Tests for merge-hotspots.py and run-pipeline helpers."""
 
 import importlib.util
 import sys
@@ -18,12 +18,12 @@ def load_module(name: str, filename: str):
     return module
 
 
-summarize_mod = load_module("merge_summarize", "merge-summarize.py")
+hotspots_mod = load_module("merge_hotspots", "merge-hotspots.py")
 run_pipeline_mod = load_module("run_pipeline", "run-pipeline.py")
 
 
-class TestMergeSummaryJson(unittest.TestCase):
-    def test_build_summary_is_compact_json(self):
+class TestMergeHotspotsJson(unittest.TestCase):
+    def test_build_hotspots_is_compact_json(self):
         data = {
             "generated": "2026-03-28T12:00:00+00:00",
             "output_stats": {"total_articles": 2},
@@ -44,7 +44,7 @@ class TestMergeSummaryJson(unittest.TestCase):
                 }
             },
         }
-        output = summarize_mod.build_summary(data, top_n=5)
+        output = hotspots_mod.build_hotspots(data, top_n=5)
         self.assertEqual(output["total_articles"], 2)
         self.assertEqual(output["topic_order"], ["ai-models"])
         self.assertEqual(output["topics"][0]["title"], "Ai Models")
@@ -72,7 +72,7 @@ class TestMergeSummaryJson(unittest.TestCase):
                 }
             },
         }
-        output = summarize_mod.build_summary(data, top_n=5)
+        output = hotspots_mod.build_hotspots(data, top_n=5)
         metrics = output["topics"][0]["items"][0]["metrics"]
         self.assertEqual(metrics["retweets"], 50)
         self.assertEqual(metrics["replies"], 12)
@@ -91,7 +91,7 @@ class TestDebugDirectoryResolution(unittest.TestCase):
     def test_default_uses_temp_dir(self):
         run_dir = run_pipeline_mod.resolve_debug_dir(None)
         self.assertTrue(run_dir.exists())
-        self.assertIn("news-digest-pipeline-", run_dir.name)
+        self.assertIn("news-hotspots-pipeline-", run_dir.name)
 
 
 if __name__ == "__main__":

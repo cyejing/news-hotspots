@@ -3,14 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-TMP_DIR="/tmp/news-digest"
+TMP_DIR="/tmp/news-hotspots"
 DEBUG_DIR="$TMP_DIR/debug"
 
 DEFAULTS_DIR="$ROOT_DIR/config/defaults"
 DEFAULT_CONFIG_DIR="$ROOT_DIR/workspace/config"
-DEFAULT_ARCHIVE_ROOT_DIR="$ROOT_DIR/workspace/archive/news-digest"
+DEFAULT_ARCHIVE_ROOT_DIR="$ROOT_DIR/workspace/archive/news-hotspots"
 
-SUMMARY_JSON="$TMP_DIR/summary.json"
+HOTSPOTS_JSON="$TMP_DIR/hotspots.json"
 MERGED_JSON="$DEBUG_DIR/merged.json"
 RSS_JSON="$DEBUG_DIR/rss.json"
 GITHUB_JSON="$DEBUG_DIR/github.json"
@@ -54,57 +54,57 @@ step_output_path() {
     v2ex) echo "$V2EX_JSON" ;;
     google) echo "$GOOGLE_JSON" ;;
     merge) echo "$MERGED_JSON" ;;
-    summarize) echo "$STEP_OUTPUT_DIR/summary.json" ;;
+    hotspots) echo "$STEP_OUTPUT_DIR/hotspots.json" ;;
     *) return 1 ;;
   esac
 }
 
 usage() {
   cat <<'HELP'
-Unified maintainer test entrypoint for news-digest.
+Unified maintainer test entrypoint for news-hotspots.
 
 USAGE:
-  ./scripts/test-news-digest.sh full [--hours N] [--config DIR] [--verbose] [--force] [--skip a,b]
-  ./scripts/test-news-digest.sh step <rss|github|trending|api|twitter|reddit|v2ex|google|merge|summarize|validate> [--hours N] [--config DIR] [--verbose] [--force]
-  ./scripts/test-news-digest.sh health [--verbose]
-  ./scripts/test-news-digest.sh unit [tests.test_summarize tests.test_merge ...]
+  ./scripts/test-news-hotspots.sh full [--hours N] [--config DIR] [--verbose] [--force] [--skip a,b]
+  ./scripts/test-news-hotspots.sh step <rss|github|trending|api|twitter|reddit|v2ex|google|merge|hotspots|validate> [--hours N] [--config DIR] [--verbose] [--force]
+  ./scripts/test-news-hotspots.sh health [--verbose]
+  ./scripts/test-news-hotspots.sh unit [tests.test_hotspots tests.test_merge ...]
 
 OUTPUTS:
   full:
-    /tmp/news-digest/summary.json
-    /tmp/news-digest/debug/pipeline.meta.json
-    /tmp/news-digest/debug/rss.meta.json
-    /tmp/news-digest/debug/twitter.meta.json
-    /tmp/news-digest/debug/google.meta.json
-    /tmp/news-digest/debug/github.meta.json
-    /tmp/news-digest/debug/trending.meta.json
-    /tmp/news-digest/debug/api.meta.json
-    /tmp/news-digest/debug/v2ex.meta.json
-    /tmp/news-digest/debug/reddit.meta.json
-    /tmp/news-digest/debug/merge.meta.json
-    /tmp/news-digest/debug/summarize.meta.json
-    /tmp/news-digest/debug/rss.json
-    /tmp/news-digest/debug/twitter.json
-    /tmp/news-digest/debug/google.json
-    /tmp/news-digest/debug/github.json
-    /tmp/news-digest/debug/trending.json
-    /tmp/news-digest/debug/api.json
-    /tmp/news-digest/debug/v2ex.json
-    /tmp/news-digest/debug/reddit.json
-    /tmp/news-digest/debug/merged.json
-    workspace/archive/news-digest/<DATE>/json/summary.json
-    workspace/archive/news-digest/<DATE>/meta/*.meta.json
+    /tmp/news-hotspots/hotspots.json
+    /tmp/news-hotspots/debug/pipeline.meta.json
+    /tmp/news-hotspots/debug/rss.meta.json
+    /tmp/news-hotspots/debug/twitter.meta.json
+    /tmp/news-hotspots/debug/google.meta.json
+    /tmp/news-hotspots/debug/github.meta.json
+    /tmp/news-hotspots/debug/trending.meta.json
+    /tmp/news-hotspots/debug/api.meta.json
+    /tmp/news-hotspots/debug/v2ex.meta.json
+    /tmp/news-hotspots/debug/reddit.meta.json
+    /tmp/news-hotspots/debug/merge.meta.json
+    /tmp/news-hotspots/debug/hotspots.meta.json
+    /tmp/news-hotspots/debug/rss.json
+    /tmp/news-hotspots/debug/twitter.json
+    /tmp/news-hotspots/debug/google.json
+    /tmp/news-hotspots/debug/github.json
+    /tmp/news-hotspots/debug/trending.json
+    /tmp/news-hotspots/debug/api.json
+    /tmp/news-hotspots/debug/v2ex.json
+    /tmp/news-hotspots/debug/reddit.json
+    /tmp/news-hotspots/debug/merged.json
+    workspace/archive/news-hotspots/<DATE>/json/hotspots.json
+    workspace/archive/news-hotspots/<DATE>/meta/*.meta.json
   step:
-    /tmp/news-digest/debug/rss.json
-    /tmp/news-digest/debug/github.json
-    /tmp/news-digest/debug/trending.json
-    /tmp/news-digest/debug/api.json
-    /tmp/news-digest/debug/twitter.json
-    /tmp/news-digest/debug/reddit.json
-    /tmp/news-digest/debug/v2ex.json
-    /tmp/news-digest/debug/google.json
-    /tmp/news-digest/debug/merged.json
-    /tmp/news-digest/debug/summary.json
+    /tmp/news-hotspots/debug/rss.json
+    /tmp/news-hotspots/debug/github.json
+    /tmp/news-hotspots/debug/trending.json
+    /tmp/news-hotspots/debug/api.json
+    /tmp/news-hotspots/debug/twitter.json
+    /tmp/news-hotspots/debug/reddit.json
+    /tmp/news-hotspots/debug/v2ex.json
+    /tmp/news-hotspots/debug/google.json
+    /tmp/news-hotspots/debug/merged.json
+    /tmp/news-hotspots/debug/hotspots.json
   health:
     直接输出诊断报告到控制台
 HELP
@@ -174,7 +174,7 @@ run_full() {
     --defaults "$DEFAULTS_DIR"
     --hours "$HOURS"
     --archive-dir "$DEFAULT_ARCHIVE_ROOT_DIR"
-    --output "$SUMMARY_JSON"
+    --output "$HOTSPOTS_JSON"
     --debug-dir "$DEBUG_DIR"
   )
   if [ -n "$CONFIG_DIR" ] && [ -d "$CONFIG_DIR" ]; then
@@ -260,12 +260,12 @@ run_step() {
       run_cmd "${cmd[@]}"
       [ -f "$MERGED_JSON" ] || { echo "Missing output: $MERGED_JSON" >&2; exit 1; }
       ;;
-    summarize)
+    hotspots)
       [ -f "$MERGED_JSON" ] || { echo "Missing input: $MERGED_JSON" >&2; exit 1; }
-      local summary_output="$DEBUG_DIR/summary.json"
-      local cmd=(uv run "$SCRIPT_DIR/merge-summarize.py" --input "$MERGED_JSON" --output "$summary_output" --top 15)
+      local hotspots_output="$DEBUG_DIR/hotspots.json"
+      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --input "$MERGED_JSON" --output "$hotspots_output" --top 15)
       run_cmd "${cmd[@]}"
-      [ -f "$summary_output" ] || { echo "Missing output: $summary_output" >&2; exit 1; }
+      [ -f "$hotspots_output" ] || { echo "Missing output: $hotspots_output" >&2; exit 1; }
       ;;
     *)
       echo "Unknown step: $step" >&2
@@ -278,7 +278,7 @@ run_unit() {
   local modules=(
     tests.test_source_health
     tests.test_run_pipeline
-    tests.test_summarize
+    tests.test_hotspots
     tests.test_merge
     tests.test_config
   )

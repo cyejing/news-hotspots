@@ -3,7 +3,7 @@
 Fetch V2EX hot topics via bb-browser.
 
 Uses the installed `bb-browser site v2ex/hot` adapter to retrieve structured
-hot-topic data, converts it into the news-digest source format, and keeps
+hot-topic data, converts it into the news-hotspots source format, and keeps
 bb-browser calls serialized with a conservative cooldown after each success.
 
 Usage:
@@ -278,7 +278,7 @@ Examples:
 
     logger = setup_logging(args.verbose)
     if not args.output:
-        fd, temp_path = tempfile.mkstemp(prefix="news-digest-v2ex-", suffix=".json")
+        fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-v2ex-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
 

@@ -72,7 +72,7 @@ class TestLoadSources(unittest.TestCase):
                     ]
                 }
             }
-            overlay_path = Path(tmpdir) / "news-digest-sources.json"
+            overlay_path = Path(tmpdir) / "news-hotspots-sources.json"
             with open(overlay_path, "w", encoding="utf-8") as f:
                 json.dump(overlay, f)
 
@@ -93,7 +93,7 @@ class TestLoadSources(unittest.TestCase):
                     ]
                 }
             }
-            overlay_path = Path(tmpdir) / "news-digest-sources.json"
+            overlay_path = Path(tmpdir) / "news-hotspots-sources.json"
             with open(overlay_path, "w", encoding="utf-8") as f:
                 json.dump(overlay, f)
 
@@ -122,7 +122,7 @@ class TestLoadSources(unittest.TestCase):
                     ]
                 }
             }
-            overlay_path = Path(tmpdir) / "news-digest-sources.json"
+            overlay_path = Path(tmpdir) / "news-hotspots-sources.json"
             with open(overlay_path, "w", encoding="utf-8") as f:
                 json.dump(overlay, f)
 

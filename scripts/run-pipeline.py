@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Unified data collection pipeline for news-digest.
+Unified data collection pipeline for news-hotspots.
 
 Runs fetch steps, merges them into an internal JSON inside a debug directory,
-then renders a compact summary JSON for downstream prompt-writing flows.
+then renders a compact hotspots JSON for downstream prompt-writing flows.
 """
 
 import argparse
@@ -26,16 +26,16 @@ SCRIPTS_DIR = Path(__file__).parent
 DEFAULT_TIMEOUT = 2000
 MERGE_TIMEOUT = 300
 SUMMARY_TIMEOUT = 120
-DEFAULT_SUMMARY_TOP = 5
+DEFAULT_HOTSPOTS_TOP = 5
 ARCHIVE_RETENTION_DAYS = 90
 ERROR_TEXT_LIMIT = 180
 STEP_COOLDOWN_DEFAULTS = {
-    "fetch-twitter.py": ("BB_BROWSER_TWITTER_COOLDOWN_SECONDS", 8.0),
-    "fetch-reddit.py": ("BB_BROWSER_REDDIT_COOLDOWN_SECONDS", 6.0),
-    "fetch-google.py": ("BB_BROWSER_GOOGLE_COOLDOWN_SECONDS", 8.0),
-    "fetch-v2ex.py": ("BB_BROWSER_V2EX_COOLDOWN_SECONDS", 5.0),
-    "fetch-github.py": ("NEWS_DIGEST_GITHUB_COOLDOWN_SECONDS", 2.0),
-    "fetch-github-trending.py": ("NEWS_DIGEST_GITHUB_TRENDING_COOLDOWN_SECONDS", 2.0),
+    "fetch-twitter.py": ("BB_BROWSER_TWITTER_COOLDOWN_SECONDS", 10.0),
+    "fetch-reddit.py": ("BB_BROWSER_REDDIT_COOLDOWN_SECONDS", 8.0),
+    "fetch-google.py": ("BB_BROWSER_GOOGLE_COOLDOWN_SECONDS", 10.0),
+    "fetch-v2ex.py": ("BB_BROWSER_V2EX_COOLDOWN_SECONDS", 8.0),
+    "fetch-github.py": ("NEWS_HOTSPOTS_GITHUB_COOLDOWN_SECONDS", 6.0),
+    "fetch-github-trending.py": ("NEWS_HOTSPOTS_GITHUB_TRENDING_COOLDOWN_SECONDS", 6.0),
 }
 
 
@@ -125,11 +125,11 @@ def resolve_debug_dir(debug_dir: Optional[Path]) -> Path:
     if debug_dir:
         debug_dir.mkdir(parents=True, exist_ok=True)
         return debug_dir
-    return Path(tempfile.mkdtemp(prefix="news-digest-pipeline-"))
+    return Path(tempfile.mkdtemp(prefix="news-hotspots-pipeline-"))
 
 
 def resolve_unique_output_path(path: Path) -> Path:
-    if path == Path("/tmp/summary.json"):
+    if path == Path("/tmp/hotspots.json"):
         return path
     if not path.exists():
         return path
@@ -164,7 +164,7 @@ def cleanup_archive_root(archive_root: Path, retention_days: int = ARCHIVE_RETEN
 
 def archive_outputs(
     archive_root: Optional[Path],
-    summary_output: Path,
+    hotspots_output: Path,
     pipeline_meta_output: Path,
     step_meta_paths: Dict[str, str],
 ) -> Dict[str, Any]:
@@ -183,10 +183,10 @@ def archive_outputs(
         "meta_dir": str(meta_dir),
     }
 
-    if summary_output.exists():
-        archived_summary = resolve_unique_output_path(json_dir / summary_output.name)
-        shutil.copy2(summary_output, archived_summary)
-        archived["summary_json"] = str(archived_summary)
+    if hotspots_output.exists():
+        archived_hotspots = resolve_unique_output_path(json_dir / hotspots_output.name)
+        shutil.copy2(hotspots_output, archived_hotspots)
+        archived["hotspots_json"] = str(archived_hotspots)
 
     if pipeline_meta_output.exists():
         archived_pipeline_meta = resolve_unique_output_path(meta_dir / pipeline_meta_output.name)
@@ -221,7 +221,7 @@ def extract_items_from_payload(payload: Optional[Dict[str, Any]], fallback: int 
     )
 
 
-def summarize_payload_details(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def collect_payload_details(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not payload:
         return {}
 
@@ -296,7 +296,7 @@ def summarize_payload_details(payload: Optional[Dict[str, Any]]) -> Dict[str, An
                 "drop_ratio": round(dropped / total_input, 3) if total_input else 0.0,
             }
     if "topic_order" in payload and isinstance(payload["topic_order"], list):
-        details["summary_stats"] = {
+        details["hotspots_stats"] = {
             "total_articles": payload.get("total_articles", 0),
             "topic_count": len(payload["topic_order"]),
             "topic_order": payload["topic_order"],
@@ -427,7 +427,7 @@ def extract_failed_items(payload: Optional[Dict[str, Any]], limit: int = 10) -> 
 
 
 def build_diagnostics(payload: Optional[Dict[str, Any]], process_result: ProcessResult, step_key: str) -> StepMeta:
-    details = summarize_payload_details(payload)
+    details = collect_payload_details(payload)
     items = extract_items_from_payload(payload)
     call_stats = extract_call_stats(payload, step_key=step_key, status=process_result.status)
     failed_items = extract_failed_items(payload)
@@ -720,13 +720,13 @@ def run_merge_step(debug_dir: Path, archive_dir: Optional[Path], verbose: bool) 
     return spec, result, meta_path
 
 
-def run_summary_step(debug_dir: Path, summary_output: Path, summary_top: int) -> Tuple[StepSpec, Dict[str, Any], Path]:
+def run_hotspots_step(debug_dir: Path, hotspots_output: Path, hotspots_top: int) -> Tuple[StepSpec, Dict[str, Any], Path]:
     spec = StepSpec(
-        "summarize",
-        "Summarize",
-        "merge-summarize.py",
-        ["--input", str(debug_dir / "merged.json"), "--top", str(summary_top)],
-        summary_output,
+        "hotspots",
+        "Hotspots",
+        "merge-hotspots.py",
+        ["--input", str(debug_dir / "merged.json"), "--top", str(hotspots_top)],
+        hotspots_output,
         None,
     )
     if not (debug_dir / "merged.json").exists():
@@ -766,8 +766,8 @@ def write_pipeline_meta(
     step_results: List[Dict[str, Any]],
     step_meta_paths: Dict[str, str],
     merge_result: Dict[str, Any],
-    summary_result: Dict[str, Any],
-    summary_output: Path,
+    hotspots_result: Dict[str, Any],
+    hotspots_output: Path,
     fetch_elapsed: float,
     total_elapsed: float,
 ) -> Path:
@@ -776,12 +776,12 @@ def write_pipeline_meta(
     ok_calls = (
         sum(1 for result in step_results if result.get("status") == "ok")
         + (1 if merge_result.get("status") == "ok" else 0)
-        + (1 if summary_result.get("status") == "ok" else 0)
+        + (1 if hotspots_result.get("status") == "ok" else 0)
     )
     failed_calls = (
         sum(1 for result in step_results if result.get("status") in {"error", "timeout"})
         + (1 if merge_result.get("status") in {"error", "timeout"} else 0)
-        + (1 if summary_result.get("status") in {"error", "timeout"} else 0)
+        + (1 if hotspots_result.get("status") in {"error", "timeout"} else 0)
     )
 
     meta = {
@@ -789,7 +789,7 @@ def write_pipeline_meta(
         "debug_dir": str(debug_dir),
         "total_elapsed_s": round(total_elapsed, 1),
         "fetch_elapsed_s": round(fetch_elapsed, 1),
-        "overall_status": "error" if merge_result["status"] != "ok" or summary_result["status"] != "ok" else "ok",
+        "overall_status": "error" if merge_result["status"] != "ok" or hotspots_result["status"] != "ok" else "ok",
         "steps": step_results,
         "step_meta_paths": step_meta_paths,
         "items": pipeline_items,
@@ -799,12 +799,12 @@ def write_pipeline_meta(
             "ok_calls": ok_calls,
             "failed_calls": failed_calls,
         },
-        "failed_items": build_pipeline_failed_items(step_results, [merge_result, summary_result]),
+        "failed_items": build_pipeline_failed_items(step_results, [merge_result, hotspots_result]),
         "merge": merge_result,
-        "summary_format": "json",
-        "summary_status": summary_result.get("status"),
-        "summary_elapsed_s": summary_result.get("elapsed_s"),
-        "summary_output": str(summary_output),
+        "hotspots_format": "json",
+        "hotspots_status": hotspots_result.get("status"),
+        "hotspots_elapsed_s": hotspots_result.get("elapsed_s"),
+        "hotspots_output": str(hotspots_output),
     }
     write_json(meta_output, meta)
     return meta_output
@@ -816,32 +816,32 @@ def log_pipeline_summary(
     total_elapsed: float,
     step_results: List[Dict[str, Any]],
     merge_result: Dict[str, Any],
-    summary_result: Dict[str, Any],
-    summary_output: Path,
+    hotspots_result: Dict[str, Any],
+    hotspots_output: Path,
     meta_output: Path,
     debug_dir: Path,
 ) -> None:
     logger.info("%s", "=" * 50)
     logger.info("📊 Pipeline Summary (%.1fs total)", total_elapsed)
-    for result in [*step_results, merge_result, summary_result]:
+    for result in [*step_results, merge_result, hotspots_result]:
         logger.info("   %-14s %-8s %4d items %6.1fs", result["name"], result["status"], result["items"], result["elapsed_s"])
-    logger.info("   Summary: %s", summary_output)
+    logger.info("   Hotspots: %s", hotspots_output)
     logger.info("   Meta: %s", meta_output)
     logger.info("   Debug Dir: %s", debug_dir)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the full news-digest pipeline and produce a compact summary output.",
+        description="Run the full news-hotspots pipeline and produce a compact hotspots output.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Skill defaults config dir")
     parser.add_argument("--config", type=Path, default=Path("workspace/config"), help="User config overlay dir (default: workspace/config)")
     parser.add_argument("--hours", type=int, default=48, help="Time window in hours")
-    parser.add_argument("--archive-dir", type=Path, default=Path("workspace/archive/news-digest"), help="Archive root dir for previous summary JSON files (default: workspace/archive/news-digest)")
-    parser.add_argument("--output", "-o", type=Path, required=True, help="Required output path for summary.json")
+    parser.add_argument("--archive-dir", type=Path, default=Path("workspace/archive/news-hotspots"), help="Archive root dir for previous hotspots JSON files (default: workspace/archive/news-hotspots)")
+    parser.add_argument("--output", "-o", type=Path, required=True, help="Required output path for hotspots.json")
     parser.add_argument("--debug-dir", type=Path, default=None, help="Directory for debug and intermediate files")
-    parser.add_argument("--summary-top", type=int, default=DEFAULT_SUMMARY_TOP, help="Top N items per topic in summary output")
+    parser.add_argument("--hotspots-top", type=int, default=DEFAULT_HOTSPOTS_TOP, help="Top N items per topic in hotspots output")
     parser.add_argument("--step-timeout", type=int, default=DEFAULT_TIMEOUT, help="Per-step timeout in seconds (default: 1800)")
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--force", action="store_true", help="Force re-fetch ignoring caches")
@@ -855,14 +855,14 @@ def main() -> int:
     skip_steps = {item.strip().lower() for item in args.skip.split(",") if item.strip()}
     config_dir = args.config if args.config and args.config.exists() else None
     debug_dir = resolve_debug_dir(args.debug_dir)
-    summary_output = resolve_unique_output_path(args.output)
+    hotspots_output = resolve_unique_output_path(args.output)
 
     if args.archive_dir:
         args.archive_dir.mkdir(parents=True, exist_ok=True)
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
     logger.info("📁 Debug directory: %s", debug_dir)
-    logger.info("📝 Summary JSON output: %s", summary_output)
+    logger.info("📝 Hotspots JSON output: %s", hotspots_output)
     if args.config and not args.config.exists():
         logger.info("ℹ️ Config overlay not found, using defaults only: %s", args.config)
     if args.archive_dir:
@@ -894,13 +894,13 @@ def main() -> int:
     step_meta_paths["merge"] = str(merge_meta_path)
 
     if merge_result["status"] == "ok":
-        logger.info("🧾 Rendering summary...")
-        _, summary_result, summarize_meta_path = run_summary_step(debug_dir, summary_output, args.summary_top)
+        logger.info("🧾 Rendering hotspots...")
+        _, hotspots_result, hotspots_meta_path = run_hotspots_step(debug_dir, hotspots_output, args.hotspots_top)
     else:
-        summary_spec = StepSpec("summarize", "Summarize", "merge-summarize.py", [], summary_output, None)
-        skipped_summary = make_process_result(spec=summary_spec, status="skipped", timeout=SUMMARY_TIMEOUT)
-        summary_result, summarize_meta_path = finalize_step(debug_dir, summary_spec, skipped_summary)
-    step_meta_paths["summarize"] = str(summarize_meta_path)
+        hotspots_spec = StepSpec("hotspots", "Hotspots", "merge-hotspots.py", [], hotspots_output, None)
+        skipped_hotspots = make_process_result(spec=hotspots_spec, status="skipped", timeout=SUMMARY_TIMEOUT)
+        hotspots_result, hotspots_meta_path = finalize_step(debug_dir, hotspots_spec, skipped_hotspots)
+    step_meta_paths["hotspots"] = str(hotspots_meta_path)
 
     total_elapsed = time.time() - t_start
     meta_output = write_pipeline_meta(
@@ -908,18 +908,18 @@ def main() -> int:
         step_results=step_results,
         step_meta_paths=step_meta_paths,
         merge_result=merge_result,
-        summary_result=summary_result,
-        summary_output=summary_output,
+        hotspots_result=hotspots_result,
+        hotspots_output=hotspots_output,
         fetch_elapsed=fetch_elapsed,
         total_elapsed=total_elapsed,
     )
 
     removed_archive_dirs = cleanup_archive_root(args.archive_dir) if args.archive_dir else 0
-    archived_outputs = archive_outputs(args.archive_dir, summary_output, meta_output, step_meta_paths)
+    archived_outputs = archive_outputs(args.archive_dir, hotspots_output, meta_output, step_meta_paths)
     if removed_archive_dirs:
         logger.info("🧹 Removed %d expired archive date directories", removed_archive_dirs)
-    if archived_outputs.get("summary_json"):
-        logger.info("🗂️  Archived summary JSON: %s", archived_outputs["summary_json"])
+    if archived_outputs.get("hotspots_json"):
+        logger.info("🗂️  Archived hotspots JSON: %s", archived_outputs["hotspots_json"])
     if archived_outputs.get("pipeline_meta"):
         logger.info("🗂️  Archived meta dir: %s", archived_outputs.get("meta_dir"))
 
@@ -937,8 +937,8 @@ def main() -> int:
         total_elapsed=total_elapsed,
         step_results=step_results,
         merge_result=merge_result,
-        summary_result=summary_result,
-        summary_output=summary_output,
+        hotspots_result=hotspots_result,
+        hotspots_output=hotspots_output,
         meta_output=meta_output,
         debug_dir=debug_dir,
     )
@@ -946,11 +946,11 @@ def main() -> int:
     if merge_result["status"] != "ok":
         logger.error("❌ Merge failed: %s", merge_result["stderr_tail"])
         return 1
-    if summary_result["status"] != "ok":
-        logger.error("❌ Summary failed: %s", summary_result["stderr_tail"])
+    if hotspots_result["status"] != "ok":
+        logger.error("❌ Hotspots failed: %s", hotspots_result["stderr_tail"])
         return 1
 
-    logger.info("✅ Done → %s", summary_output)
+    logger.info("✅ Done → %s", hotspots_output)
     return 0
 
 

@@ -1169,7 +1169,7 @@ wheels = [
 ]
 
 [[package]]
-name = "news-digest"
+name = "news-hotspots"
 version = "3.18.0"
 source = { virtual = "." }
 dependencies = [

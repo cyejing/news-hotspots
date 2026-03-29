@@ -20,7 +20,7 @@ spec.loader.exec_module(fetch_github_trending)
 
 class TestFetchGithubTrending(unittest.TestCase):
     def test_get_github_trending_cooldown_seconds(self):
-        with patch.dict(os.environ, {"NEWS_DIGEST_GITHUB_TRENDING_COOLDOWN_SECONDS": "3.5"}):
+        with patch.dict(os.environ, {"NEWS_HOTSPOTS_GITHUB_TRENDING_COOLDOWN_SECONDS": "3.5"}):
             self.assertEqual(fetch_github_trending.get_github_trending_cooldown_seconds(), 3.5)
 
     def test_load_queries_only_reads_github_topic(self):

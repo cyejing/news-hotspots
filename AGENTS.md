@@ -1,30 +1,30 @@
 # Agents
 
-维护 `news-digest` 时，优先遵循这里的规则；用户向说明和大模型主流程以 [SKILL.md](/Users/chenyejing/project/news-digest/SKILL.md) 与 [digest-prompt.md](/Users/chenyejing/project/news-digest/references/digest-prompt.md) 为准。
+维护 `news-hotspots` 时，优先遵循这里的规则；用户向说明和大模型主流程以 [SKILL.md](/Users/chenyejing/project/news-hotspots/SKILL.md) 与 [hotspot-prompt.md](/Users/chenyejing/project/news-hotspots/references/hotspot-prompt.md) 为准。
 
 ## 项目心智
 
-- 主入口是 [run-pipeline.py](/Users/chenyejing/project/news-digest/scripts/run-pipeline.py)
-- 最终给大模型的唯一推荐输入是 `/tmp/summary.json`
-- 合并、评分、去重、topic 分组都在 [merge-sources.py](/Users/chenyejing/project/news-digest/scripts/merge-sources.py)
-- 精简摘要 JSON 由 [merge-summarize.py](/Users/chenyejing/project/news-digest/scripts/merge-summarize.py) 生成
-- 当前运行诊断看 `<WORKSPACE>/archive/news-digest/<DATE>/meta/` 中的 `*.meta.json`
-- 最近 7 天历史诊断看 `<WORKSPACE>/archive/news-digest/` 下最近 7 天的 `<DATE>/meta/`
+- 主入口是 [run-pipeline.py](/Users/chenyejing/project/news-hotspots/scripts/run-pipeline.py)
+- 最终给大模型的唯一推荐输入是 `/tmp/hotspots.json`
+- 合并、评分、去重、topic 分组都在 [merge-sources.py](/Users/chenyejing/project/news-hotspots/scripts/merge-sources.py)
+- 精简热点 JSON 由 [merge-hotspots.py](/Users/chenyejing/project/news-hotspots/scripts/merge-hotspots.py) 生成
+- 当前运行诊断看 `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/` 中的 `*.meta.json`
+- 最近 7 天历史诊断看 `<WORKSPACE>/archive/news-hotspots/` 下最近 7 天的 `<DATE>/meta/`
 - 文档和脚本中的路径语义统一使用 `<SKILL_DIR>` 与 `<WORKSPACE>`，不要依赖当前 shell 的相对路径
 - `run-pipeline.py` 是长耗时脚本；如果运行环境支持 subagent、后台代理或长任务执行，应优先用这种方式运行，并允许和脚本默认 timeout 匹配的执行时间
-- 同一台机器上不要并发运行多个摘要任务；`/tmp/summary.json` 是固定路径，并发运行会互相覆盖
+- 同一台机器上不要并发运行多个热点任务；`/tmp/hotspots.json` 是固定路径，并发运行会互相覆盖
 
 工作区覆盖顺序：
 
-1. `<WORKSPACE>/config/news-digest-sources.json`
-2. `<WORKSPACE>/config/news-digest-topics.json`
+1. `<WORKSPACE>/config/news-hotspots-sources.json`
+2. `<WORKSPACE>/config/news-hotspots-topics.json`
 3. `<SKILL_DIR>/config/defaults/`
 
 归档目录：
 
-- `<WORKSPACE>/archive/news-digest/<DATE>/json/`
-- `<WORKSPACE>/archive/news-digest/<DATE>/markdown/`
-- `<WORKSPACE>/archive/news-digest/<DATE>/meta/`
+- `<WORKSPACE>/archive/news-hotspots/<DATE>/json/`
+- `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/`
+- `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/`
 
 推荐主命令：
 
@@ -32,9 +32,9 @@
 uv run <SKILL_DIR>/scripts/run-pipeline.py \
   --defaults <SKILL_DIR>/config/defaults \
   --config <WORKSPACE>/config \
-  --archive-dir <WORKSPACE>/archive/news-digest \
+  --archive-dir <WORKSPACE>/archive/news-hotspots \
   --hours 48 \
-  --output /tmp/summary.json \
+  --output /tmp/hotspots.json \
   --verbose --force
 ```
 
@@ -59,7 +59,7 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
   - 报告固定为：
     - `History report`
     - `Run details`
-- `test-news-digest.sh`
+- `test-news-hotspots.sh`
   - 保持统一调度入口，不要重新扩散成多个测试脚本
   - step 脚本映射、输出路径映射、公共参数拼装应集中维护
 - `merge-sources.py`
@@ -130,9 +130,9 @@ RSS 默认池规则：
 
 如果改评分、去重或 topic 行为，优先同步检查：
 
-- [merge-sources.py](/Users/chenyejing/project/news-digest/scripts/merge-sources.py)
-- [merge-summarize.py](/Users/chenyejing/project/news-digest/scripts/merge-summarize.py)
-- [references/digest-prompt.md](/Users/chenyejing/project/news-digest/references/digest-prompt.md)
+- [merge-sources.py](/Users/chenyejing/project/news-hotspots/scripts/merge-sources.py)
+- [merge-hotspots.py](/Users/chenyejing/project/news-hotspots/scripts/merge-hotspots.py)
+- [references/hotspot-prompt.md](/Users/chenyejing/project/news-hotspots/references/hotspot-prompt.md)
 
 ## 限流规则
 
@@ -188,19 +188,19 @@ uv run <SKILL_DIR>/scripts/validate-config.py --defaults <SKILL_DIR>/config/defa
 当前运行诊断：
 
 ```bash
-uv run <SKILL_DIR>/scripts/source-health.py --input-dir <WORKSPACE>/archive/news-digest/<DATE>/meta --verbose
+uv run <SKILL_DIR>/scripts/source-health.py --input-dir <WORKSPACE>/archive/news-hotspots/<DATE>/meta --verbose
 ```
 
 最近 7 天历史诊断：
 
 ```bash
-uv run <SKILL_DIR>/scripts/source-health.py --input-dir <WORKSPACE>/archive/news-digest --verbose
+uv run <SKILL_DIR>/scripts/source-health.py --input-dir <WORKSPACE>/archive/news-hotspots --verbose
 ```
 
 说明：
 
 - `run-pipeline.py` 会在 debug 目录下写每个步骤的 `.meta.json`
-- `run-pipeline.py` 也会把 `summary.json` 和 `meta/` 归档到 `<WORKSPACE>/archive/news-digest/<DATE>/`
+- `run-pipeline.py` 也会把 `hotspots.json` 和 `meta/` 归档到 `<WORKSPACE>/archive/news-hotspots/<DATE>/`
 - `source-health.py` 只读取 meta，不再回读原始结果 JSON
 - step meta 的核心字段是：
   - `status`
@@ -214,19 +214,19 @@ uv run <SKILL_DIR>/scripts/source-health.py --input-dir <WORKSPACE>/archive/news
 
 ## 测试入口
 
-统一使用 [test-news-digest.sh](/Users/chenyejing/project/news-digest/scripts/test-news-digest.sh)。测试输出固定在 `/tmp/news-digest/`。
+统一使用 [test-news-hotspots.sh](/Users/chenyejing/project/news-hotspots/scripts/test-news-hotspots.sh)。测试输出固定在 `/tmp/news-hotspots/`。
 
 ```bash
-uv run <SKILL_DIR>/scripts/test-news-digest.sh full
-uv run <SKILL_DIR>/scripts/test-news-digest.sh step rss
-uv run <SKILL_DIR>/scripts/test-news-digest.sh step merge
-uv run <SKILL_DIR>/scripts/test-news-digest.sh step summarize
-uv run <SKILL_DIR>/scripts/test-news-digest.sh health
-uv run <SKILL_DIR>/scripts/test-news-digest.sh unit
+uv run <SKILL_DIR>/scripts/test-news-hotspots.sh full
+uv run <SKILL_DIR>/scripts/test-news-hotspots.sh step rss
+uv run <SKILL_DIR>/scripts/test-news-hotspots.sh step merge
+uv run <SKILL_DIR>/scripts/test-news-hotspots.sh step hotspots
+uv run <SKILL_DIR>/scripts/test-news-hotspots.sh health
+uv run <SKILL_DIR>/scripts/test-news-hotspots.sh unit
 ```
 
 补充：
 
-- `full` 会产出 `/tmp/news-digest/summary.json`，并把步骤诊断元数据归档到 `<WORKSPACE>/archive/news-digest/<DATE>/meta/`
-- 单步骤测试复用 `/tmp/news-digest/` 下固定文件名
-- 历史去重默认读取 `<WORKSPACE>/archive/news-digest/` 下所有日期目录中的 `json/`
+- `full` 会产出 `/tmp/news-hotspots/hotspots.json`，并把步骤诊断元数据归档到 `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/`
+- 单步骤测试复用 `/tmp/news-hotspots/` 下固定文件名
+- 历史去重默认读取 `<WORKSPACE>/archive/news-hotspots/` 下所有日期目录中的 `json/`

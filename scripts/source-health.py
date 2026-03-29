@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Step health diagnostics for news-digest pipeline.
+Step health diagnostics for news-hotspots pipeline.
 
 Reads per-step metadata JSON files and prints current and recent historical
 diagnostics directly from those metadata files.
@@ -23,7 +23,7 @@ REPORT_LIMIT = 20
 ERROR_TEXT_LIMIT = 180
 META_FILE_RE = re.compile(r".*\.meta\d*\.json$")
 META_SUFFIX_RE = re.compile(r"\.meta(\d*)\.json$")
-DEFAULT_INPUT_DIR = Path("/tmp/news-digest/debug")
+DEFAULT_INPUT_DIR = Path("/tmp/news-hotspots/debug")
 
 
 @dataclass
@@ -188,10 +188,10 @@ def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = 
     failed_steps = [step.get("name", "unknown") for step in steps if step.get("status") in {"error", "timeout"}]
     skipped_steps = [step.get("name", "unknown") for step in steps if step.get("status") == "skipped"]
     merge_status = meta.get("merge", {}).get("status", "error") if isinstance(meta.get("merge"), dict) else "error"
-    summary_status = meta.get("summary_status", "error")
+    hotspots_status = meta.get("hotspots_status", "error")
     overall_status = meta.get("overall_status", "error")
 
-    if overall_status in {"error", "timeout"} or merge_status != "ok" or summary_status != "ok":
+    if overall_status in {"error", "timeout"} or merge_status != "ok" or hotspots_status != "ok":
         state = "error"
     elif failed_steps:
         state = "error"
@@ -225,7 +225,7 @@ def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = 
                 "fetch_elapsed_s": meta.get("fetch_elapsed_s", 0),
                 "failed_steps": failed_steps,
                 "skipped_steps": skipped_steps,
-                "summary_status": summary_status,
+                "hotspots_status": hotspots_status,
                 "step_count": len(steps),
             }
         },

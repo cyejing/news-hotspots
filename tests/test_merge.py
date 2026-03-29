@@ -31,7 +31,7 @@ group_by_topics = merge_mod.group_by_topics
 DOMAIN_LIMIT_EXEMPT = merge_mod.DOMAIN_LIMIT_EXEMPT
 calculate_v2ex_replies_bonus = merge_mod.calculate_v2ex_replies_bonus
 calculate_recency_bonus = merge_mod.calculate_recency_bonus
-load_previous_digests = merge_mod.load_previous_digests
+load_previous_hotspots = merge_mod.load_previous_hotspots
 
 
 def load_fixture(name):
@@ -303,7 +303,7 @@ class TestDateHandling(unittest.TestCase):
         bonus = calculate_recency_bonus({"date": naive_date})
         self.assertGreaterEqual(bonus, 1.0)
 
-    def test_load_previous_digests_uses_timezone_safe_cutoff(self):
+    def test_load_previous_hotspots_uses_timezone_safe_cutoff(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             archive_dir = Path(tmpdir)
             dated_json_dir = archive_dir / "2026-03-27" / "json"
@@ -326,7 +326,7 @@ class TestDateHandling(unittest.TestCase):
                 json.dumps(payload),
                 encoding="utf-8",
             )
-            titles = load_previous_digests(archive_dir, days=14)
+            titles = load_previous_hotspots(archive_dir, days=14)
             self.assertIn("Recent Story", titles)
 
 

@@ -53,7 +53,7 @@ MAX_WORKERS = 10
 MAX_ARTICLES_PER_FEED = 20
 RETRY_COUNT = 1
 RETRY_DELAY = 2.0  # seconds
-RSS_CACHE_PATH = "/tmp/news-digest-rss-cache.json"
+RSS_CACHE_PATH = "/tmp/news-hotspots-rss-cache.json"
 RSS_CACHE_TTL_HOURS = 24
 
 
@@ -522,7 +522,7 @@ def load_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[
 def main():
     """Main RSS fetching function."""
     parser = argparse.ArgumentParser(
-        description="Parallel RSS/Atom feed fetcher for news-digest. "
+        description="Parallel RSS/Atom feed fetcher for news-hotspots. "
                    "Fetches enabled RSS sources from unified configuration, "
                    "filters by time window, and outputs structured article data.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -594,7 +594,7 @@ Examples:
     
     # Auto-generate unique output path if not specified
     if not args.output:
-        fd, temp_path = tempfile.mkstemp(prefix="news-digest-rss-", suffix=".json")
+        fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-rss-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
     

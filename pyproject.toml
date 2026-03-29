@@ -1,7 +1,7 @@
 [project]
-name = "news-digest"
+name = "news-hotspots"
 version = "3.18.0"
-description = "Automated news digest system with unified data sources, quality scoring, and markdown output"
+description = "Automated news hotspots system with unified data sources, quality scoring, and markdown output"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GitHub Trending 仓库抓取脚本 - 用于 news-digest 技能。
+GitHub Trending 仓库抓取脚本 - 用于 news-hotspots 技能。
 
 通过 GitHub Search API 抓取热门仓库，支持从 topics.json 配置文件加载查询。
 按星标数排序，估算每日星标增长率。
@@ -43,8 +43,8 @@ from urllib.error import HTTPError, URLError
 
 # ==================== 常量配置 ====================
 TIMEOUT = 60  # 请求超时时间（秒）
-USER_AGENT = "NewsDigest/3.0 (bot; +https://github.com/cyejing/news-digest)"
-GITHUB_TRENDING_COOLDOWN_ENV = "NEWS_DIGEST_GITHUB_TRENDING_COOLDOWN_SECONDS"
+USER_AGENT = "NewsHotspots/3.0 (bot; +https://github.com/cyejing/news-hotspots)"
+GITHUB_TRENDING_COOLDOWN_ENV = "NEWS_HOTSPOTS_GITHUB_TRENDING_COOLDOWN_SECONDS"
 GITHUB_TRENDING_COOLDOWN_DEFAULT = 2.0
 
 
@@ -413,7 +413,7 @@ Examples:
         "repos": repos,
     }
 
-    out_path = args.output or Path(tempfile.mkstemp(prefix="news-digest-trending-", suffix=".json")[1])
+    out_path = args.output or Path(tempfile.mkstemp(prefix="news-hotspots-trending-", suffix=".json")[1])
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
 

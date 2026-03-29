@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Configuration validation script for news-digest.
+Configuration validation script for news-hotspots.
 
 Validates sources.json and topics.json against JSON Schema and performs
 additional consistency checks.
@@ -210,7 +210,7 @@ def validate_source_types(sources_data: Dict[str, Any]) -> bool:
 def main():
     """Main validation function."""
     parser = argparse.ArgumentParser(
-        description="Validate news-digest configuration files",
+        description="Validate news-hotspots configuration files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

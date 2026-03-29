@@ -28,9 +28,9 @@ TIMEOUT = 60
 MAX_RELEASES_PER_REPO = 20
 RETRY_COUNT = 2
 RETRY_DELAY = 2.0  # seconds
-GITHUB_CACHE_PATH = "/tmp/news-digest-github-cache.json"
+GITHUB_CACHE_PATH = "/tmp/news-hotspots-github-cache.json"
 GITHUB_CACHE_TTL_HOURS = 24
-GITHUB_COOLDOWN_ENV = "NEWS_DIGEST_GITHUB_COOLDOWN_SECONDS"
+GITHUB_COOLDOWN_ENV = "NEWS_HOTSPOTS_GITHUB_COOLDOWN_SECONDS"
 GITHUB_COOLDOWN_DEFAULT = 2.0
 
 
@@ -101,7 +101,7 @@ def _generate_github_app_token(app_id: str, install_id: str, key_file: str) -> s
         headers={
             'Authorization': f'Bearer {jwt}',
             'Accept': 'application/vnd.github+json',
-            'User-Agent': 'news-digest',
+            'User-Agent': 'news-hotspots',
         },
     )
     with urlopen(req, timeout=15) as resp:
@@ -285,7 +285,7 @@ def fetch_releases_with_retry(source: Dict[str, Any], cutoff: datetime, github_t
     
     # Setup headers
     headers = {
-        "User-Agent": "NewsDigest/2.0",
+        "User-Agent": "NewsHotspots/2.0",
         "Accept": "application/vnd.github.v3+json",
     }
     if github_token:
@@ -435,7 +435,7 @@ def load_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[
 def main():
     """Main GitHub releases fetching function."""
     parser = argparse.ArgumentParser(
-        description="Sequential GitHub releases fetcher for news-digest. "
+        description="Sequential GitHub releases fetcher for news-hotspots. "
                    "Fetches enabled GitHub sources from unified configuration, "
                     "filters by time window, and outputs structured release data.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -510,7 +510,7 @@ Environment Variables:
     
     # Auto-generate unique output path if not specified
     if not args.output:
-        fd, temp_path = tempfile.mkstemp(prefix="news-digest-github-", suffix=".json")
+        fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-github-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
     

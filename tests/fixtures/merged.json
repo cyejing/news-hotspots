@@ -11,7 +11,7 @@
   "processing": {
     "deduplication_applied": true,
     "multi_source_merging": true,
-    "previous_digest_penalty": false,
+    "previous_hotspots_penalty": false,
     "quality_scoring": true
   },
   "output_stats": {

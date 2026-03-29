@@ -220,7 +220,7 @@ Examples:
 
     logger = setup_logging(args.verbose)
     if not args.output:
-        fd, temp_path = tempfile.mkstemp(prefix="news-digest-twitter-", suffix=".json")
+        fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-twitter-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
 
