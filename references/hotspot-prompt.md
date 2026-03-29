@@ -1,6 +1,6 @@
 # 热点提示模板
 
-使用前替换 `<...>` 占位符。严格按下面流程执行，不要自行改写脚本步骤。
+使用前替换 `<...>` 占位符。严格按下面流程执行。
 
 ## 占位符
 
@@ -28,12 +28,7 @@
      --output /tmp/hotspots.json \
      --verbose --force
    ```
-   - 这是明显的长耗时任务。执行前先判断当前环境是否支持 subagent
-   - 如果支持 subagent，强烈要求优先并默认使用 subagent 运行这个命令，不要让主对话直接以前台同步方式阻塞执行
-   - 只有在确认当前环境不支持 subagent 时，才允许查看当前环境适合哪种长任务运行方式，再选择替代方案
-2. 只读取：
-    - `/tmp/hotspots.json`
-   - 不要读取 `meta/` 或任何 fetch 结果 JSON；诊断信息只在排障时才需要
+2. 只读取 `/tmp/hotspots.json`
 3. 根据 `hotspots.json` 写 Markdown
 4. 将 Markdown 保存到 `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/`
 5. 不要并发运行多个热点任务；`/tmp/hotspots.json` 是固定路径，并发运行会互相覆盖
@@ -42,13 +37,30 @@
 
 - 只根据 `hotspots.json` 选材，不要自己重新打分或重排
 - 使用 `hotspots.json` 中的 topic 顺序和 item 排序
-- Markdown 按 topic 分类输出
-- 每条至少包含：emoji、评分、标题、链接、来源
-- 若 `metrics` 中有 likes/comments/replies/retweets/score，则一并展示
-- 优先使用活跃感较强的 emoji，例如 `🔥` `🚀` `🧠` `⚠️` `💬`
-- 分数可四舍五入到 1 位小数
-- `<EXTRA_SECTIONS>` 只有在 weekly 时输出
+- 每条尽量 2 行看完
 - 使用 `<LANGUAGE>` 撰写全文
+
+## 固定格式
+
+按下面模板输出，不要自定义结构：
+
+```markdown
+# <DATE> <MODE> 全球科技与 AI 热点
+## <Topic Title 1>
+- 1. ⭐<Score> | [<Title>](<URL>)
+  指标：likes=<n>, comments=<n>, replies=<n>, retweets=<n>, score=<n> | 来源：<Source Name>
+## <Topic Title 2>
+- 1. ⭐<Score> | [<Title>](<URL>)
+  来源：<Source Name>
+<EXTRA_SECTIONS>
+```
+
+- 第一行固定为：编号 + `⭐8.7` 这种评分 + 带链接标题
+- 第二行固定为：`来源：...` 或 `指标：... | 来源：...`
+- 标题必须使用 Markdown 超链接格式 `[标题](链接)`
+- 不要省略 topic 标题
+- 每条 item 尽量控制在 2 行内
+- 不要额外输出摘要、导语或扩展说明
 
 ## 输出与归档
 
@@ -59,5 +71,6 @@
 
 ## 禁止事项
 
-- 不要直接读取内部中间 JSON，也不要编写临时 Python 去重新解析它们
+- 不要读取内部中间 JSON，也不要编写临时 Python 去重新解析它们
 - 不要复制或改写脚本流程
+- subagent 不能对返回结果进行摘要、节选或压缩，必须返回完整 Markdown 原文

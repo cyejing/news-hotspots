@@ -173,6 +173,7 @@ def archive_outputs(
 
     today_dir = archive_root / datetime.now(timezone.utc).date().isoformat()
     json_dir = today_dir / "json"
+    markdown_dir = today_dir / "markdown"
     meta_dir = today_dir / "meta"
     json_dir.mkdir(parents=True, exist_ok=True)
     meta_dir.mkdir(parents=True, exist_ok=True)
@@ -180,6 +181,7 @@ def archive_outputs(
     archived: Dict[str, Any] = {
         "date_dir": str(today_dir),
         "json_dir": str(json_dir),
+        "markdown_dir": str(markdown_dir),
         "meta_dir": str(meta_dir),
     }
 
@@ -950,6 +952,9 @@ def main() -> int:
         logger.error("❌ Hotspots failed: %s", hotspots_result["stderr_tail"])
         return 1
 
+    final_markdown_dir = str((args.archive_dir or Path("workspace/archive/news-hotspots")) / datetime.now(timezone.utc).date().isoformat() / "markdown")
+    logger.info("📣 Subagent instruction: do not return a compressed summary to the main session.")
+    logger.info("📣 Subagent instruction: write the final Markdown report under %s, then return the complete Markdown content verbatim to the main session.", final_markdown_dir)
     logger.info("✅ Done → %s", hotspots_output)
     return 0
 
