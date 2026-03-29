@@ -4,7 +4,9 @@
 
 ## 强制执行约束
 
-- 固定说明：`run-pipeline.py` 是长耗时任务，通常需要 `15-30` 分钟，必须使用 subagent 运行；如果当前环境没有 subagent，再考虑其他后台代理或长任务执行方式
+- 固定说明：`run-pipeline.py` 是长耗时任务，通常需要 `15-30` 分钟，必须使用 subagent 运行；如果当前环境没有
+  subagent，再考虑其他后台代理或长任务执行方式
+- 固定说明：执行这个长任务时，subagent 的超时时间必须设置为 `30` 分钟
 - 同一台机器上不要并发运行多个热点任务
 - 不要手动改写脚本流程
 - 不要返回摘要版、精选版或压缩版结果
@@ -36,6 +38,7 @@
 - 同一台机器上当前没有其他热点任务在运行
 - `<WORKSPACE>`、`<SKILL_DIR>`、`<DATE>` 已经明确
 - 输出语言使用 `<LANGUAGE>`
+- subagent 超时时间已经设置为 `30` 分钟；如果当前环境没有 subagent，再切换到其他长任务执行方式
 
 全部满足后，再开始执行“执行流程”。
 
@@ -57,6 +60,7 @@
 6. 如需回传结果，必须读取归档后的最终 Markdown 原文，不要自行重写。
 
 归档文件：
+
 - `merge-hotspots.py` 生成 `<WORKSPACE>/archive/news-hotspots/<DATE>/json/hotspots*.json`
 - `merge-hotspots.py` 生成 `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/hotspots*.md`
 - `run-pipeline.py` 归档 `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
@@ -84,13 +88,19 @@
 
 ```markdown
 # <DATE> <MODE> 全球科技与 AI 热点
+
 ## <Topic Title 1>
-- 1. ⭐<Score> | [<Title>](<URL>)
-  指标：likes=<n>, comments=<n>, replies=<n>, retweets=<n>, score=<n> | 来源：<Source Name>
+
+-
+    1. ⭐<Score> | [<Title>](<URL>)
+       指标：likes=<n>, comments=<n>, replies=<n>, retweets=<n>, score=<n> | 来源：<Source Name>
+
 ## <Topic Title 2>
-- 1. ⭐<Score> | [<Title>](<URL>)
-  来源：<Source Name>
-<EXTRA_SECTIONS>
+
+-
+    1. ⭐<Score> | [<Title>](<URL>)
+       来源：<Source Name>
+       <EXTRA_SECTIONS>
 ```
 
 - 第一行固定为：编号 + `⭐8.7` 这种评分 + 带链接标题
@@ -114,3 +124,13 @@
 - `run-pipeline.py` 失败；优先查看 `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/` 下的 `*.meta.json`
 - 如果最终 Markdown 没有成功归档，不要自行手写热点内容充当结果
 - 如果只拿到部分内容，不要返回“精选版”或“简版”
+
+## 超时恢复
+
+- 如果只是个别 fetch 步骤失败或超时，但已有部分抓取结果 JSON，可继续运行 `merge-sources.py` 和 `merge-hotspots.py`
+  生成部分完成数据的最终归档。
+- 如果 `run-pipeline.py` 因外部超时中断，先运行 `source-health.py` 查看已完成与未完成步骤，再决定是否手动补跑 merge /
+  hotspots。
+- 手动恢复时，只使用当前 `debug/` 目录里已经存在的结果文件，不要伪造缺失输入。
+- 如果恢复后成功生成了归档 Markdown，只返回该归档 Markdown 原文。
+- 如果恢复后仍未生成完整 Markdown，不要假装任务完成；返回实际完成情况，并明确哪些步骤未完成。

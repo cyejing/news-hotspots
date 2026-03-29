@@ -43,6 +43,7 @@ files:
 ## 强制执行约束
 
 - 固定说明：`run-pipeline.py` 是长耗时任务，通常需要 `15-30` 分钟，必须使用 subagent 运行；如果当前环境没有 subagent，再考虑其他后台代理或长任务执行方式
+- 固定说明：执行这个长任务时，subagent 的超时时间必须设置为 `30` 分钟
 - 同一台机器上不要并发运行多个热点任务
 - 主会话最终输出必须来自归档 Markdown 原文
 - 不要让主会话自己重新解析中间抓取结果或重写脚本流程
@@ -78,7 +79,7 @@ files:
 
 1. 识别用户是要生成热点、看诊断，还是创建定时任务。
 2. 生成热点时，将执行步骤交给 `references/hotspot-prompt.md`。
-3. 生成热点前，先向用户说明并遵守上面的“强制执行约束”。
+3. 生成热点前，先向用户说明并遵守上面的“强制执行约束”，尤其是 subagent 超时时间必须设置为 `30` 分钟。
 4. 任务完成后，只读取 `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/` 下的最终归档 Markdown。
 5. 回复用户时以归档 Markdown 原文为准，不改写、不压缩、不重新组织。
 
@@ -109,6 +110,43 @@ files:
 - `run-pipeline.py` 失败；先查看 `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/` 下对应的 `*.meta.json`
 - 用户要的是运行诊断或历史诊断；统一使用 `source-health.py`，不要自己手工拼错误摘要
 - 没有拿到完整 Markdown 原文；不要把不完整结果当成最终热点返回给用户
+
+## 超时与恢复
+
+- 如果只是个别 fetch 步骤失败、超时或缺失结果，只要已有部分抓取结果文件存在，仍然可以继续运行 `merge-sources.py` 与 `merge-hotspots.py` 生成部分完成数据的最终归档。
+- `run-pipeline.py` 现在会在收到外部中断后，尽量基于已经完成的步骤自动补跑 merge 与 hotspots，并写出可诊断的 `pipeline.meta.json`。
+- 如果主会话发现任务因为外部超时没有完整结束，可以自行基于当前 `debug/` 目录中的已完成结果补跑：
+
+```bash
+uv run <SKILL_DIR>/scripts/merge-sources.py \
+  --rss <WORKSPACE>/.../debug/rss.json \
+  --github <WORKSPACE>/.../debug/github.json \
+  --trending <WORKSPACE>/.../debug/trending.json \
+  --api <WORKSPACE>/.../debug/api.json \
+  --twitter <WORKSPACE>/.../debug/twitter.json \
+  --reddit <WORKSPACE>/.../debug/reddit.json \
+  --v2ex <WORKSPACE>/.../debug/v2ex.json \
+  --google <WORKSPACE>/.../debug/google.json \
+  --archive <WORKSPACE>/archive/news-hotspots \
+  --output <WORKSPACE>/.../debug/merged.json
+```
+
+```bash
+uv run <SKILL_DIR>/scripts/merge-hotspots.py \
+  --input <WORKSPACE>/.../debug/merged.json \
+  --archive <WORKSPACE>/archive/news-hotspots \
+  --debug <WORKSPACE>/.../debug \
+  --top 5
+```
+
+```bash
+uv run <SKILL_DIR>/scripts/source-health.py \
+  --input <WORKSPACE>/archive/news-hotspots/<DATE>/meta \
+  --verbose
+```
+
+- 向用户汇报时，先说明这次运行是否被超时或中断影响，再基于 `source-health.py` 报告说明哪些任务已完成、哪些任务未完成。
+- 如果手动补跑成功生成了归档 Markdown，主会话可以读取该 Markdown 原文作为最终交付；如果仍未生成完整 Markdown，则只能报告实际完成情况，不要伪造完整热点结果。
 
 ## 用户创建定时任务
 

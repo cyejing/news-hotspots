@@ -10,7 +10,6 @@ DEFAULTS_DIR="$ROOT_DIR/config/defaults"
 DEFAULT_CONFIG_DIR="$ROOT_DIR/workspace/config"
 DEFAULT_ARCHIVE_ROOT_DIR="$ROOT_DIR/workspace/archive/news-hotspots"
 
-HOTSPOTS_JSON="$TMP_DIR/hotspots.json"
 MERGED_JSON="$DEBUG_DIR/merged.json"
 RSS_JSON="$DEBUG_DIR/rss.json"
 GITHUB_JSON="$DEBUG_DIR/github.json"
@@ -54,7 +53,7 @@ step_output_path() {
     v2ex) echo "$V2EX_JSON" ;;
     google) echo "$GOOGLE_JSON" ;;
     merge) echo "$MERGED_JSON" ;;
-    hotspots) echo "$STEP_OUTPUT_DIR/hotspots.json" ;;
+    hotspots) echo "$STEP_OUTPUT_DIR/merge-hotspots.json" ;;
     *) return 1 ;;
   esac
 }
@@ -71,7 +70,6 @@ USAGE:
 
 OUTPUTS:
   full:
-    /tmp/news-hotspots/hotspots.json
     /tmp/news-hotspots/debug/pipeline.meta.json
     /tmp/news-hotspots/debug/rss.meta.json
     /tmp/news-hotspots/debug/twitter.meta.json
@@ -82,7 +80,7 @@ OUTPUTS:
     /tmp/news-hotspots/debug/v2ex.meta.json
     /tmp/news-hotspots/debug/reddit.meta.json
     /tmp/news-hotspots/debug/merge.meta.json
-    /tmp/news-hotspots/debug/hotspots.meta.json
+    /tmp/news-hotspots/debug/merge-hotspots.meta.json
     /tmp/news-hotspots/debug/rss.json
     /tmp/news-hotspots/debug/twitter.json
     /tmp/news-hotspots/debug/google.json
@@ -92,7 +90,7 @@ OUTPUTS:
     /tmp/news-hotspots/debug/v2ex.json
     /tmp/news-hotspots/debug/reddit.json
     /tmp/news-hotspots/debug/merged.json
-    /tmp/news-hotspots/debug/hotspots.md
+    /tmp/news-hotspots/debug/merge-hotspots.json
     workspace/archive/news-hotspots/<DATE>/json/hotspots.json
     workspace/archive/news-hotspots/<DATE>/markdown/hotspots.md
     workspace/archive/news-hotspots/<DATE>/meta/*.meta.json
@@ -106,8 +104,9 @@ OUTPUTS:
     /tmp/news-hotspots/debug/v2ex.json
     /tmp/news-hotspots/debug/google.json
     /tmp/news-hotspots/debug/merged.json
-    /tmp/news-hotspots/debug/hotspots.json
-    /tmp/news-hotspots/debug/hotspots.md
+    /tmp/news-hotspots/debug/merge-hotspots.json
+    workspace/archive/news-hotspots/<DATE>/json/hotspots.json
+    workspace/archive/news-hotspots/<DATE>/markdown/hotspots.md
   health:
     直接输出诊断报告到控制台
 HELP
@@ -177,7 +176,6 @@ run_full() {
     --defaults "$DEFAULTS_DIR"
     --hours "$HOURS"
     --archive "$DEFAULT_ARCHIVE_ROOT_DIR"
-    --output "$HOTSPOTS_JSON"
     --debug "$DEBUG_DIR"
   )
   if [ -n "$CONFIG_DIR" ] && [ -d "$CONFIG_DIR" ]; then
@@ -265,10 +263,9 @@ run_step() {
       ;;
     hotspots)
       [ -f "$MERGED_JSON" ] || { echo "Missing input: $MERGED_JSON" >&2; exit 1; }
-      local hotspots_output="$DEBUG_DIR/hotspots.json"
-      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --input "$MERGED_JSON" --output "$hotspots_output" --top 15)
+      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --input "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR" --debug "$DEBUG_DIR" --top 15)
       run_cmd "${cmd[@]}"
-      [ -f "$hotspots_output" ] || { echo "Missing output: $hotspots_output" >&2; exit 1; }
+      [ -f "$DEBUG_DIR/merge-hotspots.json" ] || { echo "Missing output: $DEBUG_DIR/merge-hotspots.json" >&2; exit 1; }
       ;;
     *)
       echo "Unknown step: $step" >&2

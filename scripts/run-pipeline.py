@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -37,6 +38,9 @@ STEP_COOLDOWN_DEFAULTS = {
     "fetch-github.py": ("NEWS_HOTSPOTS_GITHUB_COOLDOWN_SECONDS", 6.0),
     "fetch-github-trending.py": ("NEWS_HOTSPOTS_GITHUB_TRENDING_COOLDOWN_SECONDS", 6.0),
 }
+
+INTERRUPT_EVENT = threading.Event()
+INTERRUPT_REASON = "external interrupt"
 
 
 @dataclass(frozen=True)
@@ -78,6 +82,32 @@ def setup_logging(verbose: bool) -> logging.Logger:
         datefmt="%H:%M:%S",
     )
     return logging.getLogger(__name__)
+
+
+def note_interrupt(reason: str) -> None:
+    global INTERRUPT_REASON
+    if not INTERRUPT_EVENT.is_set():
+        INTERRUPT_REASON = reason
+    INTERRUPT_EVENT.set()
+
+
+def install_signal_handlers(logger: logging.Logger) -> Dict[int, Any]:
+    previous: Dict[int, Any] = {}
+
+    def handler(signum: int, _frame: Any) -> None:
+        signal_name = signal.Signals(signum).name if signum in signal.Signals._value2member_map_ else str(signum)
+        note_interrupt(f"received {signal_name}")
+        logger.warning("⚠️ Received %s, will stop active fetches and try to recover partial outputs", signal_name)
+
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        previous[signum] = signal.getsignal(signum)
+        signal.signal(signum, handler)
+    return previous
+
+
+def restore_signal_handlers(previous: Dict[int, Any]) -> None:
+    for signum, handler in previous.items():
+        signal.signal(signum, handler)
 
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -504,7 +534,22 @@ def resolve_script_path(script: str) -> Path:
     return SCRIPTS_DIR / script
 
 
-def run_step_process(spec: StepSpec, *, timeout: int, force: bool = False, output_flag: Optional[str] = "--output") -> ProcessResult:
+def run_step_process(
+    spec: StepSpec,
+    *,
+    timeout: int,
+    force: bool = False,
+    output_flag: Optional[str] = "--output",
+    respect_interrupt: bool = True,
+) -> ProcessResult:
+    if respect_interrupt and INTERRUPT_EVENT.is_set():
+        return make_process_result(
+            spec=spec,
+            status="timeout",
+            timeout=timeout,
+            stderr_tail=[f"Interrupted before step start ({INTERRUPT_REASON})"],
+        )
+
     cmd = [sys.executable, str(resolve_script_path(spec.script)), *spec.args]
     if spec.output_path is not None and output_flag:
         cmd += [output_flag, str(spec.output_path)]
@@ -521,33 +566,68 @@ def run_step_process(spec: StepSpec, *, timeout: int, force: bool = False, outpu
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        try:
-            stdout, stderr = process.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            if os.name != "nt":
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    stdout, stderr = process.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
+        deadline = t0 + timeout
+        stdout = ""
+        stderr = ""
+        while True:
+            remaining = max(deadline - time.time(), 0.0)
+            wait_slice = min(0.5, remaining) if remaining > 0 else 0.0
+            try:
+                stdout, stderr = process.communicate(timeout=wait_slice)
+                break
+            except subprocess.TimeoutExpired:
+                if respect_interrupt and INTERRUPT_EVENT.is_set():
+                    if os.name != "nt":
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                    else:
+                        process.kill()
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    stdout, stderr = process.communicate()
-            else:
-                process.kill()
-                stdout, stderr = process.communicate()
-            return make_process_result(
-                spec=spec,
-                status="timeout",
-                timeout=timeout,
-                elapsed_s=time.time() - t0,
-                stderr_tail=[f"Killed after {timeout}s"],
-                stdout_tail=(stdout or "").splitlines()[-3:],
-            )
+                        stdout, stderr = process.communicate(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        if os.name != "nt":
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                        else:
+                            process.kill()
+                        stdout, stderr = process.communicate()
+                    return make_process_result(
+                        spec=spec,
+                        status="timeout",
+                        timeout=timeout,
+                        elapsed_s=time.time() - t0,
+                        stderr_tail=[f"Interrupted ({INTERRUPT_REASON})"],
+                        stdout_tail=(stdout or "").splitlines()[-3:],
+                    )
+                if time.time() >= deadline:
+                    if os.name != "nt":
+                        try:
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
+                            pass
+                        try:
+                            stdout, stderr = process.communicate(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            try:
+                                os.killpg(process.pid, signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            stdout, stderr = process.communicate()
+                    else:
+                        process.kill()
+                        stdout, stderr = process.communicate()
+                    return make_process_result(
+                        spec=spec,
+                        status="timeout",
+                        timeout=timeout,
+                        elapsed_s=time.time() - t0,
+                        stderr_tail=[f"Killed after {timeout}s"],
+                        stdout_tail=(stdout or "").splitlines()[-3:],
+                    )
 
         status = "ok" if process.returncode == 0 else "error"
         return make_process_result(
@@ -715,14 +795,26 @@ def build_merge_args(debug_dir: Path, archive_dir: Optional[Path], verbose: bool
     return merge_args
 
 
-def run_merge_step(debug_dir: Path, archive_dir: Optional[Path], verbose: bool) -> Tuple[StepSpec, Dict[str, Any], Path]:
+def run_merge_step(
+    debug_dir: Path,
+    archive_dir: Optional[Path],
+    verbose: bool,
+    *,
+    respect_interrupt: bool = True,
+) -> Tuple[StepSpec, Dict[str, Any], Path]:
     spec = StepSpec("merge", "Merge", "merge-sources.py", build_merge_args(debug_dir, archive_dir, verbose), debug_dir / "merged.json", None)
-    process_result = run_step_process(spec, timeout=MERGE_TIMEOUT, force=False)
+    process_result = run_step_process(spec, timeout=MERGE_TIMEOUT, force=False, respect_interrupt=respect_interrupt)
     result, meta_path = finalize_step(debug_dir, spec, process_result)
     return spec, result, meta_path
 
 
-def run_hotspots_step(debug_dir: Path, archive_dir: Path, hotspots_top: int) -> Tuple[StepSpec, Dict[str, Any], Path, Dict[str, str]]:
+def run_hotspots_step(
+    debug_dir: Path,
+    archive_dir: Path,
+    hotspots_top: int,
+    *,
+    respect_interrupt: bool = True,
+) -> Tuple[StepSpec, Dict[str, Any], Path, Dict[str, str]]:
     debug_output = debug_dir / "merge-hotspots.json"
     spec = StepSpec(
         "merge-hotspots",
@@ -735,9 +827,39 @@ def run_hotspots_step(debug_dir: Path, archive_dir: Path, hotspots_top: int) -> 
     if not (debug_dir / "merged.json").exists():
         process_result = make_process_result(spec=spec, status="skipped", timeout=SUMMARY_TIMEOUT)
     else:
-        process_result = run_step_process(spec, timeout=SUMMARY_TIMEOUT, force=False, output_flag=None)
+        process_result = run_step_process(spec, timeout=SUMMARY_TIMEOUT, force=False, output_flag=None, respect_interrupt=respect_interrupt)
     result, meta_path = finalize_step(debug_dir, spec, process_result)
     return spec, result, meta_path, parse_step_output_paths(process_result.stdout_tail)
+
+
+def recover_partial_outputs(
+    *,
+    debug_dir: Path,
+    archive_dir: Optional[Path],
+    verbose: bool,
+    hotspots_top: int,
+    logger: logging.Logger,
+) -> Tuple[Dict[str, Any], Path, Dict[str, Any], Path, Dict[str, str]]:
+    logger.info("🛟 Attempting partial recovery from completed step outputs...")
+    _, merge_result, merge_meta_path = run_merge_step(debug_dir, archive_dir, verbose, respect_interrupt=False)
+    if merge_result["status"] == "ok" and archive_dir:
+        _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(
+            debug_dir,
+            archive_dir,
+            hotspots_top,
+            respect_interrupt=False,
+        )
+    else:
+        hotspots_outputs = {}
+        hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
+        skipped_hotspots = make_process_result(
+            spec=hotspots_spec,
+            status="skipped" if merge_result["status"] == "ok" else "timeout",
+            timeout=SUMMARY_TIMEOUT,
+            stderr_tail=[f"Skipped during recovery ({INTERRUPT_REASON})"] if merge_result["status"] != "ok" else [],
+        )
+        hotspots_result, hotspots_meta_path = finalize_step(debug_dir, hotspots_spec, skipped_hotspots)
+    return merge_result, merge_meta_path, hotspots_result, hotspots_meta_path, hotspots_outputs
 
 
 def build_pipeline_failed_items(step_results: List[Dict[str, Any]], extra_results: Sequence[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -774,6 +896,8 @@ def write_pipeline_meta(
     markdown_output: Optional[Path],
     fetch_elapsed: float,
     total_elapsed: float,
+    interrupted: bool = False,
+    interruption_reason: Optional[str] = None,
 ) -> Path:
     meta_output = debug_dir / "pipeline.meta.json"
     pipeline_items = merge_result.get("items", 0)
@@ -793,7 +917,11 @@ def write_pipeline_meta(
         "debug_dir": str(debug_dir),
         "total_elapsed_s": round(total_elapsed, 1),
         "fetch_elapsed_s": round(fetch_elapsed, 1),
-        "overall_status": "error" if merge_result["status"] != "ok" or hotspots_result["status"] != "ok" else "ok",
+        "overall_status": (
+            "timeout"
+            if interrupted
+            else ("error" if merge_result["status"] != "ok" or hotspots_result["status"] != "ok" else "ok")
+        ),
         "steps": step_results,
         "step_meta_paths": step_meta_paths,
         "items": pipeline_items,
@@ -810,6 +938,8 @@ def write_pipeline_meta(
         "hotspots_elapsed_s": hotspots_result.get("elapsed_s"),
         "hotspots_output": str(hotspots_output) if hotspots_output else None,
         "markdown_output": str(markdown_output) if markdown_output else None,
+        "interrupted": interrupted,
+        "interruption_reason": interruption_reason if interrupted else None,
     }
     write_json(meta_output, meta)
     return meta_output
@@ -858,8 +988,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    global INTERRUPT_REASON
+    INTERRUPT_EVENT.clear()
+    INTERRUPT_REASON = "external interrupt"
     args = parse_args()
     logger = setup_logging(args.verbose)
+    previous_signal_handlers = install_signal_handlers(logger)
     skip_steps = {item.strip().lower() for item in args.skip.split(",") if item.strip()}
     config_dir = args.config if args.config and args.config.exists() else None
     debug_dir = resolve_debug_dir(args.debug)
@@ -881,95 +1015,123 @@ def main() -> int:
         verbose=args.verbose,
     )
 
-    logger.info("🚀 Starting pipeline: %d/%d sources, %sh window", len([step for step in steps if step.step_key not in skip_steps]), len(steps), args.hours)
-    t_start = time.time()
+    try:
+        logger.info("🚀 Starting pipeline: %d/%d sources, %sh window", len([step for step in steps if step.step_key not in skip_steps]), len(steps), args.hours)
+        t_start = time.time()
 
-    step_results, step_meta_paths, fetch_elapsed = execute_fetch_steps(
-        steps=steps,
-        skip_steps=skip_steps,
-        timeout=args.step_timeout,
-        force=args.force,
-        debug_dir=debug_dir,
-        logger=logger,
-    )
-    logger.info("📡 Fetch phase done in %.1fs", fetch_elapsed)
+        step_results, step_meta_paths, fetch_elapsed = execute_fetch_steps(
+            steps=steps,
+            skip_steps=skip_steps,
+            timeout=args.step_timeout,
+            force=args.force,
+            debug_dir=debug_dir,
+            logger=logger,
+        )
+        logger.info("📡 Fetch phase done in %.1fs", fetch_elapsed)
 
-    logger.info("🔀 Merging & scoring...")
-    _, merge_result, merge_meta_path = run_merge_step(debug_dir, args.archive, args.verbose)
-    step_meta_paths["merge"] = str(merge_meta_path)
+        if INTERRUPT_EVENT.is_set():
+            logger.warning("⚠️ Pipeline interrupted during fetch phase (%s)", INTERRUPT_REASON)
+            merge_result, merge_meta_path, hotspots_result, hotspots_meta_path, hotspots_outputs = recover_partial_outputs(
+                debug_dir=debug_dir,
+                archive_dir=args.archive,
+                verbose=args.verbose,
+                hotspots_top=args.hotspots_top,
+                logger=logger,
+            )
+        else:
+            logger.info("🔀 Merging & scoring...")
+            _, merge_result, merge_meta_path = run_merge_step(debug_dir, args.archive, args.verbose)
+            if merge_result["status"] == "ok":
+                logger.info("🧾 Rendering hotspots...")
+                _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(debug_dir, args.archive, args.hotspots_top)
+            else:
+                hotspots_outputs = {}
+                hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
+                skipped_hotspots = make_process_result(spec=hotspots_spec, status="skipped", timeout=SUMMARY_TIMEOUT)
+                hotspots_result, hotspots_meta_path = finalize_step(debug_dir, hotspots_spec, skipped_hotspots)
+            if INTERRUPT_EVENT.is_set() and (merge_result["status"] != "ok" or hotspots_result["status"] != "ok"):
+                logger.warning("⚠️ Pipeline interrupted during merge/render phase (%s)", INTERRUPT_REASON)
+                merge_result, merge_meta_path, hotspots_result, hotspots_meta_path, hotspots_outputs = recover_partial_outputs(
+                    debug_dir=debug_dir,
+                    archive_dir=args.archive,
+                    verbose=args.verbose,
+                    hotspots_top=args.hotspots_top,
+                    logger=logger,
+                )
 
-    if merge_result["status"] == "ok":
-        logger.info("🧾 Rendering hotspots...")
-        _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(debug_dir, args.archive, args.hotspots_top)
-    else:
-        hotspots_outputs = {}
-        hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
-        skipped_hotspots = make_process_result(spec=hotspots_spec, status="skipped", timeout=SUMMARY_TIMEOUT)
-        hotspots_result, hotspots_meta_path = finalize_step(debug_dir, hotspots_spec, skipped_hotspots)
-    step_meta_paths["hotspots"] = str(hotspots_meta_path)
-    hotspots_output = Path(hotspots_outputs["ARCHIVED_JSON"]) if hotspots_outputs.get("ARCHIVED_JSON") else None
-    markdown_output = Path(hotspots_outputs["ARCHIVED_MARKDOWN"]) if hotspots_outputs.get("ARCHIVED_MARKDOWN") else None
+        step_meta_paths["merge"] = str(merge_meta_path)
+        step_meta_paths["hotspots"] = str(hotspots_meta_path)
+        hotspots_output = Path(hotspots_outputs["ARCHIVED_JSON"]) if hotspots_outputs.get("ARCHIVED_JSON") else None
+        markdown_output = Path(hotspots_outputs["ARCHIVED_MARKDOWN"]) if hotspots_outputs.get("ARCHIVED_MARKDOWN") else None
 
-    total_elapsed = time.time() - t_start
-    meta_output = write_pipeline_meta(
-        debug_dir=debug_dir,
-        step_results=step_results,
-        step_meta_paths=step_meta_paths,
-        merge_result=merge_result,
-        hotspots_result=hotspots_result,
-        hotspots_output=hotspots_output,
-        markdown_output=markdown_output if markdown_output.exists() else None,
-        fetch_elapsed=fetch_elapsed,
-        total_elapsed=total_elapsed,
-    )
+        total_elapsed = time.time() - t_start
+        meta_output = write_pipeline_meta(
+            debug_dir=debug_dir,
+            step_results=step_results,
+            step_meta_paths=step_meta_paths,
+            merge_result=merge_result,
+            hotspots_result=hotspots_result,
+            hotspots_output=hotspots_output,
+            markdown_output=markdown_output if markdown_output and markdown_output.exists() else None,
+            fetch_elapsed=fetch_elapsed,
+            total_elapsed=total_elapsed,
+            interrupted=INTERRUPT_EVENT.is_set(),
+            interruption_reason=INTERRUPT_REASON,
+        )
 
-    removed_archive_dirs = cleanup_archive_root(args.archive) if args.archive else 0
-    archived_outputs = archive_meta_outputs(args.archive, meta_output, step_meta_paths)
-    if removed_archive_dirs:
-        logger.info("🧹 Removed %d expired archive date directories", removed_archive_dirs)
-    if hotspots_output:
-        logger.info("🗂️  Archived hotspots JSON: %s", hotspots_output)
-    if markdown_output:
-        logger.info("🗂️  Archived hotspots Markdown: %s", markdown_output)
-    if archived_outputs.get("pipeline_meta"):
-        logger.info("🗂️  Archived meta dir: %s", archived_outputs.get("meta_dir"))
+        removed_archive_dirs = cleanup_archive_root(args.archive) if args.archive else 0
+        archived_outputs = archive_meta_outputs(args.archive, meta_output, step_meta_paths)
+        if removed_archive_dirs:
+            logger.info("🧹 Removed %d expired archive date directories", removed_archive_dirs)
+        if hotspots_output:
+            logger.info("🗂️  Archived hotspots JSON: %s", hotspots_output)
+        if markdown_output:
+            logger.info("🗂️  Archived hotspots Markdown: %s", markdown_output)
+        if archived_outputs.get("pipeline_meta"):
+            logger.info("🗂️  Archived meta dir: %s", archived_outputs.get("meta_dir"))
 
-    meta = load_json_file(meta_output) or {}
-    meta["archive"] = {
-        "root": str(args.archive) if args.archive else None,
-        "retention_days": ARCHIVE_RETENTION_DAYS,
-        "removed_expired_date_dirs": removed_archive_dirs,
-        "hotspots_json": str(hotspots_output) if hotspots_output else None,
-        "hotspots_markdown": str(markdown_output) if markdown_output else None,
-        **archived_outputs,
-    }
-    write_json(meta_output, meta)
+        meta = load_json_file(meta_output) or {}
+        meta["archive"] = {
+            "root": str(args.archive) if args.archive else None,
+            "retention_days": ARCHIVE_RETENTION_DAYS,
+            "removed_expired_date_dirs": removed_archive_dirs,
+            "hotspots_json": str(hotspots_output) if hotspots_output else None,
+            "hotspots_markdown": str(markdown_output) if markdown_output else None,
+            **archived_outputs,
+        }
+        write_json(meta_output, meta)
 
-    log_pipeline_summary(
-        logger,
-        total_elapsed=total_elapsed,
-        step_results=step_results,
-        merge_result=merge_result,
-        hotspots_result=hotspots_result,
-        hotspots_output=hotspots_output,
-        markdown_output=markdown_output if markdown_output.exists() else None,
-        meta_output=meta_output,
-        debug_dir=debug_dir,
-    )
+        log_pipeline_summary(
+            logger,
+            total_elapsed=total_elapsed,
+            step_results=step_results,
+            merge_result=merge_result,
+            hotspots_result=hotspots_result,
+            hotspots_output=hotspots_output,
+            markdown_output=markdown_output if markdown_output and markdown_output.exists() else None,
+            meta_output=meta_output,
+            debug_dir=debug_dir,
+        )
 
-    if merge_result["status"] != "ok":
-        logger.error("❌ Merge failed: %s", merge_result["stderr_tail"])
-        return 1
-    if hotspots_result["status"] != "ok":
-        logger.error("❌ Hotspots failed: %s", hotspots_result["stderr_tail"])
-        return 1
+        if INTERRUPT_EVENT.is_set():
+            logger.warning("⚠️ Pipeline ended after interruption: %s", INTERRUPT_REASON)
+            logger.warning("⚠️ Run source-health.py to report completed vs incomplete steps.")
+            if markdown_output and markdown_output.exists():
+                logger.info("📣 Partial Markdown available: %s", markdown_output)
+            return 1
+        if merge_result["status"] != "ok":
+            logger.error("❌ Merge failed: %s", merge_result["stderr_tail"])
+            return 1
+        if hotspots_result["status"] != "ok":
+            logger.error("❌ Hotspots failed: %s", hotspots_result["stderr_tail"])
+            return 1
 
-    final_markdown_path = str(markdown_output) if markdown_output else None
-    logger.info("📣 Final Markdown: %s", final_markdown_path)
-    logger.info("📣 Subagent instruction: do not return a compressed summary to the main session.")
-    logger.info("📣 Subagent instruction: return only a short completion message plus the archived Markdown path, then let the main session read that file.")
-    logger.info("✅ Done → %s", final_markdown_path or args.archive)
-    return 0
+        final_markdown_path = str(markdown_output) if markdown_output else None
+        logger.info("📣 Final Markdown: %s", final_markdown_path)
+        logger.info("✅ Done → %s", final_markdown_path or args.archive)
+        return 0
+    finally:
+        restore_signal_handlers(previous_signal_handlers)
 
 
 if __name__ == "__main__":
