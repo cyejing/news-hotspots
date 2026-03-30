@@ -1,37 +1,38 @@
 # 热点提示模板
 
-这个文档是全球科技与 AI 热点任务的执行契约，负责定义占位符、subagent 执行流程、主会话交付约束、归档规则，以及失败后的恢复方式。
+这个文档是全球科技与 AI 热点任务的执行契约。它只回答四件事：
 
-## Subagent 强制执行约束
+1. 任务启动前必须满足什么条件
+2. subagent 和主会话分别负责什么
+3. `daily` 和 `weekly` 的最终输出各自要满足什么约束
+4. 任务中断后如何恢复
+
+## 输入参数
+
+| 占位符           | daily        | weekly       |
+|---------------|--------------|--------------|
+| `<MODE>`      | `daily`      | `weekly`     |
+| `<RSS_HOURS>` | `48`         | `168`        |
+| `<WORKSPACE>` | 工作区路径        | 工作区路径        |
+| `<SKILL_DIR>` | skill 安装路径   | skill 安装路径   |
+| `<DATE>`      | `YYYY-MM-DD` | `YYYY-MM-DD` |
+| `<LANGUAGE>`  | `Chinese`    | `Chinese`    |
+
+## 全局规则
 
 - `run-pipeline.py` 是长耗时任务，通常需要 `15-30` 分钟
-- 必须使用 subagent 运行；如果当前环境没有 subagent，再考虑其他后台代理或长任务执行方式
-- subagent 的超时时间必须设置为 `30` 分钟
-- subagent 只负责执行脚本并等待归档文件生成；归档 Markdown 的读取、翻译和最终面向用户的输出由主会话负责
+- 必须优先使用 subagent 运行；如果当前环境没有 subagent，再改用其他长任务执行方式
+- subagent 超时时间必须设置为 `30` 分钟
 - 同一台机器上不要并发运行多个热点任务
+- 启动前必须确认 `<WORKSPACE>`、`<SKILL_DIR>`、`<DATE>` 已经明确
 
-## 占位符
+## 执行分工
 
-| 占位符                | daily        | weekly    |
-|--------------------|--------------|-----------|
-| `<MODE>`           | `daily`      | `weekly`  |
-| `<RSS_HOURS>`      | `48`         | `168`     |
-| `<WORKSPACE>`      | 工作区路径        | 工作区路径     |
-| `<SKILL_DIR>`      | skill 安装路径   | skill 安装路径 |
-| `<DATE>`           | `YYYY-MM-DD` | `YYYY-MM-DD` |
-| `<LANGUAGE>`       | `Chinese`    | `Chinese` |
+### 1. Subagent 负责什么
 
-## 执行前确认
+subagent 只负责运行统一管道并等待归档文件生成，不负责读取归档 Markdown，也不负责翻译和最终用户输出。
 
-未满足以下任一项时，不要启动任务：
-
-- 当前没有其他热点任务正在同机运行
-- `<WORKSPACE>`、`<SKILL_DIR>`、`<DATE>` 已经明确
-- subagent 超时时间已经设置为 `30` 分钟；如果当前环境没有 subagent，再切换到其他长任务执行方式
-
-## 执行流程
-
-1. 运行统一管道：
+执行命令：
 
 ```bash
 uv run <SKILL_DIR>/scripts/run-pipeline.py \
@@ -43,44 +44,61 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
   --verbose --force
 ```
 
-2. 等待脚本完成，并确认归档产物已经生成：
-    - `<WORKSPACE>/archive/news-hotspots/<DATE>/json/<MODE>*.json`
-    - `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<MODE>*.md`
-    - `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
-3. 归档文件存在后，subagent 即可结束；不要在 subagent 内继续读取生成的 Markdown 或执行最终翻译输出
+subagent 完成条件：
 
-## Subagent 成功条件
-
-满足以下全部条件，subagent 任务才算完成：
-
-- 至少存在一个归档后的 `<MODE>*.json`
-- 至少存在一个归档后的 `<MODE>*.md`
+- 至少存在一个 `<WORKSPACE>/archive/news-hotspots/<DATE>/json/<MODE>*.json`
+- 至少存在一个 `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<MODE>*.md`
+- 至少存在一个 `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
 - JSON 与 Markdown 文件名后缀一致
-- 满足以上归档条件后，subagent 可以直接返回归档路径并结束
 
-## 仅主会话适用的用户输出约束
+满足以上条件后，subagent 可以直接返回归档路径并结束。
 
-以下约束只适用于主会话整理最终回复时；subagent 不执行这些步骤：
+### 2. 主会话负责什么
 
-- 最终输出必须使用 `<LANGUAGE>` 语言；不要保留英文正文作为最终交付
+主会话只在归档 Markdown 已存在后继续处理，职责如下：
+
+- 读取归档 Markdown
+- 把正文完整翻译为 `<LANGUAGE>`
+- 保持原 Markdown 结构输出
+- 在正文结尾追加 AI 总结段落
+
+## 主会话输出总约束
+
+- 最终输出必须使用 `<LANGUAGE>`，不要保留英文正文作为最终交付
 - 输出必须基于归档 Markdown 正文，先做等量翻译，再按原 Markdown 结构输出
 - 翻译时只能转换语言，不能做摘要、精选、删减、改写结构或合并条目
 - 每个 topic 不能减少
 - 每个 topic 下的 item 不能减少
 - Markdown 结构、标题层级、列表结构、链接格式不能变
-- 每条 item 中，已有来源信息时必须保留 `来源：...`；已有指标信息时必须保留 `指标：...`；如果原始归档确实没有对应值，可以省略该字段，但不能伪造来源或指标
-- `daily` 模式下，必须把归档 Markdown 的全部文字内容完整翻译成 `<LANGUAGE>`；除语言转换外，不允许新增、删除或改写正文内容；完成正文输出后，必须在文末追加标题为 `## 本日报告总结` 的 AI 总结段落，概括当天热点归纳、主要主题和信号变化
-- `weekly` 模式下，必须先把归档 Markdown 正文完整翻译成 `<LANGUAGE>`；正文部分除语言转换外不能改动；完成正文输出后，必须在文末追加标题为 `## 本周报告总结` 的 AI 总结段落；该总结必须基于已生成的归档 Markdown 正文内容和历史记录，概括本周热点变化、重复主题和来源趋势
+- 每条 item 中，已有来源信息时必须保留 `来源：...`
+- 每条 item 中，已有指标信息时必须保留 `指标：...`
+- 如果原始归档确实没有来源或指标，可以省略对应字段，但不能伪造数据
 - 如果平台单条消息长度受限，可以分段连续输出，但不能省略任何 topic 或 item
 
-## 主会话成功条件
+## 模式差异
 
-- 主会话基于归档 Markdown 完成最终输出
-- 最终输出满足上面的“仅主会话适用的用户输出约束”
+### `daily`
+
+- 必须把归档 Markdown 的全部文字内容完整翻译成 `<LANGUAGE>`
+- 除语言转换外，不允许新增、删除或改写正文内容
+- 正文之后必须追加标题为 `## 本日报告总结` 的 AI 总结段落
+- 该总结必须基于已生成的归档 Markdown 正文内容，概括当天热点归纳、主要主题和信号变化
+
+### `weekly`
+
+- 必须先把归档 Markdown 正文完整翻译成 `<LANGUAGE>`
+- 正文部分除语言转换外不能改动
+- 正文之后必须追加标题为 `## 本周报告总结` 的 AI 总结段落
+- 该总结必须基于已生成的归档 Markdown 正文内容和历史记录，概括本周热点变化、重复主题和来源趋势
+
+## 成功标准
+
+- subagent 成功：完成统一管道并产出匹配的 JSON、Markdown、meta 归档
+- 主会话成功：基于归档 Markdown 完成最终输出，且满足上面的全部输出约束
 
 ## 失败与恢复
 
-- 外部超时或中断后，先运行：
+先查看诊断：
 
 ```bash
 uv run <SKILL_DIR>/scripts/source-health.py \
@@ -88,7 +106,7 @@ uv run <SKILL_DIR>/scripts/source-health.py \
   --verbose
 ```
 
-- 如果只是个别 fetch 步骤失败、超时或缺失结果，但已有部分抓取结果文件存在，可以继续补跑：
+如果只是个别 fetch 步骤失败、超时或缺失结果，但已有部分抓取结果文件存在，可以继续补跑：
 
 ```bash
 uv run <SKILL_DIR>/scripts/merge-sources.py \
@@ -105,6 +123,7 @@ uv run <SKILL_DIR>/scripts/merge-hotspots.py \
   --mode <MODE>
 ```
 
-- 如果恢复后已有完整归档 Markdown：
-    - 按上面的主会话输出约束完成最终输出即可
-- 如果恢复后仍没有完整 Markdown，只能向用户报告实际完成情况和未完成步骤，不能伪造完整热点结果
+恢复后的处理规则：
+
+- 如果已经拿到完整归档 Markdown，按上面的主会话输出约束完成最终输出
+- 如果仍没有完整 Markdown，只能向用户报告实际完成情况和未完成步骤，不能伪造完整热点结果
