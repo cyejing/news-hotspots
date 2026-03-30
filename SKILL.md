@@ -37,7 +37,7 @@ files:
 - 用户请求查看当前运行情况或最近历史诊断
 - 用户请求创建每日 / 每周热点自动化任务
 
-## 执行代理约束
+## 全局规则
 
 - `run-pipeline.py` 是长耗时任务，通常需要 `15-30` 分钟
 - 必须使用 subagent 运行；如果当前环境没有 subagent，再考虑其他后台代理或长任务执行方式
@@ -45,7 +45,7 @@ files:
 - subagent 只负责执行脚本并等待归档文件落盘，不负责读取生成的 Markdown 或整理最终对用户的输出
 - 同一台机器上不要并发运行多个热点任务
 
-## 主会话交付约束
+## 主会话职责
 
 - 最终面向用户输出时，必须严格使用 `<LANGUAGE>`；如果归档 Markdown 中存在英文内容，先做等量翻译，再按原 Markdown 结构输出
 - 最终输出除正文等量翻译外，必须在结尾追加 AI 总结段落；日报和周报都适用，具体规则统一以 `references/hotspot-prompt.md` 为准
@@ -66,18 +66,10 @@ files:
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/`：最终 Markdown 归档目录
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/`：运行诊断元数据目录
 
-## 执行代理成功条件
+## 成功标准
 
-满足以下全部条件，任务才算完成：
-
-- 最终热点 JSON 已归档到 `<WORKSPACE>/archive/news-hotspots/<DATE>/json/`
-- 最终 Markdown 已归档到 `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/`
-- 诊断元数据已归档到 `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/`
-
-## 主会话成功条件
-
-- 主会话基于归档 Markdown 完成最终输出
-- 最终输出满足 `references/hotspot-prompt.md` 中“仅主会话适用的用户输出约束”
+- `subagent` 成功：最终热点 JSON、Markdown 和诊断元数据都已归档到 `<WORKSPACE>/archive/news-hotspots/<DATE>/`
+- 主会话成功：基于归档 Markdown 完成最终输出，并满足 `references/hotspot-prompt.md` 中的主会话输出约束
 
 ## 失败处理
 
