@@ -9,7 +9,7 @@ Usage:
 import argparse
 import json
 import shutil
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -300,7 +300,7 @@ def resolve_debug_output(debug_dir: Optional[Path]) -> Optional[Path]:
 
 
 def ensure_archive_dirs(archive_root: Path) -> Tuple[Path, Path, Path]:
-    date_dir = archive_root / datetime.now(timezone.utc).date().isoformat()
+    date_dir = archive_root / datetime.now().astimezone().date().isoformat()
     json_dir = date_dir / "json"
     markdown_dir = date_dir / "markdown"
     meta_dir = date_dir / "meta"

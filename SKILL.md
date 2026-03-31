@@ -29,7 +29,13 @@ files:
 
 # News Hotspots
 
-这个 skill 是全球科技与 AI 热点任务的主会话入口契约，负责定义使用入口、强制约束和任务分流；执行细节以 `references/hotspot-prompt.md` 为准。
+这个 skill 是全球科技与 AI 热点任务的主会话入口契约，只负责三件事：
+
+- 判断用户属于哪一类请求
+- 把请求路由到对应参考文档或脚本
+- 约束主会话不要和长耗时执行职责混用
+
+除本文件明确写出的入口规则外，热点生成的执行细节统一以 `references/hotspot-prompt.md` 为准。
 
 ## 适用场景
 
@@ -47,8 +53,8 @@ files:
 
 ## 主会话职责
 
-- 最终面向用户输出时，必须严格使用 `<LANGUAGE>`；如果归档 Markdown 中存在英文内容，先做等量翻译，再按原 Markdown 结构输出
-- 最终输出除正文等量翻译外，必须在结尾追加 AI 总结段落；日报和周报都适用，具体规则统一以 `references/hotspot-prompt.md` 为准
+- 主会话只负责读取归档结果、按用户语言翻译最终输出、补充总结段落
+- 主会话不直接改写脚本生成结果的结构规则；输出细节统一以 `references/hotspot-prompt.md` 为准
 
 ## 快速路由
 
@@ -109,7 +115,7 @@ uv run <SKILL_DIR>/scripts/source-health.py \
 - `<LANGUAGE>`: 用户使用的语言
 - `<WORKSPACE>`：当前工作区根目录
 - `<SKILL_DIR>`：当前 skill 仓库根目录
-- `<DATE>`：日期目录，格式固定为 `YYYY-MM-DD`
+- `<DATE>`：归档日期目录，格式固定为 `YYYY-MM-DD`，以脚本实际产出的系统时区日期为准
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/json/`：最终热点 JSON 归档目录
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/`：最终 Markdown 归档目录
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/`：运行诊断元数据目录

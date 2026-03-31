@@ -201,7 +201,7 @@ def archive_meta_outputs(
     if not archive_root:
         return {}
 
-    today_dir = archive_root / datetime.now(timezone.utc).date().isoformat()
+    today_dir = archive_root / datetime.now().astimezone().date().isoformat()
     meta_dir = today_dir / "meta"
     meta_dir.mkdir(parents=True, exist_ok=True)
 
