@@ -39,48 +39,6 @@ DEFAULT_TIMEOUT = 120
 DEFAULT_LIMIT = 30
 COOLDOWN_SECONDS = float(os.environ.get("BB_BROWSER_WEIBO_COOLDOWN_SECONDS", "6.0"))
 
-TOPIC_KEYWORDS = {
-    "github": ["github", "repo", "repository", "release", "开源", "源码"],
-    "ai-infra": [
-        "gpu", "nvidia", "tesla", "spacex", "xai", "chip", "chips", "robot",
-        "robotaxi", "autonomous driving", "self-driving", "芯片", "半导体", "算力",
-        "服务器", "电力", "储能", "机器人", "智能驾驶", "自动驾驶", "汽车", "无人车",
-        "特斯拉", "英伟达", "黄仁勋", "马斯克", "航天",
-    ],
-    "ai-frontier": [
-        "ai", "aigc", "agent", "agents", "llm", "gpt", "chatgpt", "openai",
-        "anthropic", "claude", "gemini", "deepseek", "midjourney", "cursor",
-        "copilot", "模型", "大模型", "多模态", "推理模型", "智能体", "生成式",
-        "机器学习", "人工智能", "深度学习",
-    ],
-    "technology": [
-        "apple", "google", "meta", "microsoft", "android", "ios", "iphone",
-        "huawei", "xiaomi", "software", "app", "apps", "developer",
-        "developers", "programming", "code", "coding", "cyber", "security",
-        "browser", "cloud", "saas", "internet", "互联网", "软件", "程序员", "开发",
-        "编程", "代码", "网络安全", "漏洞", "云计算", "手机", "电脑", "操作系统",
-    ],
-    "business": [
-        "earnings", "funding", "ipo", "market", "tariff", "economy", "company",
-        "startup", "price", "revenue", "profit", "股票", "股价", "融资", "财报",
-        "营收", "利润", "上市", "补贴", "关税", "经济", "企业", "公司", "市场", "并购",
-    ],
-    "world": [
-        "war", "nato", "ukraine", "russia", "israel", "palestine", "iran",
-        "外交", "战争", "地缘", "国际", "军方", "冲突", "制裁", "联合国", "大选",
-    ],
-    "science": [
-        "paper", "research", "lab", "scientist", "discovery", "nature", "science",
-        "arxiv", "论文", "研究", "实验室", "科学家", "天文", "物理", "生物", "医学",
-        "药物", "火星", "月球",
-    ],
-    "social": [
-        "education", "school", "student", "teacher", "job", "jobs", "career",
-        "work", "media", "society", "文化", "教育", "学校", "学生", "老师", "就业",
-        "职场", "媒体", "舆论", "社会",
-    ],
-}
-
 _last_success_at: Optional[float] = None
 
 
@@ -189,15 +147,6 @@ def extract_hot_items(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     return []
 
 
-def infer_topic(title: str, summary: str, topic_rules: Optional[Dict[str, Any]] = None) -> str:
-    haystack = f"{title}\n{summary}".lower()
-    matches: List[str] = []
-    for topic_id, keywords in TOPIC_KEYWORDS.items():
-        if any(keyword in haystack for keyword in keywords):
-            matches.append(topic_id)
-    return resolve_primary_topic(matches, rules=topic_rules)
-
-
 def build_weibo_search_url(keyword: str) -> str:
     return f"https://s.weibo.com/weibo?q={quote(keyword)}"
 
@@ -219,9 +168,7 @@ def transform_hot_item(item: Dict[str, Any], topic_rules: Optional[Dict[str, Any
         or item.get("description")
         or item.get("desc")
     )
-    topic = infer_topic(title, summary, topic_rules=topic_rules)
-    if not topic:
-        return None
+    topic = "social"
 
     link = first_non_empty(
         item.get("url"),

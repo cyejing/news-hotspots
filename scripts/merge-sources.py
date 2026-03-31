@@ -869,6 +869,24 @@ def group_by_topics(articles: List[Dict[str, Any]], dedup_across_topics: bool = 
     return topic_groups
 
 
+def group_by_source_types(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
+    source_groups: Dict[str, List[Dict[str, Any]]] = {}
+
+    for article in articles:
+        source_type = str(article.get("source_type", "") or "unknown")
+        source_groups.setdefault(source_type, [])
+        source_groups[source_type].append(article.copy())
+
+    for source_type, source_articles in source_groups.items():
+        source_groups[source_type] = sorted(
+            source_articles,
+            key=lambda item: item.get("final_score", 0),
+            reverse=True,
+        )
+
+    return source_groups
+
+
 # ---------------------------------------------------------------------------
 # Input normalization
 # ---------------------------------------------------------------------------
@@ -1135,18 +1153,18 @@ def process_articles(
 
 def build_merged_output(
     payloads: Dict[str, Dict[str, Any]],
-    topic_groups: Dict[str, List[Dict[str, Any]]],
+    source_groups: Dict[str, List[Dict[str, Any]]],
     previous_titles: List[str],
     total_collected: int,
 ) -> Dict[str, Any]:
-    total_after_domain_limits = sum(len(items) for items in topic_groups.values())
-    topic_counts = {topic: len(items) for topic, items in topic_groups.items()}
-    serialized_topics = {
-        topic: {
+    total_after_domain_limits = sum(len(items) for items in source_groups.values())
+    source_type_counts = {source_type: len(items) for source_type, items in source_groups.items()}
+    serialized_source_types = {
+        source_type: {
             "count": len(items),
             "articles": [serialize_article_for_output(article) for article in items],
         }
-        for topic, items in topic_groups.items()
+        for source_type, items in source_groups.items()
     }
     return {
         "generated": datetime.now(timezone.utc).isoformat(),
@@ -1170,19 +1188,19 @@ def build_merged_output(
             "previous_hotspots_scoring_applied": len(previous_titles) > 0,
             "scoring_applied": True,
             "scoring_version": "2.0",
-            "scoring_comment_zh": "merge-sources 会先算每条内容的合并分，并直接按 final_score 输出每个 topic 内顺序。",
+            "scoring_comment_zh": "merge-sources 会先算每条内容的合并分，并按 source_type 分组后在组内按 final_score 降序输出。",
             "score_formula": {
                 "merge_score": "base_priority_score + fetch_local_rank_score + history_score + cross_source_hot_score + recency_score",
-                "topic_ordering": "sort_by_final_score_desc",
+                "source_type_grouping": "group_by_source_type_then_sort_by_final_score_desc",
             },
             "scoring_config": build_output_scoring_config(),
         },
         "output_stats": {
             "total_articles": total_after_domain_limits,
-            "topics_count": len(topic_groups),
-            "topic_distribution": topic_counts,
+            "source_types_count": len(source_groups),
+            "source_type_distribution": source_type_counts,
         },
-        "topics": {topic: payload for topic, payload in serialized_topics.items()},
+        "source_types": {source_type: payload for source_type, payload in serialized_source_types.items()},
     }
 
 
@@ -1230,7 +1248,10 @@ def main() -> int:
         payloads = load_input_payloads(args)
         log_input_summary(payloads)
         topic_groups, previous_titles, total_collected = process_articles(payloads, args.archive_dir)
-        output = build_merged_output(payloads, topic_groups, previous_titles, total_collected)
+        source_groups = group_by_source_types(
+            [article for topic_articles in topic_groups.values() for article in topic_articles]
+        )
+        output = build_merged_output(payloads, source_groups, previous_titles, total_collected)
         total_after_domain_limits = output["output_stats"]["total_articles"]
 
         with open(args.output, "w", encoding="utf-8") as handle:
@@ -1238,7 +1259,7 @@ def main() -> int:
 
         logger.info("✅ Merged and scored articles:")
         logger.info("   Input: %d articles", total_collected)
-        logger.info("   Output: %d articles across %d topics", total_after_domain_limits, len(topic_groups))
+        logger.info("   Output: %d articles across %d source types", total_after_domain_limits, len(source_groups))
         logger.info("   File: %s", args.output)
         return 0
     except Exception as exc:

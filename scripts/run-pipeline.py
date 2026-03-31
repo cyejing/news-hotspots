@@ -77,14 +77,23 @@ class StepMeta:
     details: Dict[str, Any]
 
 
-def setup_logging(verbose: bool) -> logging.Logger:
+def setup_logging(verbose: bool, log_file: Optional[Path] = None) -> logging.Logger:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
-    return logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
+    
+    if log_file:
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
+        logging.root.addHandler(file_handler)
+    
+    return logger
 
 
 def note_interrupt(reason: str) -> None:
@@ -243,6 +252,10 @@ def parse_step_output_paths(stdout_tail: Sequence[str]) -> Dict[str, str]:
 def extract_items_from_payload(payload: Optional[Dict[str, Any]], fallback: int = 0) -> int:
     if not payload:
         return int(fallback or 0)
+    
+    if isinstance(payload.get("topics"), list):
+        return sum(len(topic.get("items", [])) for topic in payload["topics"] if isinstance(topic, dict))
+    
     return int(
         payload.get("items_total")
         or payload.get("total_articles")
@@ -622,7 +635,7 @@ def run_step_process(
                         timeout=timeout,
                         elapsed_s=time.time() - t0,
                         stderr_tail=[f"Interrupted ({INTERRUPT_REASON})"],
-                        stdout_tail=(stdout or "").splitlines()[-3:],
+                        stdout_tail=(stdout or "").splitlines()[-10:],
                     )
                 if time.time() >= deadline:
                     if os.name != "nt":
@@ -647,7 +660,7 @@ def run_step_process(
                         timeout=timeout,
                         elapsed_s=time.time() - t0,
                         stderr_tail=[f"Killed after {timeout}s"],
-                        stdout_tail=(stdout or "").splitlines()[-3:],
+                        stdout_tail=(stdout or "").splitlines()[-10:],
                     )
 
         status = "ok" if process.returncode == 0 else "error"
@@ -657,7 +670,7 @@ def run_step_process(
             timeout=timeout,
             elapsed_s=time.time() - t0,
             stderr_tail=(stderr or "").splitlines()[-3:] if status != "ok" else [],
-            stdout_tail=(stdout or "").splitlines()[-3:],
+            stdout_tail=(stdout or "").splitlines()[-10:],
         )
     except Exception as exc:
         return make_process_result(
@@ -984,21 +997,11 @@ def log_pipeline_summary(
     step_results: List[Dict[str, Any]],
     merge_result: Dict[str, Any],
     hotspots_result: Dict[str, Any],
-    hotspots_output: Optional[Path],
-    markdown_output: Optional[Path],
-    meta_output: Path,
-    debug_dir: Path,
 ) -> None:
     logger.info("%s", "=" * 50)
     logger.info("📊 Pipeline Summary (%.1fs total)", total_elapsed)
     for result in [*step_results, merge_result, hotspots_result]:
         logger.info("   %-14s %-8s %4d items %6.1fs", result["name"], result["status"], result["items"], result["elapsed_s"])
-    if hotspots_output:
-        logger.info("   Hotspots: %s", hotspots_output)
-    if markdown_output:
-        logger.info("   Markdown: %s", markdown_output)
-    logger.info("   Meta: %s", meta_output)
-    logger.info("   Debug Dir: %s", debug_dir)
 
 
 def parse_args() -> argparse.Namespace:
@@ -1025,21 +1028,21 @@ def main() -> int:
     INTERRUPT_EVENT.clear()
     INTERRUPT_REASON = "external interrupt"
     args = parse_args()
-    logger = setup_logging(args.verbose)
-    previous_signal_handlers = install_signal_handlers(logger)
     skip_steps = {item.strip().lower() for item in args.skip.split(",") if item.strip()}
     config_dir = args.config if args.config and args.config.exists() else None
     debug_dir = resolve_debug_dir(args.debug)
     if args.archive:
         args.archive.mkdir(parents=True, exist_ok=True)
+    
+    log_file = debug_dir / "pipeline.log"
+    logger = setup_logging(args.verbose, log_file)
+    previous_signal_handlers = install_signal_handlers(logger)
 
     logger.info("📁 Debug directory: %s", debug_dir)
-    logger.info("📝 Final hotspots outputs will be archived under: %s", args.archive)
+    logger.info("🗄️ Archive directory: %s", args.archive)
     logger.info("🗂️ Hotspots mode: %s", args.mode)
     if args.config and not args.config.exists():
         logger.info("ℹ️ Config overlay not found, using defaults only: %s", args.config)
-    if args.archive:
-        logger.info("🗄️ Archive root: %s", args.archive)
 
     steps = build_fetch_steps(
         defaults_dir=args.defaults,
@@ -1074,11 +1077,13 @@ def main() -> int:
                 logger=logger,
             )
         else:
-            logger.info("🔀 Merging & scoring...")
             _, merge_result, merge_meta_path = run_merge_step(debug_dir, args.archive, args.verbose)
+            merge_icon = "✅" if merge_result["status"] == "ok" else "❌"
+            logger.info("  %s Merge: %s items (%ss)", merge_icon, merge_result["items"], merge_result["elapsed_s"])
             if merge_result["status"] == "ok":
-                logger.info("🧾 Rendering hotspots...")
                 _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(debug_dir, args.archive, args.top, args.mode)
+                hotspots_icon = "✅" if hotspots_result["status"] == "ok" else "❌"
+                logger.info("  %s Hotspots: %s items (%ss)", hotspots_icon, hotspots_result["items"], hotspots_result["elapsed_s"])
             else:
                 hotspots_outputs = {}
                 hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
@@ -1120,12 +1125,15 @@ def main() -> int:
         archived_outputs = archive_meta_outputs(args.archive, meta_output, step_meta_paths)
         if removed_archive_dirs:
             logger.info("🧹 Removed %d expired archive date directories", removed_archive_dirs)
-        if hotspots_output:
-            logger.info("🗂️  Archived hotspots JSON: %s", hotspots_output)
-        if markdown_output:
-            logger.info("🗂️  Archived hotspots Markdown: %s", markdown_output)
-        if archived_outputs.get("pipeline_meta"):
-            logger.info("🗂️  Archived meta dir: %s", archived_outputs.get("meta_dir"))
+
+        if archived_outputs:
+            logger.info("🗂️ Archived files:")
+            if hotspots_output:
+                logger.info("   Hotspots JSON: %s", hotspots_output)
+            if markdown_output:
+                logger.info("   Markdown: %s", markdown_output)
+            if archived_outputs.get("meta_dir"):
+                logger.info("   Meta: %s", archived_outputs["meta_dir"])
 
         meta = load_json_file(meta_output) or {}
         meta["archive"] = {
@@ -1137,18 +1145,6 @@ def main() -> int:
             **archived_outputs,
         }
         write_json(meta_output, meta)
-
-        log_pipeline_summary(
-            logger,
-            total_elapsed=total_elapsed,
-            step_results=step_results,
-            merge_result=merge_result,
-            hotspots_result=hotspots_result,
-            hotspots_output=hotspots_output,
-            markdown_output=markdown_output if markdown_output and markdown_output.exists() else None,
-            meta_output=meta_output,
-            debug_dir=debug_dir,
-        )
 
         if INTERRUPT_EVENT.is_set():
             logger.warning("⚠️ Pipeline ended after interruption: %s", INTERRUPT_REASON)
@@ -1163,9 +1159,10 @@ def main() -> int:
             logger.error("❌ Hotspots failed: %s", hotspots_result["stderr_tail"])
             return 1
 
-        final_markdown_path = str(markdown_output) if markdown_output else None
-        logger.info("📣 Final Markdown: %s", final_markdown_path)
-        logger.info("✅ Done → %s", final_markdown_path or args.archive)
+        if markdown_output:
+            logger.info("✅ Done → %s", markdown_output)
+        else:
+            logger.info("✅ Done")
         return 0
     finally:
         restore_signal_handlers(previous_signal_handlers)

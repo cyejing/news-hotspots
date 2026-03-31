@@ -12,21 +12,28 @@
   "processing": {
     "deduplication_applied": true,
     "multi_source_merging": true,
-    "previous_hotspots_penalty": false,
-    "quality_scoring": true
+    "previous_hotspots_scoring_applied": false,
+    "scoring_applied": true,
+    "scoring_version": "2.0",
+    "scoring_comment_zh": "merge-sources 会先算每条内容的合并分，并按 source_type 分组后在组内按 final_score 降序输出。",
+    "score_formula": {
+      "merge_score": "base_priority_score + fetch_local_rank_score + history_score + cross_source_hot_score + recency_score",
+      "source_type_grouping": "group_by_source_type_then_sort_by_final_score_desc"
+    }
   },
   "output_stats": {
     "total_articles": 8,
-    "topics_count": 4,
-    "topic_distribution": {
-      "github": 3,
-      "ai-infra": 2,
-      "technology": 2,
-      "business": 1
+    "source_types_count": 4,
+    "source_type_distribution": {
+      "github": 2,
+      "github_trending": 1,
+      "rss": 4,
+      "twitter": 1
     }
   },
-  "topics": {
+  "source_types": {
     "github": {
+      "count": 2,
       "articles": [
         {
           "title": "Ollama v0.18.0 improves multimodal serving and structured outputs",
@@ -35,7 +42,7 @@
           "source_type": "github",
           "source_name": "Ollama",
           "source_id": "ollama-github",
-          "quality_score": 14.0,
+          "final_score": 14.0,
           "topic": "github"
         },
         {
@@ -45,9 +52,14 @@
           "source_type": "github",
           "source_name": "AutoGen",
           "source_id": "autogen-github",
-          "quality_score": 12.5,
+          "final_score": 12.5,
           "topic": "github"
-        },
+        }
+      ]
+    },
+    "github_trending": {
+      "count": 1,
+      "articles": [
         {
           "title": "Trending repo: project adds a new open source agent runtime",
           "link": "https://github.com/example/project",
@@ -55,13 +67,24 @@
           "source_type": "github_trending",
           "source_name": "GitHub Trending",
           "source_id": "github-trending",
-          "quality_score": 11.0,
+          "final_score": 11.0,
           "topic": "github"
         }
       ]
     },
-    "ai-infra": {
+    "rss": {
+      "count": 4,
       "articles": [
+        {
+          "title": "Federal Reserve holds rates steady and signals data-dependent path",
+          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260328a.htm",
+          "date": "2026-03-28T03:00:00+00:00",
+          "source_type": "rss",
+          "source_name": "Federal Reserve Monetary Policy",
+          "source_id": "fed-monetary-policy-rss",
+          "final_score": 14.0,
+          "topic": "business"
+        },
         {
           "title": "Tesla supplier chain rides new optimism around humanoid robot production",
           "link": "https://semiengineering.com/2026/03/28/tesla-supplier-chain-humanoid-robots/",
@@ -69,23 +92,9 @@
           "source_type": "rss",
           "source_name": "Semiconductor Engineering",
           "source_id": "semiengineering-rss",
-          "quality_score": 13.0,
+          "final_score": 13.0,
           "topic": "ai-infra"
         },
-        {
-          "title": "Optimus matters because robotics, AI and manufacturing improve together.",
-          "link": "https://x.com/elonmusk/status/2030010000000000001",
-          "date": "2026-03-28T03:50:00+00:00",
-          "source_type": "twitter",
-          "source_name": "@elonmusk",
-          "source_id": "elon-twitter",
-          "quality_score": 11.0,
-          "topic": "ai-infra"
-        }
-      ]
-    },
-    "technology": {
-      "articles": [
         {
           "title": "Quantum networking research moves from lab milestone toward real deployment tests",
           "link": "https://www.bbc.com/news/science-environment-20260328-quantum-networking",
@@ -93,7 +102,7 @@
           "source_type": "rss",
           "source_name": "BBC Science",
           "source_id": "bbc-science-rss",
-          "quality_score": 12.0,
+          "final_score": 12.0,
           "topic": "technology"
         },
         {
@@ -103,22 +112,23 @@
           "source_type": "rss",
           "source_name": "NPR Science",
           "source_id": "npr-science-rss",
-          "quality_score": 10.8,
+          "final_score": 10.8,
           "topic": "technology"
         }
       ]
     },
-    "business": {
+    "twitter": {
+      "count": 1,
       "articles": [
         {
-          "title": "Federal Reserve holds rates steady and signals data-dependent path",
-          "link": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260328a.htm",
-          "date": "2026-03-28T03:00:00+00:00",
-          "source_type": "rss",
-          "source_name": "Federal Reserve Monetary Policy",
-          "source_id": "fed-monetary-policy-rss",
-          "quality_score": 14.0,
-          "topic": "business"
+          "title": "Optimus matters because robotics, AI and manufacturing improve together.",
+          "link": "https://x.com/elonmusk/status/2030010000000000001",
+          "date": "2026-03-28T03:50:00+00:00",
+          "source_type": "twitter",
+          "source_name": "@elonmusk",
+          "source_id": "elon-twitter",
+          "final_score": 11.0,
+          "topic": "ai-infra"
         }
       ]
     }

@@ -99,41 +99,9 @@ def truncate_summary(value: str, limit: int = 240) -> str:
     return text[: limit - 3].rstrip() + "..."
 
 
-def get_v2ex_rules(defaults_dir: Optional[Path] = None, config_dir: Optional[Path] = None) -> Dict[str, Any]:
-    effective_defaults_dir = defaults_dir or Path("config/defaults")
-    rules = load_merged_topic_rules(effective_defaults_dir, config_dir)
-    v2ex_rules = (rules.get("source_rules", {}) or {}).get("v2ex", {})
-    if not isinstance(v2ex_rules, dict):
-        return {}
-    return {
-        "node_topic_map": v2ex_rules.get("node_topic_map", {}),
-        "keyword_map": v2ex_rules.get("keyword_map", {}),
-    }
-
-
-def infer_topic(
-    title: str,
-    content: str,
-    node_slug: str,
-    node_name: str,
-    topic_rules: Optional[Dict[str, Any]] = None,
-    v2ex_rules: Optional[Dict[str, Any]] = None,
-) -> str:
-    haystack = f"{title}\n{content}\n{node_slug}\n{node_name}".lower()
-    effective_rules = v2ex_rules or get_v2ex_rules()
-    topics: Set[str] = set(effective_rules.get("node_topic_map", {}).get(node_slug, []))
-
-    for topic_id, keywords in effective_rules.get("keyword_map", {}).items():
-        if any(keyword.lower() in haystack for keyword in keywords):
-            topics.add(topic_id)
-
-    return resolve_primary_topic(list(topics), rules=topic_rules)
-
-
 def transform_topic(
     item: Dict[str, Any],
     topic_rules: Optional[Dict[str, Any]] = None,
-    v2ex_rules: Optional[Dict[str, Any]] = None,
 ) -> Optional[Dict[str, Any]]:
     title = clean_text(item.get("title", ""))
     link = item.get("url", "")
@@ -143,9 +111,7 @@ def transform_topic(
     content = item.get("content", "") or ""
     node_slug = (item.get("nodeSlug") or "").strip().lower()
     node_name = clean_text(item.get("node", ""))
-    topic = infer_topic(title, content, node_slug, node_name, topic_rules=topic_rules, v2ex_rules=v2ex_rules)
-    if not topic:
-        return None
+    topic = "technology"
 
     created = item.get("created")
     date_iso = ""
@@ -181,10 +147,9 @@ def fetch_v2ex_hot(
     articles: List[Dict[str, Any]] = []
     effective_defaults_dir = defaults_dir or Path("config/defaults")
     topic_rules = load_merged_topic_rules(effective_defaults_dir, config_dir)
-    v2ex_rules = get_v2ex_rules(defaults_dir, config_dir)
 
     for item in raw_topics:
-        article = transform_topic(item, topic_rules=topic_rules, v2ex_rules=v2ex_rules)
+        article = transform_topic(item, topic_rules=topic_rules)
         if article:
             articles.append(article)
 

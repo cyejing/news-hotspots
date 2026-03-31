@@ -28,6 +28,7 @@ normalize_url_for_dedup = merge_mod.normalize_url
 deduplicate_articles = merge_mod.deduplicate_articles
 apply_domain_limits = merge_mod.apply_domain_limits
 group_by_topics = merge_mod.group_by_topics
+group_by_source_types = merge_mod.group_by_source_types
 DOMAIN_LIMIT_EXEMPT = merge_mod.DOMAIN_LIMIT_EXEMPT
 calculate_v2ex_replies_score = merge_mod.calculate_v2ex_replies_score
 calculate_recency_score = merge_mod.calculate_recency_score
@@ -415,23 +416,38 @@ class TestIntegration(unittest.TestCase):
                 self.assertEqual(before, after,
                     f"{src} articles should not be limited in {topic}")
 
+    def test_group_by_source_types_sorts_each_group_by_final_score(self):
+        grouped = group_by_source_types(
+            [
+                {"title": "A", "source_type": "twitter", "final_score": 9.0},
+                {"title": "B", "source_type": "twitter", "final_score": 12.0},
+                {"title": "C", "source_type": "rss", "final_score": 8.0},
+            ]
+        )
+
+        self.assertEqual([item["title"] for item in grouped["twitter"]], ["B", "A"])
+        self.assertEqual([item["title"] for item in grouped["rss"]], ["C"])
+
 
 class TestMergedOutput(unittest.TestCase):
     """Validate merged output structure."""
 
     def test_structure(self):
         data = load_fixture("merged")
-        self.assertIn("topics", data)
+        self.assertIn("source_types", data)
         self.assertIn("input_sources", data)
         self.assertIn("output_stats", data)
-        self.assertIsInstance(data["topics"], dict)
+        self.assertIsInstance(data["source_types"], dict)
+        self.assertNotIn("topics", data)
 
     def test_articles_have_scores(self):
         data = load_fixture("merged")
-        for topic, tdata in data["topics"].items():
-            self.assertIn("articles", tdata)
-            for a in tdata["articles"]:
-                self.assertIn("quality_score", a)
+        for source_type, source_data in data["source_types"].items():
+            self.assertIn("articles", source_data)
+            scores = [article["final_score"] for article in source_data["articles"]]
+            self.assertEqual(scores, sorted(scores, reverse=True), source_type)
+            for article in source_data["articles"]:
+                self.assertIn("final_score", article)
 
 
 if __name__ == "__main__":

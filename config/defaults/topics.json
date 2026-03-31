@@ -8,26 +8,6 @@
       "emoji": "🧠",
       "label": "AI Frontier / AI 前沿",
       "description": "模型、agents、AI 应用、AI lab 发布与前沿 AI 产品化动态。",
-      "classification": {
-        "definition": "聚焦 AI 前沿能力本身，包括模型、agents、copilots、AI apps 与 AI lab 发布。",
-        "when_to_use": [
-          "source 主要追踪 foundation models、LLMs、agents、AI products",
-          "主体是 OpenAI、Anthropic、DeepMind、Hugging Face、Mistral 等 AI labs",
-          "内容核心是模型能力、agent workflow、AI 应用发布"
-        ],
-        "when_not_to_use": [
-          "如果核心是芯片、算力、电力、机器人、智能驾驶，归 ai-infra",
-          "如果只是 GitHub 原生仓库/Release/Trending，归 github",
-          "如果重点是公司经营、财报、融资或监管，归 business"
-        ],
-        "examples": [
-          "OpenAI Blog",
-          "Anthropic",
-          "DeepMind",
-          "Hugging Face",
-          "AI subreddit"
-        ]
-      },
       "search": {
         "google_queries": [
           "foundation model release",
@@ -35,8 +15,7 @@
           "AI application agentic workflow",
           "大模型 智能体 AI 应用 发布"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "OpenAI",
           "Anthropic",
@@ -60,26 +39,6 @@
       "emoji": "⚙️",
       "label": "AI Infra / AI 基础设施",
       "description": "芯片、内存、电力、数据中心、算力、机器人、智能驾驶、Tesla、SpaceX 与太空算力。",
-      "classification": {
-        "definition": "聚焦 AI 基础设施和物理世界执行层，包括芯片、算力、电力、机器人、智能驾驶与太空算力。",
-        "when_to_use": [
-          "source 主要覆盖 GPU、芯片、内存、数据中心、电力、服务器、token 成本",
-          "source 长期关注 Tesla、SpaceX、机器人、自动驾驶、humanoid",
-          "内容主轴是 AI 供给侧基础设施，而不是模型能力本身"
-        ],
-        "when_not_to_use": [
-          "如果核心是模型、agent、copilot 或 AI 应用，归 ai-frontier",
-          "如果只是广义开发工具或网络安全，归 technology",
-          "如果重点是企业经营或资本市场，归 business"
-        ],
-        "examples": [
-          "NVIDIA",
-          "Semiconductor Engineering",
-          "ServeTheHome",
-          "Tesla",
-          "SpaceX"
-        ]
-      },
       "search": {
         "google_queries": [
           "AI infrastructure GPU datacenter power memory",
@@ -87,8 +46,7 @@
           "Tesla Robotaxi SpaceX robotics \"Elon Musk\" datacenter",
           "AI 芯片 算力 电力 机器人 智驾 SpaceX"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "Tesla",
           "SpaceX",
@@ -111,33 +69,13 @@
       "emoji": "📦",
       "label": "GitHub / 开源动态",
       "description": "GitHub Releases、Trending 与关键开源仓库动态。",
-      "classification": {
-        "definition": "仅用于 GitHub 原生动态，包括 repo、release、GitHub Blog 与 GitHub Trending。",
-        "when_to_use": [
-          "source 本身是 GitHub repo、GitHub release feed 或 GitHub Blog",
-          "数据来源是 GitHub Trending 或 GitHub Search",
-          "内容是仓库更新而不是更广义的开源评论"
-        ],
-        "when_not_to_use": [
-          "开源评论、工程博客、开发者媒体不归 github，而归 technology",
-          "AI repo 的 GitHub 动态仍优先归 github，不回落 ai-frontier",
-          "机器人或安全 repo 的 GitHub 动态也仍归 github"
-        ],
-        "examples": [
-          "GitHub Trending",
-          "GitHub Blog",
-          "ollama repo",
-          "autogen repo"
-        ]
-      },
       "search": {
         "google_queries": [
           "GitHub release open source project",
           "GitHub trending repositories",
           "开源项目 GitHub 更新"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "open source",
           "GitHub release",
@@ -163,26 +101,6 @@
       "emoji": "🔬",
       "label": "Technology / 科技",
       "description": "未命中细分类的广义技术内容，包括开发工具、网络安全、平台产品、云与工程实践。",
-      "classification": {
-        "definition": "广义技术兜底类，用于未命中 ai-frontier、ai-infra、github 的技术内容。",
-        "when_to_use": [
-          "source 主轴是开发工具、工程实践、软件架构、平台产品、网络安全",
-          "source 是开发者社区、工程博客、通用科技媒体",
-          "内容属于技术领域，但无法稳定归入细分类"
-        ],
-        "when_not_to_use": [
-          "如果能稳定归 ai-frontier、ai-infra 或 github，就不要再归 technology",
-          "如果重点是经营、市场、监管影响，归 business",
-          "如果重点是论文与实验室成果，归 science"
-        ],
-        "examples": [
-          "Hacker News",
-          "InfoQ",
-          "V2EX",
-          "Ars Technica",
-          "Krebs on Security"
-        ]
-      },
       "search": {
         "google_queries": [
           "developer tools software engineering platform technology",
@@ -190,8 +108,7 @@
           "programming framework security platform update",
           "开发工具 网络安全 平台 软件工程 云"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "software engineering",
           "cybersecurity",
@@ -212,25 +129,6 @@
       "emoji": "💼",
       "label": "Business / 商业",
       "description": "公司、市场、融资、并购、财报，以及宏观经济和政策对产业与资本市场的影响。",
-      "classification": {
-        "definition": "聚焦公司、市场、融资、财报、并购，以及宏观政策对产业和资本市场的影响。",
-        "when_to_use": [
-          "source 主要是财经媒体、商业媒体、产业观察",
-          "内容核心是公司经营、资本市场、融资并购、行业竞争",
-          "监管和宏观政策如果主要影响企业和市场，也归 business"
-        ],
-        "when_not_to_use": [
-          "如果重点是国际冲突、外交和地缘博弈，归 world",
-          "如果重点是技术本身而不是商业后果，归 technology 或细分类",
-          "如果重点是社会文化影响，归 social"
-        ],
-        "examples": [
-          "Financial Times",
-          "Wall Street Journal",
-          "Wall Street CN",
-          "36Kr"
-        ]
-      },
       "search": {
         "google_queries": [
           "business markets company earnings investment",
@@ -238,8 +136,7 @@
           "merger acquisition startup funding stock market",
           "商业 市场 财报 融资 宏观 监管"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "markets",
           "business",
@@ -258,25 +155,6 @@
       "emoji": "🌍",
       "label": "World / 国际",
       "description": "国际事务、外交、战争、制裁、地缘政治与全球供应链博弈。",
-      "classification": {
-        "definition": "聚焦国际关系、地缘政治、战争、制裁、外交和跨国供应链博弈。",
-        "when_to_use": [
-          "source 主轴是 world news、国际新闻、外交和战争",
-          "内容关键矛盾发生在国家与国家、地区与地区之间",
-          "科技或产业新闻若核心是地缘冲突与国际博弈，也归 world"
-        ],
-        "when_not_to_use": [
-          "如果主要是监管、市场和公司层影响，归 business",
-          "如果主要是技术实现本身，归 technology 或细分类",
-          "如果是科研突破，归 science"
-        ],
-        "examples": [
-          "BBC World",
-          "NYTimes World",
-          "Al Jazeera",
-          "The Guardian World"
-        ]
-      },
       "search": {
         "google_queries": [
           "geopolitics diplomacy conflict sanctions",
@@ -284,8 +162,7 @@
           "global supply chain geopolitical risk",
           "国际 外交 冲突 制裁 地缘"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "geopolitics",
           "international relations",
@@ -304,24 +181,6 @@
       "emoji": "🧪",
       "label": "Science / 科学",
       "description": "基础研究、论文、实验室成果与工程突破。",
-      "classification": {
-        "definition": "聚焦基础研究、论文、实验室成果和尚未完全产品化的工程突破。",
-        "when_to_use": [
-          "source 主要是 research blog、paper feed、实验室成果",
-          "内容核心是研究发现、方法突破、实验结果",
-          "即使与 AI 相关，只要重点是 research 而不是产品发布，也优先归 science"
-        ],
-        "when_not_to_use": [
-          "如果重点是模型发布、agent 产品化和 AI app，归 ai-frontier",
-          "如果重点是商业化、公司动作或市场影响，归 business",
-          "如果重点是通用技术产品更新，归 technology"
-        ],
-        "examples": [
-          "Google Research Blog",
-          "MIT Technology Review research-heavy coverage",
-          "paper-oriented sources"
-        ]
-      },
       "search": {
         "google_queries": [
           "scientific research engineering breakthrough",
@@ -329,8 +188,7 @@
           "science innovation experiment results",
           "科研 论文 实验室 工程 突破"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "research",
           "science",
@@ -352,24 +210,6 @@
       "emoji": "🫂",
       "label": "Social / 社会",
       "description": "教育、工作方式、媒体传播、社会文化影响与公众舆论。",
-      "classification": {
-        "definition": "聚焦技术和宏观变化对教育、工作、媒体、社会文化和公众舆论的影响。",
-        "when_to_use": [
-          "source 主轴是教育、就业、工作方式、社会影响、文化传播",
-          "内容重点是技术如何改变人、组织和社会，而不是技术本身",
-          "无法归入 business/world/science，但明显是社会影响议题"
-        ],
-        "when_not_to_use": [
-          "如果重点是技术实现、产品更新或工程问题，归 technology",
-          "如果重点是公司和市场，归 business",
-          "如果重点是国际政治和地缘问题，归 world"
-        ],
-        "examples": [
-          "future of work coverage",
-          "education impact coverage",
-          "media and digital culture coverage"
-        ]
-      },
       "search": {
         "google_queries": [
           "education future of work media society",
@@ -377,8 +217,7 @@
           "technology social impact jobs education",
           "教育 工作 媒体 社会 文化 影响"
         ],
-        "twitter_queries": [
-        ],
+        "twitter_queries": [],
         "reddit_queries": [
           "future of work",
           "education",

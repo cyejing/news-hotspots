@@ -77,28 +77,36 @@ class TestMergeHotspotsJson(unittest.TestCase):
             },
         ]
 
-    def test_build_hotspots_is_compact_json(self):
-        data = {
+    def _build_source_type_payload(self, articles=None, total_articles=None):
+        articles = articles or self._build_topic_articles()
+        source_types = {}
+        for article in articles:
+            source_type = article["source_type"]
+            source_types.setdefault(source_type, {"articles": []})
+            source_types[source_type]["articles"].append(article)
+        return {
             "generated": "2026-03-28T12:00:00+00:00",
-            "output_stats": {"total_articles": 2},
-            "topics": {
-                "ai-frontier": {
-                    "articles": [
-                        {
-                            "title": "OpenAI ships a new model",
-                            "topic": "ai-frontier",
-                            "source_name": "OpenAI Blog",
-                            "source_type": "rss",
-                            "final_score": 12.3,
-                            "link": "https://example.com/openai",
-                            "snippet": "A short explanation of the release.",
-                            "metrics": {"like_count": 999},
-                            "date": "2026-03-28T11:00:00+00:00",
-                        }
-                    ]
-                }
-            },
+            "output_stats": {"total_articles": total_articles or len(articles)},
+            "source_types": source_types,
         }
+
+    def test_build_hotspots_is_compact_json(self):
+        data = self._build_source_type_payload(
+            articles=[
+                {
+                    "title": "OpenAI ships a new model",
+                    "topic": "ai-frontier",
+                    "source_name": "OpenAI Blog",
+                    "source_type": "rss",
+                    "final_score": 12.3,
+                    "link": "https://example.com/openai",
+                    "snippet": "A short explanation of the release.",
+                    "metrics": {"like_count": 999},
+                    "date": "2026-03-28T11:00:00+00:00",
+                }
+            ],
+            total_articles=2,
+        )
         output = hotspots_mod.build_hotspots(data, top_n=5)
         self.assertEqual(output["total_articles"], 2)
         self.assertEqual(output["topic_order"], ["ai-frontier"])
@@ -108,26 +116,21 @@ class TestMergeHotspotsJson(unittest.TestCase):
         self.assertNotIn("_score_components", output["topics"][0]["items"][0])
 
     def test_metrics_are_normalized(self):
-        data = {
-            "output_stats": {"total_articles": 1},
-            "topics": {
-                "ai-frontier": {
-                    "articles": [
-                        {
-                            "title": "OpenAI ships a new model",
-                            "topic": "ai-frontier",
-                            "source_name": "OpenAI Blog",
-                            "source_type": "rss",
-                            "final_score": 12.3,
-                            "link": "https://example.com/openai",
-                            "metrics": {"retweet_count": 50, "reply_count": 12},
-                            "num_comments": 8,
-                            "score": 123,
-                        }
-                    ]
+        data = self._build_source_type_payload(
+            articles=[
+                {
+                    "title": "OpenAI ships a new model",
+                    "topic": "ai-frontier",
+                    "source_name": "OpenAI Blog",
+                    "source_type": "rss",
+                    "final_score": 12.3,
+                    "link": "https://example.com/openai",
+                    "metrics": {"retweet_count": 50, "reply_count": 12},
+                    "num_comments": 8,
+                    "score": 123,
                 }
-            },
-        }
+            ]
+        )
         output = hotspots_mod.build_hotspots(data, top_n=5)
         metrics = output["topics"][0]["items"][0]["metrics"]
         self.assertEqual(metrics["retweets"], 50)
@@ -198,13 +201,7 @@ class TestMergeHotspotsJson(unittest.TestCase):
                 ]
             }
             merged_payload = {
-                "topics": [
-                    {
-                        "articles": [
-                            {"title": "Merged Candidate", "link": "https://example.com/merged"}
-                        ]
-                    }
-                ]
+                "source_types": {"rss": {"articles": [{"title": "Merged Candidate", "link": "https://example.com/merged"}]}}
             }
             (json_dir / "daily.json").write_text(json.dumps(daily_payload), encoding="utf-8")
             (json_dir / "merge-sources.json").write_text(json.dumps(merged_payload), encoding="utf-8")
@@ -223,25 +220,19 @@ class TestMergeHotspotsJson(unittest.TestCase):
             self.assertTrue(Path(tmpdir).exists())
 
     def test_build_hotspots_debug_includes_ranking_details(self):
-        data = {
-            "generated": "2026-03-28T12:00:00+00:00",
-            "output_stats": {"total_articles": 1},
-            "topics": {
-                "ai-frontier": {
-                    "articles": [
-                        {
-                            "title": "OpenAI ships a new model",
-                            "topic": "ai-frontier",
-                            "source_name": "OpenAI Blog",
-                            "source_type": "rss",
-                            "final_score": 12.34,
-                            "link": "https://example.com/openai",
-                            "scoring_debug": {"final_score": {"value": 12.34, "components": {"history_score": 0.0}}},
-                        }
-                    ]
+        data = self._build_source_type_payload(
+            articles=[
+                {
+                    "title": "OpenAI ships a new model",
+                    "topic": "ai-frontier",
+                    "source_name": "OpenAI Blog",
+                    "source_type": "rss",
+                    "final_score": 12.34,
+                    "link": "https://example.com/openai",
+                    "scoring_debug": {"final_score": {"value": 12.34, "components": {"history_score": 0.0}}},
                 }
-            },
-        }
+            ]
+        )
 
         hotspots = hotspots_mod.build_hotspots(data, top_n=5)
         debug_payload = hotspots_mod.build_hotspots_debug(data, hotspots, top_n=5)
@@ -254,26 +245,20 @@ class TestMergeHotspotsJson(unittest.TestCase):
         self.assertTrue(item["selection_debug"]["source_type_first_pass"])
 
     def test_build_hotspots_uses_new_count_and_source_name_fields(self):
-        data = {
-            "generated": "2026-03-28T12:00:00+00:00",
-            "output_stats": {"total_articles": 1},
-            "topics": {
-                "ai-frontier": {
-                    "articles": [
-                        {
-                            "title": "OpenAI ships a new model",
-                            "topic": "ai-frontier",
-                            "source_name": "OpenAI Blog",
-                            "source_type": "rss",
-                            "source_names": ["OpenAI Blog"],
-                            "source_name_count": 1,
-                            "final_score": 12.3,
-                            "link": "https://example.com/openai",
-                        }
-                    ]
+        data = self._build_source_type_payload(
+            articles=[
+                {
+                    "title": "OpenAI ships a new model",
+                    "topic": "ai-frontier",
+                    "source_name": "OpenAI Blog",
+                    "source_type": "rss",
+                    "source_names": ["OpenAI Blog"],
+                    "source_name_count": 1,
+                    "final_score": 12.3,
+                    "link": "https://example.com/openai",
                 }
-            },
-        }
+            ]
+        )
 
         output = hotspots_mod.build_hotspots(data, top_n=5)
         self.assertEqual(output["topics"][0]["available_article_count"], 1)
@@ -282,11 +267,7 @@ class TestMergeHotspotsJson(unittest.TestCase):
         self.assertEqual(output["topics"][0]["items"][0]["source_name_count"], 1)
 
     def test_build_hotspots_skips_same_day_seen_articles(self):
-        data = {
-            "generated": "2026-03-28T12:00:00+00:00",
-            "output_stats": {"total_articles": 6},
-            "topics": {"ai-frontier": {"articles": self._build_topic_articles()}},
-        }
+        data = self._build_source_type_payload(total_articles=6)
 
         output = hotspots_mod.build_hotspots(
             data,
@@ -300,11 +281,7 @@ class TestMergeHotspotsJson(unittest.TestCase):
         self.assertEqual(len(titles), 5)
 
     def test_build_hotspots_prefers_distinct_source_types_then_fills(self):
-        data = {
-            "generated": "2026-03-28T12:00:00+00:00",
-            "output_stats": {"total_articles": 6},
-            "topics": {"ai-frontier": {"articles": self._build_topic_articles()}},
-        }
+        data = self._build_source_type_payload(total_articles=6)
 
         output = hotspots_mod.build_hotspots(data, top_n=5)
         titles = [item["title"] for item in output["topics"][0]["items"]]
@@ -316,32 +293,26 @@ class TestMergeHotspotsJson(unittest.TestCase):
         self.assertEqual(titles[4], "Twitter Beta")
 
     def test_build_hotspots_allows_short_topic_when_candidates_exhausted(self):
-        data = {
-            "generated": "2026-03-28T12:00:00+00:00",
-            "output_stats": {"total_articles": 2},
-            "topics": {
-                "ai-frontier": {
-                    "articles": [
-                        {
-                            "title": "Seen Story",
-                            "topic": "ai-frontier",
-                            "source_name": "Twitter",
-                            "source_type": "twitter",
-                            "final_score": 10.0,
-                            "link": "https://x.com/seen",
-                        },
-                        {
-                            "title": "Fresh Story",
-                            "topic": "ai-frontier",
-                            "source_name": "RSS",
-                            "source_type": "rss",
-                            "final_score": 9.0,
-                            "link": "https://example.com/fresh",
-                        },
-                    ]
-                }
-            },
-        }
+        data = self._build_source_type_payload(
+            articles=[
+                {
+                    "title": "Seen Story",
+                    "topic": "ai-frontier",
+                    "source_name": "Twitter",
+                    "source_type": "twitter",
+                    "final_score": 10.0,
+                    "link": "https://x.com/seen",
+                },
+                {
+                    "title": "Fresh Story",
+                    "topic": "ai-frontier",
+                    "source_name": "RSS",
+                    "source_type": "rss",
+                    "final_score": 9.0,
+                    "link": "https://example.com/fresh",
+                },
+            ]
+        )
 
         output = hotspots_mod.build_hotspots(
             data,
@@ -354,11 +325,7 @@ class TestMergeHotspotsJson(unittest.TestCase):
         self.assertEqual(output["topics"][0]["remaining_article_count"], 1)
 
     def test_second_batch_uses_same_input_but_skips_first_daily_batch(self):
-        data = {
-            "generated": "2026-03-28T12:00:00+00:00",
-            "output_stats": {"total_articles": 6},
-            "topics": {"ai-frontier": {"articles": self._build_topic_articles()}},
-        }
+        data = self._build_source_type_payload(total_articles=6)
 
         first_batch = hotspots_mod.build_hotspots(data, top_n=5)
         seen_titles = {
@@ -387,7 +354,7 @@ class TestMergeHotspotsJson(unittest.TestCase):
             payload = {
                 "generated": "2026-03-28T12:00:00+00:00",
                 "output_stats": {"total_articles": 6},
-                "topics": {"ai-frontier": {"articles": self._build_topic_articles()}},
+                "source_types": self._build_source_type_payload()["source_types"],
             }
             input_path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -442,6 +409,69 @@ class TestMergeHotspotsJson(unittest.TestCase):
             self.assertTrue(second_titles)
             self.assertTrue(first_titles.isdisjoint(second_titles))
             self.assertEqual(second_titles, {"Twitter Gamma"})
+
+    def test_build_hotspots_rebuilds_topics_from_source_types(self):
+        data = self._build_source_type_payload(
+            articles=[
+                {
+                    "title": "Infra RSS",
+                    "topic": "ai-infra",
+                    "source_name": "Infra RSS",
+                    "source_type": "rss",
+                    "final_score": 9.0,
+                    "link": "https://example.com/infra",
+                },
+                {
+                    "title": "Frontier Twitter",
+                    "topic": "ai-frontier",
+                    "source_name": "Twitter",
+                    "source_type": "twitter",
+                    "final_score": 10.0,
+                    "link": "https://x.com/frontier",
+                },
+            ],
+            total_articles=2,
+        )
+
+        output = hotspots_mod.build_hotspots(data, top_n=5)
+
+        self.assertEqual(output["topic_order"], ["ai-frontier", "ai-infra"])
+        self.assertEqual([topic["id"] for topic in output["topics"]], ["ai-frontier", "ai-infra"])
+
+    def test_build_hotspots_round_robins_then_backfills_same_source_type(self):
+        data = self._build_source_type_payload(
+            articles=[
+                {
+                    "title": "Twitter Alpha",
+                    "topic": "ai-frontier",
+                    "source_name": "Twitter",
+                    "source_type": "twitter",
+                    "final_score": 15.0,
+                    "link": "https://x.com/alpha",
+                },
+                {
+                    "title": "Twitter Beta",
+                    "topic": "ai-frontier",
+                    "source_name": "Twitter",
+                    "source_type": "twitter",
+                    "final_score": 14.0,
+                    "link": "https://x.com/beta",
+                },
+                {
+                    "title": "RSS Alpha",
+                    "topic": "ai-frontier",
+                    "source_name": "RSS",
+                    "source_type": "rss",
+                    "final_score": 13.0,
+                    "link": "https://example.com/rss-alpha",
+                },
+            ]
+        )
+
+        output = hotspots_mod.build_hotspots(data, top_n=3)
+        titles = [item["title"] for item in output["topics"][0]["items"]]
+
+        self.assertEqual(titles, ["Twitter Alpha", "RSS Alpha", "Twitter Beta"])
 
 
 class TestDebugDirectoryResolution(unittest.TestCase):
