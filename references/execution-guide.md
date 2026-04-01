@@ -31,11 +31,13 @@ Subagent 只负责运行脚本并等待归档文件生成，**不负责读取 Ma
 
 ### 主会话职责
 
-主会话在归档 Markdown 已存在后继续处理：
+主会话负责将归档 Markdown 翻译为 `<LANGUAGE>` 并输出给用户。
 
-1. 读取归档 Markdown
-2. 按 `<LANGUAGE>` 完整翻译
-3. 不删减任何 topic 或 item
+处理流程：
+
+1. 读取归档 Markdown 文件
+2. 完整翻译为 `<LANGUAGE>`
+3. 保留所有 topic 和 item（不删减）
 4. 结尾追加 AI 总结
 
 ---
