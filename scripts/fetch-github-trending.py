@@ -1,27 +1,28 @@
 #!/usr/bin/env python3
 """
-GitHub Trending 仓库抓取脚本 - 用于 news-hotspots 技能。
+GitHub Trending 抓取脚本。
 
-通过 GitHub Search API 抓取热门仓库，支持从 topics.json 配置文件加载查询。
-按星标数排序，估算每日星标增长率。
+职责：
+- 读取 `topics.json` 中的 GitHub Trending 查询
+- 调用 GitHub Search API 抓取热门仓库
+- 将仓库结果直接标准化为统一 `articles`
+- 记录失败请求、单请求耗时与 step 级诊断信息
 
-核心功能：
-- 从 topics.json 加载 GitHub Trending 查询配置
-- 使用 GitHub Search API 搜索热门仓库
-- 按时间窗口和最低星标数过滤
-- 估算每日星标增长率
-- 支持 GitHub Token 认证
+执行逻辑：
+1. 加载 runtime 与 topics 配置
+2. 逐个 topic 执行 GitHub 搜索查询
+3. 将命中的仓库转换为统一 article 结构
+4. 输出结果 JSON 与 sidecar meta JSON
 
-使用方法:
-    python3 fetch-github-trending.py \
-        --defaults config/defaults \
-        --config workspace/config \
-        --hours 48 \
-        --output trending.json \
-        --verbose
+输出文件职责：
+- `<step>.json`
+  只保存标准化后的热门仓库 article 列表，供 `merge-sources.py` 消费
+- `<step>.meta.json`
+  只保存抓取诊断，包括总耗时、成功/失败请求数、失败明细和慢请求统计
 
-环境变量:
-    GITHUB_TOKEN - GitHub 个人访问令牌（可选，提高速率限制）
+环境变量：
+- `GITHUB_TOKEN`
+  可选，用于提高 GitHub API 速率限制
 """
 
 import json
@@ -38,11 +39,29 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 
+try:
+    from config_loader import load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
+except ImportError:
+    sys.path.append(str(Path(__file__).parent))
+    from config_loader import load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
+
 # ==================== 常量配置 ====================
 TIMEOUT = 60  # 请求超时时间（秒）
 USER_AGENT = "NewsHotspots/3.0 (bot; +https://github.com/cyejing/news-hotspots)"
-GITHUB_TRENDING_COOLDOWN_ENV = "NEWS_HOTSPOTS_GITHUB_TRENDING_COOLDOWN_SECONDS"
 GITHUB_TRENDING_COOLDOWN_DEFAULT = 2.0
+
+
+def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    global TIMEOUT, GITHUB_TRENDING_COOLDOWN_DEFAULT
+    runtime = load_merged_runtime_config(defaults_dir, config_dir)
+    fetch_config = runtime.get("fetch", {}).get("github_trending", {})
+    diagnostics_config = runtime.get("diagnostics", {})
+    TIMEOUT = int(fetch_config.get("request_timeout_s", TIMEOUT) or TIMEOUT)
+    GITHUB_TRENDING_COOLDOWN_DEFAULT = float(fetch_config.get("cooldown_s", GITHUB_TRENDING_COOLDOWN_DEFAULT) or 0)
+    configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
+    return runtime
 
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
@@ -66,14 +85,7 @@ def setup_logging(verbose: bool = False) -> logging.Logger:
 
 def get_github_trending_cooldown_seconds() -> float:
     """Get sequential request cooldown for GitHub trending search."""
-    raw = os.environ.get(
-        GITHUB_TRENDING_COOLDOWN_ENV,
-        str(GITHUB_TRENDING_COOLDOWN_DEFAULT),
-    )
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return GITHUB_TRENDING_COOLDOWN_DEFAULT
+    return max(0.0, float(GITHUB_TRENDING_COOLDOWN_DEFAULT))
 
 
 def parse_github_date(date_str: str) -> Optional[datetime]:
@@ -157,7 +169,7 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
         返回:
         包含仓库列表与 query 统计的字典:
         - repos: 仓库列表
-        - query_stats: 每次查询的状态
+        - request_traces: 每次查询的请求耗时记录
         - queries_total: 查询总数
         - queries_ok: 成功查询数
 
@@ -181,9 +193,10 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
         logging.warning("No GitHub trending queries configured under topic=github")
         return {
             "repos": [],
-            "query_stats": [],
             "queries_total": 0,
             "queries_ok": 0,
+            "request_traces": [],
+            "failed_items": [],
         }
     
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -198,7 +211,8 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
 
     all_repos = []
     seen_repos = set()
-    query_stats: List[Dict[str, Any]] = []
+    request_traces: List[Dict[str, Any]] = []
+    failed_items: List[Dict[str, Any]] = []
     cooldown_s = get_github_trending_cooldown_seconds()
     last_finished_at: Optional[float] = None
     logging.info("GitHub trending sequential cooldown: %.1fs", cooldown_s)
@@ -213,6 +227,7 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
         url = f"https://api.github.com/search/repositories?q={quote(q)}&sort=stars&order=desc&per_page={per_topic}"
 
         try:
+            query_started_at = time.monotonic()
             req = Request(url, headers=headers)
             with urlopen(req, timeout=TIMEOUT) as resp:
                 data = json.loads(resp.read().decode())
@@ -244,31 +259,16 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
                     "source_type": "github_trending",
                 })
 
-            query_stats.append({
-                "query": tq["q"],
-                "topic": tq["topic"],
-                "status": "ok",
-                "count": len(data.get("items", [])),
-            })
+            request_traces.append(build_request_trace(tq["q"], url, time.monotonic() - query_started_at, status="ok", topic=tq["topic"], backend="github-api"))
             logging.debug(f"Trending [{tq['topic']}]: {len(data.get('items', []))} repos")
 
         except HTTPError as e:
-            query_stats.append({
-                "query": tq["q"],
-                "topic": tq["topic"],
-                "status": "error",
-                "count": 0,
-                "error": f"HTTP {e.code}",
-            })
+            failed_items.append(normalize_failed_item(tq["q"], f"HTTP {e.code}", 0))
+            request_traces.append(build_request_trace(tq["q"], url, 0, status="error", error=f"HTTP {e.code}", topic=tq["topic"], backend="github-api"))
             logging.warning(f"GitHub trending search error [{tq['topic']}]: HTTP {e.code}")
         except Exception as e:
-            query_stats.append({
-                "query": tq["q"],
-                "topic": tq["topic"],
-                "status": "error",
-                "count": 0,
-                "error": str(e)[:180],
-            })
+            failed_items.append(normalize_failed_item(tq["q"], str(e)[:180], 0))
+            request_traces.append(build_request_trace(tq["q"], url, 0, status="error", error=str(e)[:180], topic=tq["topic"], backend="github-api"))
             logging.warning(f"GitHub trending search error [{tq['topic']}]: {e}")
         finally:
             last_finished_at = time.time()
@@ -278,9 +278,10 @@ def fetch_trending_repos(hours: int = 48, github_token: Optional[str] = None,
     logging.info(f"🔥 Trending: {len(all_repos)} repos found across {len(trending_queries)} topics")
     return {
         "repos": all_repos,
-        "query_stats": query_stats,
-        "queries_total": len(query_stats),
-        "queries_ok": sum(1 for stat in query_stats if stat.get("status") == "ok"),
+        "queries_total": len(request_traces),
+        "queries_ok": sum(1 for trace in request_traces if trace.get("status") == "ok"),
+        "request_traces": request_traces,
+        "failed_items": failed_items,
     }
 
 def parse_args() -> argparse.Namespace:
@@ -294,8 +295,8 @@ Examples:
         """
     )
     parser.add_argument("--hours", type=int, default=48, help="Lookback window in hours (default: 48)")
-    parser.add_argument("--min-stars", type=int, default=50, help="Minimum stars (default: 50)")
-    parser.add_argument("--per-topic", type=int, default=15, help="Max repos per topic (default: 15)")
+    parser.add_argument("--min-stars", type=int, default=None, help="Minimum stars")
+    parser.add_argument("--per-topic", type=int, default=None, help="Max repos per topic")
     parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Default config directory")
     parser.add_argument("--config", type=Path, help="User config directory")
     parser.add_argument("--output", "-o", type=Path, help="Output JSON path")
@@ -308,34 +309,54 @@ def main() -> int:
     args = parse_args()
 
     setup_logging(args.verbose)
+    effective_config_dir = args.config if args.config and args.config.exists() else None
+    runtime = apply_runtime_config(args.defaults, effective_config_dir)
+    fetch_config = runtime.get("fetch", {}).get("github_trending", {})
+    min_stars = args.min_stars if args.min_stars is not None else int(fetch_config.get("min_stars", 50) or 50)
+    per_topic = args.per_topic if args.per_topic is not None else int(fetch_config.get("per_topic", 15) or 15)
     github_token = resolve_github_token()
     trending_result = fetch_trending_repos(
-        args.hours, github_token, args.min_stars, args.per_topic,
+        args.hours, github_token, min_stars, per_topic,
         defaults_dir=args.defaults,
-        config_dir=args.config
+        config_dir=effective_config_dir
     )
     repos = trending_result["repos"]
 
     output = {
         "generated": datetime.now(timezone.utc).isoformat(),
         "source_type": "github_trending",
-        "hours": args.hours,
-        "min_stars": args.min_stars,
-        "cooldown_s": get_github_trending_cooldown_seconds(),
-        "calls_total": trending_result["queries_total"],
-        "calls_ok": trending_result["queries_ok"],
-        "calls_kind": "queries",
-        "items_total": len(repos),
-        "queries_total": trending_result["queries_total"],
-        "queries_ok": trending_result["queries_ok"],
-        "query_stats": trending_result["query_stats"],
-        "total": len(repos),
-        "repos": repos,
+        "articles": [
+            {
+                "title": f"{repo['repo']}: {repo['description']}" if repo.get("description") else repo["repo"],
+                "link": repo.get("url", f"https://github.com/{repo['repo']}"),
+                "date": repo.get("pushed_at", ""),
+                "topic": str(repo.get("topic") or "github"),
+                "source_type": "github_trending",
+                "source_id": f"github-trending-{repo['repo']}",
+                "source_name": "GitHub Trending",
+                "source_priority": 4,
+                "summary": repo.get("description", ""),
+                "stars": repo.get("stars", 0),
+                "daily_stars_est": repo.get("daily_stars_est", 0),
+                "forks": repo.get("forks", 0),
+                "language": repo.get("language", ""),
+            }
+            for repo in repos
+        ],
     }
 
     out_path = args.output or Path(tempfile.mkstemp(prefix="news-hotspots-trending-", suffix=".json")[1])
-    with open(out_path, 'w', encoding='utf-8') as f:
-        json.dump(output, f, indent=2, ensure_ascii=False)
+    meta = build_step_meta(
+        step_key="github_trending",
+        status="ok" if trending_result["queries_ok"] == trending_result["queries_total"] and len(repos) > 0 else ("partial" if trending_result["queries_ok"] > 0 and len(repos) > 0 else "error"),
+        elapsed_s=0.0,
+        items=len(repos),
+        calls_total=trending_result["queries_total"],
+        calls_ok=trending_result["queries_ok"],
+        failed_items=trending_result.get("failed_items", []),
+        request_traces=trending_result.get("request_traces", []),
+    )
+    write_result_with_meta(out_path, output, meta)
 
     print(f"✅ {len(repos)} trending repos → {out_path}")
     return 0

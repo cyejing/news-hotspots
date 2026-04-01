@@ -1,0 +1,93 @@
+{
+  "pipeline": {
+    "fetch_step_timeout_s": 2000,
+    "merge_timeout_s": 300,
+    "hotspots_timeout_s": 120,
+    "default_hotspots_top_n": 5,
+    "archive_retention_days": 90
+  },
+  "fetch": {
+    "rss": {
+      "request_timeout_s": 20,
+      "max_workers": 20,
+      "max_articles_per_feed": 20,
+      "retry_count": 1,
+      "retry_delay_s": 3.0,
+      "cache_ttl_hours": 1
+    },
+    "github": {
+      "request_timeout_s": 20,
+      "cooldown_s": 3.0,
+      "releases_per_repo": 20,
+      "retry_count": 1,
+      "retry_delay_s": 2.0,
+      "cache_ttl_hours": 1
+    },
+    "github_trending": {
+      "request_timeout_s": 20,
+      "cooldown_s": 3.0,
+      "min_stars": 50,
+      "per_topic": 15
+    },
+    "google": {
+      "request_timeout_s": 20,
+      "cooldown_s": 15.0,
+      "results_per_query": 10
+    },
+    "twitter": {
+      "request_timeout_s": 20,
+      "cooldown_s": 15.0,
+      "count": 20,
+      "results_per_query": 10
+    },
+    "reddit": {
+      "request_timeout_s": 20,
+      "cooldown_s": 15.0,
+      "results_per_query": 10
+    },
+    "v2ex": {
+      "request_timeout_s": 30,
+      "cooldown_s": 6.0
+    },
+    "zhihu": {
+      "request_timeout_s": 30,
+      "cooldown_s": 6.0,
+      "limit": 20
+    },
+    "weibo": {
+      "request_timeout_s": 30,
+      "cooldown_s": 6.0,
+      "limit": 30
+    },
+    "toutiao": {
+      "request_timeout_s": 30,
+      "cooldown_s": 6.0,
+      "limit": 20
+    },
+    "api": {
+      "request_timeout_s": 20,
+      "max_workers": 10,
+      "limit": 15,
+      "host_cooldowns": {
+        "api.weibo.cn": 1.0,
+        "api.wallstreetcn.com": 1.0,
+        "r.jina.ai": 1.0,
+        "hacker-news.firebaseio.com": 1.0
+      }
+    }
+  },
+  "diagnostics": {
+    "history_days": 7,
+    "degraded_threshold": 0.5,
+    "report_limit": 20,
+    "error_text_limit": 180,
+    "slow_request_thresholds_s": [
+      10.0,
+      15.0
+    ]
+  },
+  "cache": {
+    "rss_cache_path": "/tmp/news-hotspots-rss-cache.json",
+    "github_cache_path": "/tmp/news-hotspots-github-cache.json"
+  }
+}

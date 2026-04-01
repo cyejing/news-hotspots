@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 """
-Fetch GitHub releases from unified sources configuration.
+GitHub source_type 抓取脚本。
 
-Reads sources.json, filters GitHub sources, fetches releases sequentially with retry
-mechanism, and outputs structured JSON with releases tagged by a single topic.
+职责：
+- 读取 `github.json` 中启用的 GitHub 仓库配置
+- 顺序抓取 release / repo 动态
+- 标准化为统一 `articles`
+- 把失败请求、重试结果和耗时写入 `*.meta.json`
 
-Usage:
-    python3 fetch-github.py [--config CONFIG_DIR] [--hours 48] [--output FILE] [--verbose]
+执行逻辑：
+1. 加载 runtime 与 GitHub source 配置
+2. 按 cooldown 顺序请求各仓库
+3. 将命中的 release 标准化为 article
+4. 输出结果 JSON 与 sidecar meta JSON
+
+输出文件职责：
+- `<step>.json`
+  只保存标准化后的 GitHub article 列表，供 `merge-sources.py` 合并
+- `<step>.meta.json`
+  只保存抓取诊断，供 `run-pipeline.py` 聚合和 `source-health.py` 诊断
+
+环境变量：
+- `GITHUB_TOKEN`
+  可选，用于提高 GitHub API 速率限制
 """
 
 import json
@@ -24,27 +40,41 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 try:
-    from config_loader import load_merged_sources
+    from config_loader import load_merged_runtime_config, load_merged_github_sources
 except ImportError:
     sys.path.append(str(Path(__file__).parent))
-    from config_loader import load_merged_sources
+    from config_loader import load_merged_runtime_config, load_merged_github_sources
 
 try:
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 except ImportError:
     sys.path.append(str(Path(__file__).parent))
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 
-GITHUB_TIMEOUT_ENV = "NEWS_HOTSPOTS_GITHUB_TIMEOUT_SECONDS"
-GITHUB_TIMEOUT_DEFAULT = 25
-TIMEOUT = int(float(os.environ.get(GITHUB_TIMEOUT_ENV, str(GITHUB_TIMEOUT_DEFAULT))))
+TIMEOUT = 25
 MAX_RELEASES_PER_REPO = 20
 RETRY_COUNT = 2
 RETRY_DELAY = 2.0  # seconds
 GITHUB_CACHE_PATH = "/tmp/news-hotspots-github-cache.json"
 GITHUB_CACHE_TTL_HOURS = 24
-GITHUB_COOLDOWN_ENV = "NEWS_HOTSPOTS_GITHUB_COOLDOWN_SECONDS"
 GITHUB_COOLDOWN_DEFAULT = 2.0
+
+
+def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    global TIMEOUT, MAX_RELEASES_PER_REPO, RETRY_COUNT, RETRY_DELAY, GITHUB_CACHE_PATH, GITHUB_CACHE_TTL_HOURS, GITHUB_COOLDOWN_DEFAULT
+    runtime = load_merged_runtime_config(defaults_dir, config_dir)
+    fetch_config = runtime.get("fetch", {}).get("github", {})
+    diagnostics_config = runtime.get("diagnostics", {})
+    cache_config = runtime.get("cache", {})
+    TIMEOUT = int(fetch_config.get("request_timeout_s", TIMEOUT) or TIMEOUT)
+    MAX_RELEASES_PER_REPO = int(fetch_config.get("releases_per_repo", MAX_RELEASES_PER_REPO) or MAX_RELEASES_PER_REPO)
+    RETRY_COUNT = int(fetch_config.get("retry_count", RETRY_COUNT) or RETRY_COUNT)
+    RETRY_DELAY = float(fetch_config.get("retry_delay_s", RETRY_DELAY) or RETRY_DELAY)
+    GITHUB_CACHE_TTL_HOURS = int(fetch_config.get("cache_ttl_hours", GITHUB_CACHE_TTL_HOURS) or GITHUB_CACHE_TTL_HOURS)
+    GITHUB_COOLDOWN_DEFAULT = float(fetch_config.get("cooldown_s", GITHUB_COOLDOWN_DEFAULT) or 0)
+    GITHUB_CACHE_PATH = str(cache_config.get("github_cache_path", GITHUB_CACHE_PATH) or GITHUB_CACHE_PATH)
+    configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
+    return runtime
 
 
 def normalize_priority(priority: Any, default: int = 3) -> int:
@@ -60,11 +90,7 @@ def normalize_priority(priority: Any, default: int = 3) -> int:
 
 def get_github_cooldown_seconds() -> float:
     """Get sequential request cooldown for GitHub release fetches."""
-    raw = os.environ.get(GITHUB_COOLDOWN_ENV, str(GITHUB_COOLDOWN_DEFAULT))
-    try:
-        return max(0.0, float(raw))
-    except ValueError:
-        return GITHUB_COOLDOWN_DEFAULT
+    return max(0.0, float(GITHUB_COOLDOWN_DEFAULT))
 
 
 def is_retryable_github_error(exc: Exception) -> bool:
@@ -273,8 +299,8 @@ def fetch_releases_with_retry(source: Dict[str, Any], cutoff: datetime, github_t
                         "not_modified": True,
                         "count": 0,
                         "articles": [],
-                        "request_timings": request_log,
-                        "request_timing_summary": summarize_request_traces(request_log),
+                        "request_traces": request_log,
+                        "failed_items": [],
                     }
                 raise
 
@@ -330,8 +356,8 @@ def fetch_releases_with_retry(source: Dict[str, Any], cutoff: datetime, github_t
                 "items": len(articles),
                 "count": len(articles),
                 "articles": articles,
-                "request_timings": request_log,
-                "request_timing_summary": summarize_request_traces(request_log),
+                "request_traces": request_log,
+                "failed_items": [],
             }
             
         except Exception as e:
@@ -368,26 +394,15 @@ def fetch_releases_with_retry(source: Dict[str, Any], cutoff: datetime, github_t
                     "items": 0,
                     "count": 0,
                     "articles": [],
-                    "request_timings": request_log,
-                    "request_timing_summary": summarize_request_traces(request_log),
+                    "request_traces": request_log,
+                    "failed_items": [normalize_failed_item(source_id, error_msg, time.monotonic() - started_at)],
                 }
 
 
 def load_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    """Load GitHub sources from unified configuration with overlay support."""
-    # Load merged sources from defaults + optional user overlay
-    all_sources = load_merged_sources(defaults_dir, config_dir)
-    
-    # Filter GitHub sources that are enabled
-    github_sources = []
-    for source in all_sources:
-        if source.get("type") == "github" and source.get("enabled", True):
-            # Validate required fields
-            if not source.get("repo"):
-                logging.warning(f"GitHub source {source.get('id', 'unknown')} missing repo field, skipping")
-                continue
-            github_sources.append(source)
-    
+    """Load GitHub sources from dedicated GitHub configuration with overlay support."""
+    all_sources = load_merged_github_sources(defaults_dir, config_dir)
+    github_sources = [source for source in all_sources if source.get("enabled", True) and source.get("repo")]
     logging.info(f"Loaded {len(github_sources)} enabled GitHub sources")
     return github_sources
 
@@ -421,6 +436,8 @@ def main():
     """Main GitHub releases fetching function."""
     args = parse_args()
     logger = setup_logging(args.verbose)
+    effective_config_dir = args.config if args.config and args.config.exists() else None
+    apply_runtime_config(args.defaults, effective_config_dir)
 
     # Resume support: skip if output exists, is valid JSON, and < 1 hour old
     if args.output and args.output.exists() and not args.force:
@@ -443,7 +460,7 @@ def main():
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=args.hours)
         
-        sources = load_sources(args.defaults, args.config)
+        sources = load_sources(args.defaults, effective_config_dir)
         
         if not sources:
             logger.warning("No GitHub sources found or all disabled")
@@ -485,40 +502,34 @@ def main():
         ok_count = sum(1 for r in results if r["status"] == "ok")
         total_articles = sum(r.get("count", 0) for r in results)
 
+        articles = [article for result in results for article in result.get("articles", []) if isinstance(article, dict)]
+        failed_items = [
+            normalize_failed_item(result.get("source_id"), result.get("error"), result.get("elapsed_s"))
+            for result in results
+            if result.get("status") != "ok" and result.get("error")
+        ]
         output = {
             "generated": datetime.now(timezone.utc).isoformat(),
             "source_type": "github",
-            "defaults_dir": str(args.defaults),
-            "config_dir": str(args.config) if args.config else None,
-            "hours": args.hours,
-            "github_token_used": github_token is not None,
-            "request_timeout_s": TIMEOUT,
-            "cooldown_s": cooldown_s,
-            "calls_total": len(results),
-            "calls_ok": ok_count,
-            "calls_kind": "sources",
-            "items_total": total_articles,
-            "sources_total": len(results),
-            "sources_ok": ok_count,
-            "total_articles": total_articles,
-            "request_timing_summary": summarize_request_traces(
-                trace
-                for result in results
-                for trace in result.get("request_timings", [])
-                if isinstance(trace, dict)
-            ),
-            "sources": results,
+            "articles": articles,
         }
-
-        # Write output
-        json_str = json.dumps(output, ensure_ascii=False, indent=2)
-        with open(args.output, "w", encoding='utf-8') as f:
-            f.write(json_str)
+        request_traces = [trace for result in results for trace in result.get("request_traces", []) if isinstance(trace, dict)]
+        meta = build_step_meta(
+            step_key="github",
+            status="ok" if ok_count == len(results) and total_articles > 0 else ("partial" if ok_count > 0 and total_articles > 0 else "error"),
+            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in results),
+            items=total_articles,
+            calls_total=len(results),
+            calls_ok=ok_count,
+            failed_items=failed_items,
+            request_traces=request_traces,
+        )
+        write_result_with_meta(args.output, output, meta)
 
         logger.info(f"✅ Done: {ok_count}/{len(results)} repos ok, "
                    f"{total_articles} releases → {args.output}")
         
-        return 0
+        return 0 if total_articles > 0 else 1
         
     except Exception as e:
         logger.error(f"💥 GitHub fetch failed: {e}")

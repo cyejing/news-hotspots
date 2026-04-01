@@ -1,0 +1,957 @@
+{
+  "_description": "Unified data sources configuration. Priority is a light ranking hint: use 3 for most sources, 4 for clearly authoritative sources, and reserve 5 for a small number of top-tier primary sources.",
+  "_updated": "2026-03-30",
+  "_version": "4.0.0",
+  "sources": [
+    {
+      "id": "huggingface-rss",
+      "type": "rss",
+      "name": "Hugging Face Blog",
+      "url": "https://huggingface.co/blog/feed.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "开源 AI/ML",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "openai-rss",
+      "type": "rss",
+      "name": "OpenAI Blog",
+      "url": "https://openai.com/news/rss.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "OpenAI 官方更新",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "googleai-rss",
+      "type": "rss",
+      "name": "Google AI Blog",
+      "url": "https://blog.google/technology/ai/rss/",
+      "enabled": true,
+      "priority": 4,
+      "note": "Google AI 研究",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "hn-rss",
+      "type": "rss",
+      "name": "Hacker News Frontpage",
+      "url": "https://hnrss.org/frontpage",
+      "enabled": false,
+      "priority": 4,
+      "note": "Hacker News 热门头条",
+      "topic": "technology"
+    },
+    {
+      "id": "ars-rss",
+      "type": "rss",
+      "name": "Ars Technica",
+      "url": "https://feeds.arstechnica.com/arstechnica/index",
+      "enabled": true,
+      "priority": 3,
+      "note": "科技新闻",
+      "topic": "technology"
+    },
+    {
+      "id": "verge-rss",
+      "type": "rss",
+      "name": "The Verge",
+      "url": "https://www.theverge.com/rss/index.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "科技新闻",
+      "topic": "technology"
+    },
+    {
+      "id": "krebs-rss",
+      "type": "rss",
+      "name": "Krebs on Security",
+      "url": "https://krebsonsecurity.com/feed/",
+      "enabled": true,
+      "priority": 3,
+      "note": "网络安全",
+      "topic": "technology"
+    },
+    {
+      "id": "36kr-rss",
+      "type": "rss",
+      "name": "36氪",
+      "url": "https://36kr.com/feed",
+      "enabled": true,
+      "priority": 3,
+      "note": "中文科技媒体",
+      "topic": "business"
+    },
+    {
+      "id": "infoq-rss",
+      "type": "rss",
+      "name": "InfoQ 中文",
+      "url": "https://www.infoq.cn/feed",
+      "enabled": true,
+      "priority": 3,
+      "note": "技术社区",
+      "topic": "technology"
+    },
+    {
+      "id": "mit-tech-review-rss",
+      "type": "rss",
+      "name": "MIT Technology Review",
+      "url": "https://www.technologyreview.com/feed",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI 政策与深度分析",
+      "topic": "science"
+    },
+    {
+      "id": "venturebeat-ai-rss",
+      "type": "rss",
+      "name": "VentureBeat AI",
+      "url": "https://venturebeat.com/ai/feed/",
+      "enabled": true,
+      "priority": 3,
+      "note": "前沿 AI 研究",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "producthunt-rss",
+      "type": "rss",
+      "name": "Product Hunt",
+      "url": "https://www.producthunt.com/feed",
+      "enabled": true,
+      "priority": 3,
+      "note": "新产品发现与 AI 工具",
+      "topic": "technology"
+    },
+    {
+      "id": "ifanr-rss",
+      "type": "rss",
+      "name": "爱范儿",
+      "url": "https://www.ifanr.com/feed",
+      "enabled": true,
+      "priority": 3,
+      "note": "中文科技产品评测",
+      "topic": "technology"
+    },
+    {
+      "id": "sspai-rss",
+      "type": "rss",
+      "name": "少数派",
+      "url": "https://sspai.com/feed",
+      "enabled": true,
+      "priority": 3,
+      "note": "中文效率工具与科技深度内容",
+      "topic": "technology"
+    },
+    {
+      "id": "wired-rss",
+      "type": "rss",
+      "name": "Wired",
+      "url": "https://www.wired.com/feed/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "科技文化深度报道",
+      "topic": "technology"
+    },
+    {
+      "id": "semiengineering-rss",
+      "type": "rss",
+      "name": "Semiconductor Engineering",
+      "url": "https://semiengineering.com/feed/",
+      "enabled": true,
+      "priority": 4,
+      "note": "半导体工程与芯片产业",
+      "topic": "ai-infra"
+    },
+    {
+      "id": "servethehome-rss",
+      "type": "rss",
+      "name": "ServeTheHome",
+      "url": "https://www.servethehome.com/feed/",
+      "enabled": true,
+      "priority": 4,
+      "note": "AI 服务器与基础设施",
+      "topic": "ai-infra"
+    },
+    {
+      "id": "tomshardware-rss",
+      "type": "rss",
+      "name": "Tom's Hardware",
+      "url": "https://www.tomshardware.com/feeds/all",
+      "enabled": true,
+      "priority": 3,
+      "note": "硬件评测与芯片动态",
+      "topic": "ai-infra"
+    },
+    {
+      "id": "bbc-home-rss",
+      "type": "rss",
+      "name": "BBC News",
+      "url": "https://feeds.bbci.co.uk/news/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "BBC 新闻首页",
+      "topic": "world"
+    },
+    {
+      "id": "bbc-world-rss",
+      "type": "rss",
+      "name": "BBC World",
+      "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "BBC 国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "bbc-tech-rss",
+      "type": "rss",
+      "name": "BBC Technology",
+      "url": "https://feeds.bbci.co.uk/news/technology/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "BBC 科技新闻",
+      "topic": "technology"
+    },
+    {
+      "id": "bbc-business-rss",
+      "type": "rss",
+      "name": "BBC Business",
+      "url": "https://feeds.bbci.co.uk/news/business/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "BBC 商业新闻",
+      "topic": "business"
+    },
+    {
+      "id": "bbc-science-rss",
+      "type": "rss",
+      "name": "BBC Science",
+      "url": "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "BBC 科学与环境",
+      "topic": "science"
+    },
+    {
+      "id": "bbc-health-rss",
+      "type": "rss",
+      "name": "BBC Health",
+      "url": "https://feeds.bbci.co.uk/news/health/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "BBC 健康新闻",
+      "topic": "social"
+    },
+    {
+      "id": "abcnews-top-rss",
+      "type": "rss",
+      "name": "ABC News Top Stories",
+      "url": "https://feeds.abcnews.com/abcnews/topstories",
+      "enabled": true,
+      "priority": 3,
+      "note": "ABC News 官方头条",
+      "topic": "world"
+    },
+    {
+      "id": "abcnews-business-rss",
+      "type": "rss",
+      "name": "ABC News Business",
+      "url": "https://feeds.abcnews.com/abcnews/businessheadlines",
+      "enabled": true,
+      "priority": 3,
+      "note": "ABC News 商业频道",
+      "topic": "business"
+    },
+    {
+      "id": "abcnews-tech-rss",
+      "type": "rss",
+      "name": "ABC News Technology",
+      "url": "https://feeds.abcnews.com/abcnews/technologyheadlines",
+      "enabled": true,
+      "priority": 3,
+      "note": "ABC News 科技频道",
+      "topic": "technology"
+    },
+    {
+      "id": "abcnews-politics-rss",
+      "type": "rss",
+      "name": "ABC News Politics",
+      "url": "https://feeds.abcnews.com/abcnews/politicsheadlines",
+      "enabled": true,
+      "priority": 3,
+      "note": "ABC News 政治频道",
+      "topic": "world"
+    },
+    {
+      "id": "voa-usa-rss",
+      "type": "rss",
+      "name": "VOA USA",
+      "url": "https://www.voanews.com/api/zqboml-vomx-tpeivmy",
+      "enabled": true,
+      "priority": 3,
+      "note": "美国之音美国新闻",
+      "topic": "world"
+    },
+    {
+      "id": "voa-tech-rss",
+      "type": "rss",
+      "name": "VOA Technology",
+      "url": "https://www.voanews.com/api/zyritl-vomx-tpettmq",
+      "enabled": true,
+      "priority": 3,
+      "note": "美国之音科技频道",
+      "topic": "technology"
+    },
+    {
+      "id": "voa-business-rss",
+      "type": "rss",
+      "name": "VOA Economy",
+      "url": "https://www.voanews.com/api/zyboql-vomx-tpetvmi",
+      "enabled": true,
+      "priority": 3,
+      "note": "美国之音经济频道",
+      "topic": "business"
+    },
+    {
+      "id": "voa-science-rss",
+      "type": "rss",
+      "name": "VOA Science & Health",
+      "url": "https://www.voanews.com/api/ztbopl-vomx-tpekvmm",
+      "enabled": true,
+      "priority": 3,
+      "note": "美国之音科学与健康频道",
+      "topic": "science"
+    },
+    {
+      "id": "nbc-top-rss",
+      "type": "rss",
+      "name": "NBC News Top Stories",
+      "url": "https://feeds.nbcnews.com/nbcnews/public/news",
+      "enabled": true,
+      "priority": 3,
+      "note": "NBC News 官方头条",
+      "topic": "world"
+    },
+    {
+      "id": "nbc-business-rss",
+      "type": "rss",
+      "name": "NBC News Business",
+      "url": "https://feeds.nbcnews.com/nbcnews/public/business",
+      "enabled": true,
+      "priority": 3,
+      "note": "NBC News 商业频道",
+      "topic": "business"
+    },
+    {
+      "id": "nbc-politics-rss",
+      "type": "rss",
+      "name": "NBC News Politics",
+      "url": "https://feeds.nbcnews.com/nbcnews/public/politics",
+      "enabled": true,
+      "priority": 3,
+      "note": "NBC News 政治频道",
+      "topic": "world"
+    },
+    {
+      "id": "nbc-health-rss",
+      "type": "rss",
+      "name": "NBC News Health",
+      "url": "https://feeds.nbcnews.com/nbcnews/public/health",
+      "enabled": true,
+      "priority": 3,
+      "note": "NBC News 健康频道",
+      "topic": "social"
+    },
+    {
+      "id": "cbs-main-rss",
+      "type": "rss",
+      "name": "CBS News Top Stories",
+      "url": "https://www.cbsnews.com/latest/rss/main",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 官方头条",
+      "topic": "world"
+    },
+    {
+      "id": "cbs-us-rss",
+      "type": "rss",
+      "name": "CBS News U.S.",
+      "url": "https://www.cbsnews.com/latest/rss/us",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 美国新闻",
+      "topic": "world"
+    },
+    {
+      "id": "cbs-politics-rss",
+      "type": "rss",
+      "name": "CBS News Politics",
+      "url": "https://www.cbsnews.com/latest/rss/politics",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 政治频道",
+      "topic": "world"
+    },
+    {
+      "id": "cbs-world-rss",
+      "type": "rss",
+      "name": "CBS News World",
+      "url": "https://www.cbsnews.com/latest/rss/world",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "cbs-health-rss",
+      "type": "rss",
+      "name": "CBS News Health",
+      "url": "https://www.cbsnews.com/latest/rss/health",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 健康频道",
+      "topic": "social"
+    },
+    {
+      "id": "cbs-moneywatch-rss",
+      "type": "rss",
+      "name": "CBS MoneyWatch",
+      "url": "https://www.cbsnews.com/latest/rss/moneywatch",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 商业与市场频道",
+      "topic": "business"
+    },
+    {
+      "id": "cbs-science-rss",
+      "type": "rss",
+      "name": "CBS News Science",
+      "url": "https://www.cbsnews.com/latest/rss/science",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 科学频道",
+      "topic": "science"
+    },
+    {
+      "id": "cbs-technology-rss",
+      "type": "rss",
+      "name": "CBS News Technology",
+      "url": "https://www.cbsnews.com/latest/rss/technology",
+      "enabled": true,
+      "priority": 3,
+      "note": "CBS News 科技频道",
+      "topic": "technology"
+    },
+    {
+      "id": "npr-news-rss",
+      "type": "rss",
+      "name": "NPR News",
+      "url": "https://feeds.npr.org/1001/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "NPR 新闻首页",
+      "topic": "world"
+    },
+    {
+      "id": "npr-world-rss",
+      "type": "rss",
+      "name": "NPR World",
+      "url": "https://feeds.npr.org/1004/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "NPR 国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "npr-tech-rss",
+      "type": "rss",
+      "name": "NPR Technology",
+      "url": "https://feeds.npr.org/1019/rss.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "NPR 科技",
+      "topic": "technology"
+    },
+    {
+      "id": "npr-business-rss",
+      "type": "rss",
+      "name": "NPR Business",
+      "url": "https://feeds.npr.org/1006/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "NPR 商业",
+      "topic": "business"
+    },
+    {
+      "id": "npr-science-rss",
+      "type": "rss",
+      "name": "NPR Science",
+      "url": "https://feeds.npr.org/1007/rss.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "NPR 科学",
+      "topic": "science"
+    },
+    {
+      "id": "ted-blog-rss",
+      "type": "rss",
+      "name": "TED Blog",
+      "url": "https://blog.ted.com/feed/",
+      "enabled": true,
+      "priority": 3,
+      "note": "TED 官方博客，涵盖创意、科学与社会议题",
+      "topic": "social"
+    },
+    {
+      "id": "nytimes-home-rss",
+      "type": "rss",
+      "name": "NYTimes Home",
+      "url": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "纽约时报首页",
+      "topic": "world"
+    },
+    {
+      "id": "nytimes-world-rss",
+      "type": "rss",
+      "name": "NYTimes World",
+      "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "纽约时报国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "nytimes-tech-rss",
+      "type": "rss",
+      "name": "NYTimes Technology",
+      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "纽约时报科技",
+      "topic": "technology"
+    },
+    {
+      "id": "aljazeera-rss",
+      "type": "rss",
+      "name": "Al Jazeera",
+      "url": "https://www.aljazeera.com/xml/rss/all.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "半岛电视台全球新闻",
+      "topic": "world"
+    },
+    {
+      "id": "guardian-rss",
+      "type": "rss",
+      "name": "The Guardian",
+      "url": "https://www.theguardian.com/world/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "卫报国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "wsj-rss",
+      "type": "rss",
+      "name": "Wall Street Journal",
+      "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "华尔街日报市场新闻",
+      "topic": "business"
+    },
+    {
+      "id": "wsj-world-rss",
+      "type": "rss",
+      "name": "Wall Street Journal World News",
+      "url": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "华尔街日报国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "ieee-spectrum-rss",
+      "type": "rss",
+      "name": "IEEE Spectrum",
+      "url": "https://spectrum.ieee.org/feeds/feed.rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "工程与前沿科技权威媒体",
+      "topic": "science"
+    },
+    {
+      "id": "bensbites-rss",
+      "type": "rss",
+      "name": "Ben's Bites",
+      "url": "https://www.bensbites.com/feed",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI 工具与产品简报",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "the-decoder-rss",
+      "type": "rss",
+      "name": "The Decoder",
+      "url": "https://the-decoder.com/feed/",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI 模型与产业新闻",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "v2ex-rss",
+      "type": "rss",
+      "name": "V2EX 综合",
+      "url": "https://www.v2ex.com/index.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "开发者社区综合讨论",
+      "topic": "technology"
+    },
+    {
+      "id": "v2ex-tech-rss",
+      "type": "rss",
+      "name": "V2EX 技术",
+      "url": "https://www.v2ex.com/feed/tab/tech.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "开发者社区技术讨论",
+      "topic": "technology"
+    },
+    {
+      "id": "linuxdo-rss",
+      "type": "rss",
+      "name": "LinuxDo",
+      "url": "https://linux.do/latest.rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "Linux、开源与技术社区资讯",
+      "topic": "technology"
+    },
+    {
+      "id": "juejin-rss",
+      "type": "rss",
+      "name": "掘金",
+      "url": "https://juejin.cn/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "前端、后端、全栈开发技术内容",
+      "topic": "technology"
+    },
+    {
+      "id": "ftchinese-rss",
+      "type": "rss",
+      "name": "FT中文网",
+      "url": "https://www.ftchinese.com/rss/news",
+      "enabled": true,
+      "priority": 3,
+      "note": "全球财经、商业分析",
+      "topic": "business"
+    },
+    {
+      "id": "nytimes-business-rss",
+      "type": "rss",
+      "name": "纽约时报财经",
+      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
+      "enabled": true,
+      "priority": 3,
+      "note": "纽约时报商业财经",
+      "topic": "business"
+    },
+    {
+      "id": "cnet-rss",
+      "type": "rss",
+      "name": "CNET",
+      "url": "https://www.cnet.com/rss/news/",
+      "enabled": true,
+      "priority": 3,
+      "note": "消费电子、数码产品资讯",
+      "topic": "technology"
+    },
+    {
+      "id": "github-blog-rss",
+      "type": "rss",
+      "name": "GitHub Blog",
+      "url": "https://github.blog/feed/",
+      "enabled": true,
+      "priority": 4,
+      "note": "GitHub 官方博客，开源与开发资讯",
+      "topic": "github"
+    },
+    {
+      "id": "arxiv-ai-rss",
+      "type": "rss",
+      "name": "arXiv AI",
+      "url": "https://rss.arxiv.org/rss/cs.AI",
+      "enabled": true,
+      "priority": 3,
+      "note": "人工智能领域最新学术论文",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "arxiv-ml-rss",
+      "type": "rss",
+      "name": "arXiv ML",
+      "url": "https://rss.arxiv.org/rss/cs.LG",
+      "enabled": true,
+      "priority": 3,
+      "note": "机器学习领域最新学术论文",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "ft-uk-rss",
+      "type": "rss",
+      "name": "金融时报",
+      "url": "https://www.ft.com/rss/home/uk",
+      "enabled": true,
+      "priority": 3,
+      "note": "金融时报英国版",
+      "topic": "business"
+    },
+    {
+      "id": "marketwatch-rss",
+      "type": "rss",
+      "name": "MarketWatch",
+      "url": "https://www.marketwatch.com/rss/topstories",
+      "enabled": true,
+      "priority": 3,
+      "note": "美股、全球投资市场资讯",
+      "topic": "business"
+    },
+    {
+      "id": "guardian-business-rss",
+      "type": "rss",
+      "name": "The Guardian Business",
+      "url": "https://www.theguardian.com/business/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "卫报商业与财经",
+      "topic": "business"
+    },
+    {
+      "id": "dw-world-rss",
+      "type": "rss",
+      "name": "DW World",
+      "url": "https://rss.dw.com/rdf/rss-en-world",
+      "enabled": true,
+      "priority": 3,
+      "note": "德国之声国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "dw-business-rss",
+      "type": "rss",
+      "name": "DW Business",
+      "url": "https://rss.dw.com/rdf/rss-en-bus",
+      "enabled": true,
+      "priority": 3,
+      "note": "德国之声商业与经济",
+      "topic": "business"
+    },
+    {
+      "id": "dw-germany-rss",
+      "type": "rss",
+      "name": "DW Germany",
+      "url": "https://rss.dw.com/rdf/rss-en-ger",
+      "enabled": true,
+      "priority": 3,
+      "note": "德国之声德国新闻",
+      "topic": "world"
+    },
+    {
+      "id": "dw-tech-rss",
+      "type": "rss",
+      "name": "DW Technology",
+      "url": "https://rss.dw.com/rdf/rss-en-tech",
+      "enabled": true,
+      "priority": 3,
+      "note": "德国之声科技频道",
+      "topic": "technology"
+    },
+    {
+      "id": "dw-science-rss",
+      "type": "rss",
+      "name": "DW Science",
+      "url": "https://rss.dw.com/rdf/rss-en-sci",
+      "enabled": true,
+      "priority": 3,
+      "note": "德国之声科学频道",
+      "topic": "science"
+    },
+    {
+      "id": "rfi-world-rss",
+      "type": "rss",
+      "name": "RFI Monde",
+      "url": "https://www.rfi.fr/fr/monde/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "RFI 国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "rfi-africa-rss",
+      "type": "rss",
+      "name": "RFI Afrique",
+      "url": "https://www.rfi.fr/fr/afrique/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "RFI 非洲频道",
+      "topic": "world"
+    },
+    {
+      "id": "rfi-france-rss",
+      "type": "rss",
+      "name": "RFI France",
+      "url": "https://www.rfi.fr/fr/france/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "RFI 法国新闻",
+      "topic": "world"
+    },
+    {
+      "id": "rfi-economy-rss",
+      "type": "rss",
+      "name": "RFI Economie",
+      "url": "https://www.rfi.fr/fr/economie/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "RFI 经济频道",
+      "topic": "business"
+    },
+    {
+      "id": "rfi-science-rss",
+      "type": "rss",
+      "name": "RFI Sciences",
+      "url": "https://www.rfi.fr/fr/sciences/rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "RFI 科学频道",
+      "topic": "science"
+    },
+    {
+      "id": "techcrunch-rss",
+      "type": "rss",
+      "name": "TechCrunch",
+      "url": "https://techcrunch.com/feed/",
+      "enabled": true,
+      "priority": 3,
+      "note": "科技创业与产业新闻",
+      "topic": "technology"
+    },
+    {
+      "id": "techcrunch-ai-rss",
+      "type": "rss",
+      "name": "TechCrunch AI",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+      "enabled": true,
+      "priority": 3,
+      "note": "TechCrunch AI 专栏",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "google-research-rss",
+      "type": "rss",
+      "name": "Google Research Blog",
+      "url": "https://research.google/blog/rss/",
+      "enabled": true,
+      "priority": 4,
+      "note": "Google Research 官方博客",
+      "topic": "science"
+    },
+    {
+      "id": "fed-monetary-policy-rss",
+      "type": "rss",
+      "name": "Federal Reserve Monetary Policy",
+      "url": "https://www.federalreserve.gov/feeds/press_monetary.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "美联储货币政策公告",
+      "topic": "business"
+    },
+    {
+      "id": "fed-press-rss",
+      "type": "rss",
+      "name": "Federal Reserve Press Releases",
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "美联储新闻稿",
+      "topic": "business"
+    },
+    {
+      "id": "fed-feds-rss",
+      "type": "rss",
+      "name": "Federal Reserve FEDS",
+      "url": "https://www.federalreserve.gov/feeds/feds.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "美联储研究论文",
+      "topic": "business"
+    },
+    {
+      "id": "ecb-press-rss",
+      "type": "rss",
+      "name": "ECB Press Releases",
+      "url": "https://www.ecb.europa.eu/rss/press.html",
+      "enabled": true,
+      "priority": 3,
+      "note": "欧洲央行新闻与讲话",
+      "topic": "business"
+    },
+    {
+      "id": "ecb-blog-rss",
+      "type": "rss",
+      "name": "ECB Blog",
+      "url": "https://www.ecb.europa.eu/rss/blog.html",
+      "enabled": true,
+      "priority": 3,
+      "note": "欧洲央行博客",
+      "topic": "business"
+    },
+    {
+      "id": "ecb-publications-rss",
+      "type": "rss",
+      "name": "ECB Publications",
+      "url": "https://www.ecb.europa.eu/rss/pub.html",
+      "enabled": true,
+      "priority": 3,
+      "note": "欧洲央行出版物",
+      "topic": "business"
+    },
+    {
+      "id": "bis-press-rss",
+      "type": "rss",
+      "name": "BIS Press Releases",
+      "url": "https://www.bis.org/doclist/all_pressrels.rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "国际清算银行新闻稿",
+      "topic": "business"
+    },
+    {
+      "id": "bis-speeches-rss",
+      "type": "rss",
+      "name": "BIS Speeches",
+      "url": "https://www.bis.org/doclist/cbspeeches.rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "国际清算银行央行讲话",
+      "topic": "business"
+    },
+    {
+      "id": "bis-research-rss",
+      "type": "rss",
+      "name": "BIS Research Hub",
+      "url": "https://www.bis.org/doclist/reshub_papers.rss",
+      "enabled": true,
+      "priority": 3,
+      "note": "国际清算银行研究论文",
+      "topic": "business"
+    }
+  ]
+}

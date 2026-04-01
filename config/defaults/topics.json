@@ -10,18 +10,22 @@
       "description": "模型、agents、AI 应用、AI lab 发布与前沿 AI 产品化动态。",
       "search": {
         "google_queries": [
-          "foundation model release",
-          "LLM update AI agents copilot",
-          "AI application agentic workflow",
+          "foundation model release AI lab model update",
+          "LLM update AI agents copilot assistant",
+          "agentic AI application product launch",
           "大模型 智能体 AI 应用 发布"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "\"foundation model\" launch OR release",
+          "\"AI agent\" product OR launch OR workflow",
+          "OpenAI OR Anthropic OR Google DeepMind model update",
+          "大模型 OR 智能体 发布"
+        ],
         "reddit_queries": [
-          "OpenAI",
-          "Anthropic",
-          "ChatGPT",
-          "AI agents",
-          "大模型"
+          "OpenAI model release",
+          "Anthropic Claude update",
+          "ChatGPT feature launch",
+          "AI agents"
         ],
         "exclude": [
           "tutorial",
@@ -43,16 +47,20 @@
         "google_queries": [
           "AI infrastructure GPU datacenter power memory",
           "semiconductor compute robotics autonomous driving",
-          "Tesla Robotaxi SpaceX robotics \"Elon Musk\" datacenter",
+          "Tesla Robotaxi SpaceX robotics datacenter",
           "AI 芯片 算力 电力 机器人 智驾 SpaceX"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "GPU OR datacenter OR power for AI",
+          "robotics OR humanoid robot OR autonomous driving",
+          "Tesla Robotaxi OR FSD OR Optimus",
+          "SpaceX OR satellite compute OR launch infrastructure"
+        ],
         "reddit_queries": [
-          "Tesla",
-          "SpaceX",
-          "GPU",
-          "robotics",
-          "datacenter"
+          "NVIDIA GPU datacenter",
+          "robotics humanoid robot",
+          "Tesla FSD Robotaxi",
+          "SpaceX launch Starlink"
         ],
         "exclude": [
           "smartphone review",
@@ -73,14 +81,20 @@
         "google_queries": [
           "GitHub release open source project",
           "GitHub trending repositories",
+          "open source developer tool release GitHub",
           "开源项目 GitHub 更新"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "\"GitHub release\" open source",
+          "\"GitHub trending\" developer tools",
+          "open source maintainer launch OR release",
+          "开源 项目 更新"
+        ],
         "reddit_queries": [
-          "open source",
+          "open source GitHub",
           "GitHub release",
           "developer tools",
-          "programming"
+          "programming project"
         ],
         "github_queries": [
           "llm large-language-model in:topics,name,description",
@@ -108,10 +122,16 @@
           "programming framework security platform update",
           "开发工具 网络安全 平台 软件工程 云"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "developer tools OR software engineering platform",
+          "cybersecurity OR security incident OR CVE",
+          "cloud infrastructure OR engineering platform update",
+          "开发工具 OR 网络安全 OR 平台 更新"
+        ],
         "reddit_queries": [
           "software engineering",
           "cybersecurity",
+          "cloud infrastructure",
           "programming"
         ],
         "exclude": [
@@ -136,7 +156,12 @@
           "merger acquisition startup funding stock market",
           "商业 市场 财报 融资 宏观 监管"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "earnings OR guidance OR revenue company",
+          "startup funding OR acquisition OR merger",
+          "regulation OR antitrust OR industrial policy",
+          "财报 OR 融资 OR 并购 OR 监管"
+        ],
         "reddit_queries": [
           "markets",
           "business",
@@ -162,7 +187,12 @@
           "global supply chain geopolitical risk",
           "国际 外交 冲突 制裁 地缘"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "geopolitics OR diplomacy OR sanctions",
+          "war OR military conflict OR ceasefire",
+          "international relations OR foreign policy",
+          "国际 外交 OR 冲突 OR 制裁"
+        ],
         "reddit_queries": [
           "geopolitics",
           "international relations",
@@ -185,10 +215,15 @@
         "google_queries": [
           "scientific research engineering breakthrough",
           "paper laboratory discovery applied research",
-          "science innovation experiment results",
+          "science journal experiment breakthrough",
           "科研 论文 实验室 工程 突破"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "research paper OR preprint OR journal",
+          "laboratory discovery OR experiment result",
+          "engineering breakthrough OR applied research",
+          "科研 OR 论文 OR 实验室 成果"
+        ],
         "reddit_queries": [
           "research",
           "science",
@@ -217,7 +252,12 @@
           "technology social impact jobs education",
           "教育 工作 媒体 社会 文化 影响"
         ],
-        "twitter_queries": [],
+        "twitter_queries": [
+          "\"future of work\" OR jobs OR workplace",
+          "education OR university OR learning technology",
+          "media OR creator economy OR public opinion",
+          "教育 OR 就业 OR 媒体 OR 社会 影响"
+        ],
         "reddit_queries": [
           "future of work",
           "education",

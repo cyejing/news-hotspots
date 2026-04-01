@@ -1,22 +1,51 @@
 #!/usr/bin/env python3
 """
-Configuration overlay loader for news-hotspots.
+news-hotspots 配置加载层。
 
-Handles loading and merging of default configurations with optional user overlays.
+职责：
+- 读取 `config/defaults/` 下的默认配置文件
+- 读取 `<WORKSPACE>/config/` 下的同名 overlay 配置
+- 以“defaults + overlay 深合并”的方式生成运行时配置对象
+
+执行逻辑：
+1. 先读取 source_type 对应的 defaults 文件
+2. 如果 workspace overlay 存在，再按 id 做覆盖合并
+3. 为 fetch / merge / pipeline 脚本提供统一配置入口
+
+配置文件职责：
+- `rss.json` / `twitter.json` / `github.json` / `reddit.json` / `api.json`
+  保存各 source_type 的业务输入配置
+- `topics.json`
+  保存 topic 查询配置
+- `runtime.json`
+  保存 timeout、cooldown、并发、诊断阈值等运行参数
 """
 
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-SOURCE_TYPES = ("rss", "twitter", "github", "reddit")
+RSS_DEFAULTS_FILE = "rss.json"
+TWITTER_DEFAULTS_FILE = "twitter.json"
+GITHUB_DEFAULTS_FILE = "github.json"
+REDDIT_DEFAULTS_FILE = "reddit.json"
+TOPICS_DEFAULTS_FILE = "topics.json"
+API_SOURCES_DEFAULTS_FILE = "api.json"
+RUNTIME_DEFAULTS_FILE = "runtime.json"
+
+RSS_OVERLAY_FILE = "news-hotspots-rss.json"
+TWITTER_OVERLAY_FILE = "news-hotspots-twitter.json"
+GITHUB_OVERLAY_FILE = "news-hotspots-github.json"
+REDDIT_OVERLAY_FILE = "news-hotspots-reddit.json"
+TOPICS_OVERLAY_FILE = "news-hotspots-topics.json"
+API_SOURCES_OVERLAY_FILE = "news-hotspots-api.json"
+RUNTIME_OVERLAY_FILE = "news-hotspots-runtime.json"
 
 
 def deep_merge_dicts(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
-    """Recursively merge nested dictionaries; lists/scalars are replaced."""
     merged = dict(base)
     for key, value in overlay.items():
         if isinstance(merged.get(key), dict) and isinstance(value, dict):
@@ -26,300 +55,113 @@ def deep_merge_dicts(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str,
     return merged
 
 
-def flatten_sources_config(config_data: Dict[str, Any], source_name: str) -> List[Dict[str, Any]]:
-    """Flatten sources config from type-grouped map into a single list."""
-    sources = config_data.get("sources", {})
-    if not isinstance(sources, dict):
-        raise ValueError(
-            f"Invalid {source_name} sources config: expected 'sources' to be an object keyed by type"
-        )
-
-    flattened: List[Dict[str, Any]] = []
-    for source_type, grouped_sources in sources.items():
-        if not isinstance(grouped_sources, list):
-            raise ValueError(
-                f"Invalid {source_name} sources config: expected '{source_type}' sources to be an array"
-            )
-        for source in grouped_sources:
-            if not isinstance(source, dict):
-                logger.warning(
-                    "Skipping non-object source in %s type %s: %r", source_name, source_type, source
-                )
-                continue
-
-            normalized = source.copy()
-            normalized_type = normalized.get("type", source_type)
-            if normalized_type != source_type:
-                logger.debug(
-                    "Source %s overrides type from %s to %s",
-                    normalized.get("id", "<unknown>"),
-                    source_type,
-                    normalized_type,
-                )
-            normalized["type"] = normalized_type
-            normalized["enabled"] = bool(normalized.get("enabled", True))
-            flattened.append(normalized)
-
-    return flattened
-
-
-def load_merged_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    """
-    Load and merge sources from defaults and optional user config overlay.
-    
-    Args:
-        defaults_dir: Path to default configuration directory (skill defaults)
-        config_dir: Optional path to user configuration directory (overlay)
-    
-    Returns:
-        List of merged source configurations
-        
-    Merge Logic:
-        1. Load defaults/sources.json as base
-        2. If config_dir provided and has sources.json, load user overlay
-        3. For each user source:
-           - If id matches default source: user version completely replaces default
-           - If id is new: append to list
-           - If user source has "enabled": false: disable matching default source
-    """
-    defaults_path = defaults_dir / "sources.json"
-    
-    # Load default sources
+def _load_json_object(path: Path, label: str) -> Dict[str, Any]:
     try:
-        with open(defaults_path, 'r', encoding='utf-8') as f:
-            defaults_data = json.load(f)
-        default_sources = flatten_sources_config(defaults_data, "default")
-        logger.debug(f"Loaded {len(default_sources)} default sources from {defaults_path}")
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Default sources config not found: {defaults_path}")
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in default sources config: {e}")
-    
-    # Validate required fields
-    validated = []
-    required_fields = {"id", "type", "enabled"}
-    for i, source in enumerate(default_sources):
-        missing = required_fields - set(source.keys())
-        if missing:
-            logger.warning(f"Source #{i} missing required fields {missing}, skipping: {source}")
-            continue
-        validated.append(source)
-    default_sources = validated
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"{label} not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {label} {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"{label} must be a JSON object: {path}")
+    return data
 
-    # If no user config directory specified, return defaults only
-    if config_dir is None:
-        return default_sources
-        
-    config_path = config_dir / "news-hotspots-sources.json"
-    
-    # Try to load user overlay
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config_data = json.load(f)
-        user_sources = flatten_sources_config(config_data, "user")
-        logger.debug(f"Loaded {len(user_sources)} user sources from {config_path}")
-    except FileNotFoundError:
-        logger.debug(f"No user sources config found at {config_path}, using defaults only")
-        return default_sources
-    except json.JSONDecodeError as e:
-        logger.warning(f"Invalid JSON in user sources config {config_path}: {e}, using defaults only")
-        return default_sources
-    
-    # Merge logic: create lookup by id for efficient merging
-    merged_sources = {}
-    
-    # Start with all default sources
-    for source in default_sources:
-        source_id = source.get("id")
-        if source_id:
-            merged_sources[source_id] = source.copy()
-    
-    # Apply user overlay
-    for user_source in user_sources:
-        source_id = user_source.get("id")
-        if not source_id:
+
+def _merge_record_lists(defaults: List[Dict[str, Any]], overlay: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    merged_by_id: Dict[str, Dict[str, Any]] = {}
+    default_ids: List[str] = []
+    for record in defaults:
+        record_id = str(record.get("id") or "").strip()
+        if not record_id:
             continue
-            
-        if source_id in merged_sources:
-            # User source overrides default completely
-            if user_source.get("enabled") is False:
-                # User explicitly disables this source
-                merged_sources[source_id]["enabled"] = False
-                logger.debug(f"User disabled source: {source_id}")
-            else:
-                # User replaces entire source config
-                merged_sources[source_id] = user_source.copy()
-                logger.debug(f"User overrode source: {source_id}")
-        else:
-            # New user source, append
-            merged_sources[source_id] = user_source.copy()
-            logger.debug(f"User added new source: {source_id}")
-    
-    # Convert back to list, maintaining order (defaults first, then user additions)
-    result = []
-    
-    # Add default sources (potentially overridden)
-    for source in default_sources:
-        source_id = source.get("id")
-        if source_id and source_id in merged_sources:
-            result.append(merged_sources[source_id])
-    
-    # Add new user sources
-    for user_source in user_sources:
-        source_id = user_source.get("id")
-        if source_id and source_id not in [s.get("id") for s in default_sources]:
-            result.append(merged_sources[source_id])
-    
-    logger.info(f"Merged configuration: {len(default_sources)} defaults + {len(user_sources)} user = {len(result)} total sources")
+        merged_by_id[record_id] = dict(record)
+        default_ids.append(record_id)
+
+    overlay_ids: List[str] = []
+    for record in overlay:
+        record_id = str(record.get("id") or "").strip()
+        if not record_id:
+            continue
+        merged_by_id[record_id] = deep_merge_dicts(merged_by_id.get(record_id, {}), dict(record))
+        overlay_ids.append(record_id)
+
+    result: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for record_id in default_ids + overlay_ids:
+        if record_id in seen:
+            continue
+        if record_id in merged_by_id:
+            result.append(merged_by_id[record_id])
+            seen.add(record_id)
     return result
+
+
+def _load_merged_record_file(
+    defaults_dir: Path,
+    defaults_filename: str,
+    config_dir: Optional[Path],
+    overlay_filename: str,
+    *,
+    key: str = "sources",
+) -> List[Dict[str, Any]]:
+    defaults_path = defaults_dir / defaults_filename
+    defaults_data = _load_json_object(defaults_path, defaults_filename)
+    defaults_records = defaults_data.get(key, [])
+    if not isinstance(defaults_records, list):
+        raise ValueError(f"{defaults_filename} field '{key}' must be an array")
+
+    if config_dir is None:
+        return [dict(record) for record in defaults_records if isinstance(record, dict)]
+
+    overlay_path = config_dir / overlay_filename
+    try:
+        overlay_data = _load_json_object(overlay_path, overlay_filename)
+    except FileNotFoundError:
+        logger.debug("No user config found at %s, using defaults only", overlay_path)
+        return [dict(record) for record in defaults_records if isinstance(record, dict)]
+    overlay_records = overlay_data.get(key, [])
+    if not isinstance(overlay_records, list):
+        raise ValueError(f"{overlay_filename} field '{key}' must be an array")
+    return _merge_record_lists(
+        [dict(record) for record in defaults_records if isinstance(record, dict)],
+        [dict(record) for record in overlay_records if isinstance(record, dict)],
+    )
+
+
+def load_merged_rss_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    return _load_merged_record_file(defaults_dir, RSS_DEFAULTS_FILE, config_dir, RSS_OVERLAY_FILE)
+
+
+def load_merged_twitter_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    return _load_merged_record_file(defaults_dir, TWITTER_DEFAULTS_FILE, config_dir, TWITTER_OVERLAY_FILE)
+
+
+def load_merged_github_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    return _load_merged_record_file(defaults_dir, GITHUB_DEFAULTS_FILE, config_dir, GITHUB_OVERLAY_FILE)
+
+
+def load_merged_reddit_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
+    return _load_merged_record_file(defaults_dir, REDDIT_DEFAULTS_FILE, config_dir, REDDIT_OVERLAY_FILE)
 
 
 def load_merged_topics(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    """
-    Load and merge topics from defaults and optional user config overlay.
-    
-    Args:
-        defaults_dir: Path to default configuration directory (skill defaults)
-        config_dir: Optional path to user configuration directory (overlay)
-    
-    Returns:
-        List of merged topic configurations
-        
-    Merge Logic:
-        1. Load defaults/topics.json as base
-        2. If config_dir provided and has topics.json, load user overlay
-        3. For each user topic:
-           - If id matches default topic: user version completely replaces default
-           - If id is new: append to list
-    """
-    defaults_path = defaults_dir / "topics.json"
-    
-    # Load default topics
-    try:
-        with open(defaults_path, 'r', encoding='utf-8') as f:
-            defaults_data = json.load(f)
-        default_topics = defaults_data.get("topics", [])
-        logger.debug(f"Loaded {len(default_topics)} default topics from {defaults_path}")
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Default topics config not found: {defaults_path}")
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in default topics config: {e}")
-    
-    # If no user config directory specified, return defaults only
-    if config_dir is None:
-        return default_topics
-        
-    config_path = config_dir / "news-hotspots-topics.json"
-    
-    # Try to load user overlay
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config_data = json.load(f)
-        user_topics = config_data.get("topics", [])
-        logger.debug(f"Loaded {len(user_topics)} user topics from {config_path}")
-    except FileNotFoundError:
-        logger.debug(f"No user topics config found at {config_path}, using defaults only")
-        return default_topics
-    except json.JSONDecodeError as e:
-        logger.warning(f"Invalid JSON in user topics config {config_path}: {e}, using defaults only")
-        return default_topics
-    
-    # Merge logic: create lookup by id for efficient merging
-    merged_topics = {}
-    
-    # Start with all default topics
-    for topic in default_topics:
-        topic_id = topic.get("id")
-        if topic_id:
-            merged_topics[topic_id] = topic.copy()
-    
-    # Apply user overlay
-    for user_topic in user_topics:
-        topic_id = user_topic.get("id")
-        if not topic_id:
-            continue
-            
-        if topic_id in merged_topics:
-            # User topic overrides default completely
-            merged_topics[topic_id] = user_topic.copy()
-            logger.debug(f"User overrode topic: {topic_id}")
-        else:
-            # New user topic, append
-            merged_topics[topic_id] = user_topic.copy()
-            logger.debug(f"User added new topic: {topic_id}")
-    
-    # Convert back to list, maintaining order (defaults first, then user additions)
-    result = []
-    
-    # Add default topics (potentially overridden)
-    for topic in default_topics:
-        topic_id = topic.get("id")
-        if topic_id and topic_id in merged_topics:
-            result.append(merged_topics[topic_id])
-    
-    # Add new user topics
-    for user_topic in user_topics:
-        topic_id = user_topic.get("id")
-        if topic_id and topic_id not in [t.get("id") for t in default_topics]:
-            result.append(merged_topics[topic_id])
-    
-    logger.info(f"Merged topics: {len(default_topics)} defaults + {len(user_topics)} user = {len(result)} total topics")
-    return result
+    return _load_merged_record_file(defaults_dir, TOPICS_DEFAULTS_FILE, config_dir, TOPICS_OVERLAY_FILE, key="topics")
 
 
 def load_merged_api_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    """Load and merge api-sources.json with optional workspace overrides."""
-    defaults_path = defaults_dir / "api-sources.json"
+    return _load_merged_record_file(defaults_dir, API_SOURCES_DEFAULTS_FILE, config_dir, API_SOURCES_OVERLAY_FILE)
 
-    try:
-        with open(defaults_path, "r", encoding="utf-8") as f:
-            default_data = json.load(f)
-        default_sources = default_data.get("sources", [])
-        logger.debug("Loaded %d API sources from %s", len(default_sources), defaults_path)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Default API sources config not found: {defaults_path}")
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Invalid JSON in default API sources config: {e}")
 
+def load_merged_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    defaults_path = defaults_dir / RUNTIME_DEFAULTS_FILE
+    defaults_data = _load_json_object(defaults_path, RUNTIME_DEFAULTS_FILE)
     if config_dir is None:
-        return default_sources
+        return defaults_data
 
-    config_path = config_dir / "news-hotspots-api-sources.json"
+    overlay_path = config_dir / RUNTIME_OVERLAY_FILE
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
-            overlay_data = json.load(f)
-        user_sources = overlay_data.get("sources", [])
-        logger.debug("Loaded %d API source overrides from %s", len(user_sources), config_path)
+        overlay_data = _load_json_object(overlay_path, RUNTIME_OVERLAY_FILE)
     except FileNotFoundError:
-        logger.debug("No user API sources config found at %s, using defaults only", config_path)
-        return default_sources
-    except json.JSONDecodeError as e:
-        logger.warning("Invalid JSON in user API sources config %s: %s, using defaults only", config_path, e)
-        return default_sources
-
-    merged_sources = {}
-    for source in default_sources:
-        source_id = source.get("id")
-        if source_id:
-            merged_sources[source_id] = source.copy()
-
-    for source in user_sources:
-        source_id = source.get("id")
-        if not source_id:
-            continue
-        if source.get("enabled") is False and source_id in merged_sources:
-            merged_sources[source_id]["enabled"] = False
-        else:
-            merged_sources[source_id] = source.copy()
-
-    result = []
-    seen_default_ids = [source.get("id") for source in default_sources]
-    for source in default_sources:
-        source_id = source.get("id")
-        if source_id in merged_sources:
-            result.append(merged_sources[source_id])
-    for source in user_sources:
-        source_id = source.get("id")
-        if source_id and source_id not in seen_default_ids:
-            result.append(merged_sources[source_id])
-    return result
+        logger.debug("No user runtime config found at %s, using defaults only", overlay_path)
+        return defaults_data
+    return deep_merge_dicts(defaults_data, overlay_data)

@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """
-Fetch news from API sources.
+API source_type 抓取脚本。
 
-Configured API source mapping:
-- weibo-api -> fetch_weibo
-- wallstreetcn-api -> fetch_wallstreetcn
-- tencent-api -> fetch_tencent
-- hacker-news-api -> fetch_hacker_news
+职责：
+- 读取 `api.json` 中启用的 API 源配置
+- 调用各 API 站点接口抓取数据
+- 将成功结果标准化为统一 `articles`
+- 将失败请求和耗时写入同名 `*.meta.json`
 
-Usage:
-    python3 fetch-api.py [--output FILE] [--verbose]
+执行逻辑：
+1. 加载 runtime 与 api source 配置
+2. 并发请求不同 API source
+3. 成功请求立即标准化为 article；失败请求只记录错误，不阻断其他请求
+4. 输出结果 JSON 与 sidecar meta JSON
+
+输出文件职责：
+- `<step>.json`
+  只表达“抓到了什么数据”，顶层只保留 `generated`、`source_type`、`articles`
+- `<step>.meta.json`
+  只表达“这个 step 跑得怎么样”，记录总耗时、抓取个数、失败个数、失败明细和慢请求统计
 """
 
 import json
@@ -27,13 +36,13 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 try:
-    from config_loader import load_merged_api_sources
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_api_sources, load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 except ImportError:
     import sys
     sys.path.append(str(Path(__file__).parent))
-    from config_loader import load_merged_api_sources
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_api_sources, load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 
 try:
     import requests
@@ -49,6 +58,20 @@ HOST_COOLDOWNS = {
 }
 _HOST_LAST_REQUEST_AT: Dict[str, float] = {}
 _HOST_COOLDOWN_LOCK = threading.Lock()
+
+def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    global TIMEOUT, MAX_WORKERS, HOST_COOLDOWNS
+    runtime = load_merged_runtime_config(defaults_dir, config_dir)
+    fetch_config = runtime.get("fetch", {}).get("api", {})
+    diagnostics_config = runtime.get("diagnostics", {})
+    TIMEOUT = int(fetch_config.get("request_timeout_s", TIMEOUT) or TIMEOUT)
+    MAX_WORKERS = int(fetch_config.get("max_workers", MAX_WORKERS) or MAX_WORKERS)
+    host_cooldowns = fetch_config.get("host_cooldowns", {})
+    if isinstance(host_cooldowns, dict):
+        HOST_COOLDOWNS = {str(host): float(value) for host, value in host_cooldowns.items()}
+    configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
+    return runtime
+
 
 class RedirectHandler308(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
@@ -102,26 +125,27 @@ def apply_host_cooldown(url: str) -> None:
 def http_get_json(
     url: str,
     headers: Dict[str, str] = None,
-    timeout: int = TIMEOUT,
+    timeout: Optional[int] = None,
     request_log: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict:
     """HTTP GET JSON response."""
     req_headers = {"User-Agent": UA}
     if headers:
         req_headers.update(headers)
+    effective_timeout = int(timeout if timeout is not None else TIMEOUT)
 
     apply_host_cooldown(url)
 
     started_at = time.monotonic()
     try:
         if HAS_REQUESTS:
-            resp = requests.get(url, headers=req_headers, timeout=timeout)
+            resp = requests.get(url, headers=req_headers, timeout=effective_timeout)
             resp.raise_for_status()
             payload = resp.json()
         else:
             opener = build_opener(RedirectHandler308)
             req = Request(url, headers=req_headers)
-            with opener.open(req, timeout=timeout) as resp:
+            with opener.open(req, timeout=effective_timeout) as resp:
                 payload = json.loads(resp.read().decode("utf-8", errors="replace"))
         if request_log is not None:
             request_log.append(build_request_trace(url, time.monotonic() - started_at, status="ok", method="GET"))
@@ -303,8 +327,8 @@ def fetch_source(source: Dict[str, Any], limit: int = 15) -> Dict[str, Any]:
             "items": 0,
             "count": 0,
             "articles": [],
-            "request_timings": request_log,
-            "request_timing_summary": summarize_request_traces(request_log),
+            "request_traces": request_log,
+            "failed_items": [normalize_failed_item(source_id, f"Unknown source: {source_id}", time.monotonic() - started_at)],
         }
     
     try:
@@ -324,8 +348,8 @@ def fetch_source(source: Dict[str, Any], limit: int = 15) -> Dict[str, Any]:
             "items": len(articles),
             "count": len(articles),
             "articles": articles,
-            "request_timings": request_log,
-            "request_timing_summary": summarize_request_traces(request_log),
+            "request_traces": request_log,
+            "failed_items": [],
         }
     except Exception as e:
         return {
@@ -340,8 +364,8 @@ def fetch_source(source: Dict[str, Any], limit: int = 15) -> Dict[str, Any]:
             "items": 0,
             "count": 0,
             "articles": [],
-            "request_timings": request_log,
-            "request_timing_summary": summarize_request_traces(request_log),
+            "request_traces": request_log,
+            "failed_items": [normalize_failed_item(source_id, str(e)[:100], time.monotonic() - started_at)],
         }
 
 def parse_args() -> argparse.Namespace:
@@ -351,7 +375,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Default configuration directory")
     parser.add_argument("--config", type=Path, help="User configuration directory for overlays")
-    parser.add_argument("--limit", type=int, default=15, help="Max items per source (default: 15)")
+    parser.add_argument("--limit", type=int, default=None, help="Max items per source")
     parser.add_argument("--output", "-o", type=Path, help="Output JSON path")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument("--hours", type=int, default=48, help="Time window in hours (ignored for API sources - they fetch real-time hot items)")
@@ -363,6 +387,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     logger = setup_logging(args.verbose)
+    effective_config_dir = args.config if args.config and args.config.exists() else None
+    runtime = apply_runtime_config(args.defaults, effective_config_dir)
 
     if not args.output:
         fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-api-", suffix=".json")
@@ -370,8 +396,10 @@ def main() -> int:
         args.output = Path(temp_path)
 
     try:
+        default_limit = int(runtime.get("fetch", {}).get("api", {}).get("limit", 15) or 15)
+        effective_limit = args.limit if args.limit is not None else default_limit
         sources = [
-            source for source in load_api_sources(args.defaults, args.config)
+            source for source in load_api_sources(args.defaults, effective_config_dir)
             if source.get("enabled", True)
         ]
 
@@ -379,7 +407,7 @@ def main() -> int:
         
         results = []
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            futures = {pool.submit(fetch_source, source, args.limit): source for source in sources}
+            futures = {pool.submit(fetch_source, source, effective_limit): source for source in sources}
             
             for future in as_completed(futures):
                 result = future.result()
@@ -394,30 +422,34 @@ def main() -> int:
         
         ok_count = sum(1 for r in results if r["status"] == "ok")
         total_articles = sum(r.get("count", 0) for r in results)
-        all_request_timings = [trace for result in results for trace in result.get("request_timings", []) if isinstance(trace, dict)]
-        
+        articles = [article for result in results for article in result.get("articles", []) if isinstance(article, dict)]
+        failed_items = [
+            normalize_failed_item(result.get("source_id"), result.get("error"), result.get("elapsed_s"))
+            for result in results
+            if result.get("status") != "ok"
+        ]
+
         output = {
             "generated": datetime.now(timezone.utc).isoformat(),
             "source_type": "api",
-            "defaults_dir": str(args.defaults),
-            "config_dir": str(args.config) if args.config else None,
-            "calls_total": len(results),
-            "calls_ok": ok_count,
-            "calls_kind": "sources",
-            "items_total": total_articles,
-            "sources_total": len(results),
-            "sources_ok": ok_count,
-            "total_articles": total_articles,
-            "request_timing_summary": summarize_request_traces(all_request_timings),
-            "sources": results,
+            "articles": articles,
         }
-        
-        with open(args.output, "w", encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
+        request_traces = [trace for result in results for trace in result.get("request_traces", []) if isinstance(trace, dict)]
+        meta = build_step_meta(
+            step_key="api",
+            status="ok" if ok_count == len(results) and total_articles > 0 else ("partial" if ok_count > 0 and total_articles > 0 else "error"),
+            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in results),
+            items=total_articles,
+            calls_total=len(results),
+            calls_ok=ok_count,
+            failed_items=failed_items,
+            request_traces=request_traces,
+        )
+        write_result_with_meta(args.output, output, meta)
         
         logger.info(f"✅ Done: {ok_count}/{len(results)} API sources ok, {total_articles} articles → {args.output}")
         
-        return 0
+        return 0 if total_articles > 0 else 1
         
     except Exception as e:
         logger.error(f"💥 API fetch failed: {e}")

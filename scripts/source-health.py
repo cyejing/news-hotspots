@@ -1,13 +1,29 @@
 #!/usr/bin/env python3
 """
-Step health diagnostics for news-hotspots pipeline.
+热点抓取健康诊断脚本。
 
-Reads per-step metadata JSON files and prints current and recent historical
-diagnostics directly from those metadata files.
+职责：
+- 发现 archive 下的 `meta/*.meta.json`
+- 归一化不同 step 的诊断字段
+- 输出当前运行与最近历史的健康报告
+
+执行逻辑：
+1. 接收某天的 `meta/` 目录或 archive 根目录
+2. 自动收集最近若干天的 `*.meta.json`
+3. 聚合失败项、耗时和慢请求统计
+4. 以文本方式输出 History report 与 Run details
+
+输入文件职责：
+- `meta/*.meta.json`
+  诊断源数据，是 health 报告唯一输入
+
+说明：
+- 本脚本不回读 fetch 结果 JSON，也不读取 `merge-sources.json` / `daily.json`
 """
 
 import argparse
 import logging
+import os
 import re
 import statistics
 import sys
@@ -17,12 +33,32 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from config_loader import load_merged_runtime_config
+except ImportError:
+    sys.path.append(str(Path(__file__).parent))
+    from config_loader import load_merged_runtime_config
+
 HISTORY_DAYS = 7
 DEGRADED_THRESHOLD = 0.5
 REPORT_LIMIT = 20
 ERROR_TEXT_LIMIT = 180
 META_FILE_RE = re.compile(r".*\.meta\d*\.json$")
 META_SUFFIX_RE = re.compile(r"\.meta(\d*)\.json$")
+
+
+def apply_runtime_config() -> Dict[str, Any]:
+    global HISTORY_DAYS, DEGRADED_THRESHOLD, REPORT_LIMIT, ERROR_TEXT_LIMIT
+    defaults_dir = Path(os.environ.get("NEWS_HOTSPOTS_DEFAULTS_DIR", "config/defaults"))
+    config_dir = Path(os.environ.get("NEWS_HOTSPOTS_CONFIG_DIR", "workspace/config"))
+    effective_config_dir = config_dir if config_dir.exists() else None
+    runtime = load_merged_runtime_config(defaults_dir, effective_config_dir)
+    diagnostics = runtime.get("diagnostics", {})
+    HISTORY_DAYS = int(diagnostics.get("history_days", HISTORY_DAYS) or HISTORY_DAYS)
+    DEGRADED_THRESHOLD = float(diagnostics.get("degraded_threshold", DEGRADED_THRESHOLD) or DEGRADED_THRESHOLD)
+    REPORT_LIMIT = int(diagnostics.get("report_limit", REPORT_LIMIT) or REPORT_LIMIT)
+    ERROR_TEXT_LIMIT = int(diagnostics.get("error_text_limit", ERROR_TEXT_LIMIT) or ERROR_TEXT_LIMIT)
+    return runtime
 
 
 @dataclass
@@ -34,7 +70,7 @@ class DiagnosticRecord:
     elapsed_s: float
     items: int
     call_stats: Dict[str, Any]
-    failed_items: List[Dict[str, str]]
+    failed_items: List[Dict[str, Any]]
     details: Dict[str, Any]
     observed_ts: float
     run_label: Optional[str] = None
@@ -170,15 +206,26 @@ def build_direct_run_label(input_dir: Path, now_ts: float) -> str:
     return f"{date_label}-current"
 
 
-def build_failed_items(items: Any) -> List[Dict[str, str]]:
+def build_failed_items(items: Any) -> List[Dict[str, Any]]:
     return [
-        {
-            "id": str(item.get("id", "item")).strip() or "item",
-            "error": trim_error_text(item.get("error")),
-        }
+        dict(
+            {
+                "id": str(item.get("id", "item")).strip() or "item",
+                "error": trim_error_text(item.get("error")),
+            },
+            **({"elapsed_s": float(item.get("elapsed_s", 0) or 0)} if item.get("elapsed_s") is not None else {}),
+        )
         for item in (items or [])
         if isinstance(item, dict) and trim_error_text(item.get("error"))
     ]
+
+
+def format_elapsed_suffix(elapsed_s: Any) -> str:
+    try:
+        elapsed = float(elapsed_s or 0)
+    except (TypeError, ValueError):
+        return ""
+    return f" | elapsed:{elapsed:.1f}s"
 
 
 def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = None) -> DiagnosticRecord:
@@ -308,10 +355,13 @@ def build_history_rows(diagnostics: List[DiagnosticRecord], now: float) -> List[
                 "failed_records": diagnostic.call_stats.get("failed_calls", 0),
                 "error_summary": str(diagnostic.failed_items[0]["error"]).strip() if diagnostic.failed_items else "",
                 "failed_items": [
-                    {
-                        "id": str(item.get("id", "item")).strip() or "item",
-                        "error": trim_error_text(item.get("error")),
-                    }
+                    dict(
+                        {
+                            "id": str(item.get("id", "item")).strip() or "item",
+                            "error": trim_error_text(item.get("error")),
+                        },
+                        **({"elapsed_s": float(item.get("elapsed_s", 0) or 0)} if item.get("elapsed_s") is not None else {}),
+                    )
                     for item in diagnostic.failed_items
                     if isinstance(item, dict) and trim_error_text(item.get("error"))
                 ][:10],
@@ -409,7 +459,11 @@ def render_run_details(diagnostics: List[DiagnosticRecord]) -> List[str]:
                 f"{icon} {item.name:<{name_width}} - calls:{ok_calls}/{failed_calls}/{total_calls} | items:{item.items} | elapsed:{float(item.elapsed_s or 0):.1f}s"
             )
             for failed_item in item.failed_items:
-                lines.append(f"   - {failed_item.get('id', 'item')}: {trim_error_text(failed_item.get('error'))}")
+                failed_elapsed = failed_item.get("elapsed_s", item.elapsed_s)
+                lines.append(
+                    f"   - {failed_item.get('id', 'item')}: {trim_error_text(failed_item.get('error'))}"
+                    f"{format_elapsed_suffix(failed_elapsed)}"
+                )
     return lines
 
 
@@ -427,6 +481,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    apply_runtime_config()
     logger = setup_logging(args.verbose)
     now = time.time()
     current_diagnostics: List[DiagnosticRecord] = []

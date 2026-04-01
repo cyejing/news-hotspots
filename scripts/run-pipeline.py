@@ -1,9 +1,28 @@
 #!/usr/bin/env python3
 """
-Unified data collection pipeline for news-hotspots.
+news-hotspots 统一编排入口。
 
-Runs fetch steps, merges them into an internal debug JSON inside a debug directory,
-then renders a compact hotspots JSON for downstream prompt-writing flows.
+职责：
+- 读取 runtime 配置
+- 组织 fetch step 列表并并行执行 fetch phase
+- 顺序执行 `merge-sources.py` 与 `merge-hotspots.py`
+- 写入 step meta 与 `pipeline.meta.json`
+- 归档各 step 的 meta，并清理过期 archive
+
+执行逻辑：
+1. 解析 CLI 参数并确定 debug / archive 目录
+2. 并行执行各 fetch step，收集 `<step>.json` 与 `<step>.meta.json`
+3. 执行 `merge-sources.py` 生成 `merge-sources.json`
+4. 执行 `merge-hotspots.py` 生成最终热点 JSON / Markdown
+5. 汇总所有 step 结果并写出 `pipeline.meta.json`
+
+输出文件职责：
+- `debug_dir/*.json`
+  结果文件，给下游脚本消费
+- `debug_dir/*.meta.json`
+  诊断文件，给 pipeline 聚合和 `source-health.py` 消费
+- `debug_dir/pipeline.meta.json`
+  本次 pipeline 的总诊断汇总
 """
 
 import argparse
@@ -11,49 +30,48 @@ import json
 import logging
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
 import time
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence
+
+try:
+    from config_loader import load_merged_runtime_config
+except ImportError:
+    sys.path.append(str(Path(__file__).parent))
+    from config_loader import load_merged_runtime_config
 
 SCRIPTS_DIR = Path(__file__).parent
-DEFAULT_TIMEOUT = 2000
-MERGE_TIMEOUT = 300
-SUMMARY_TIMEOUT = 120
-DEFAULT_HOTSPOTS_TOP = 5
-ARCHIVE_RETENTION_DAYS = 90
-ERROR_TEXT_LIMIT = 180
-STEP_COOLDOWN_DEFAULTS = {
-    "fetch-twitter.py": ("BB_BROWSER_TWITTER_COOLDOWN_SECONDS", 12.0),
-    "fetch-reddit.py": ("BB_BROWSER_REDDIT_COOLDOWN_SECONDS", 10.0),
-    "fetch-google.py": ("BB_BROWSER_GOOGLE_COOLDOWN_SECONDS", 12.0),
-    "fetch-v2ex.py": ("BB_BROWSER_V2EX_COOLDOWN_SECONDS", 5.0),
-    "fetch-zhihu.py": ("BB_BROWSER_ZHIHU_COOLDOWN_SECONDS", 6.0),
-    "fetch-weibo.py": ("BB_BROWSER_WEIBO_COOLDOWN_SECONDS", 6.0),
-    "fetch-toutiao.py": ("BB_BROWSER_TOUTIAO_COOLDOWN_SECONDS", 6.0),
-    "fetch-github.py": ("NEWS_HOTSPOTS_GITHUB_COOLDOWN_SECONDS", 3.0),
-    "fetch-github-trending.py": ("NEWS_HOTSPOTS_GITHUB_TRENDING_COOLDOWN_SECONDS", 3.0),
-}
-
-INTERRUPT_EVENT = threading.Event()
-INTERRUPT_REASON = "external interrupt"
+FETCH_STEPS = (
+    ("rss", "RSS", "fetch-rss.py"),
+    ("twitter", "Twitter", "fetch-twitter.py"),
+    ("google", "Google News", "fetch-google.py"),
+    ("github", "GitHub", "fetch-github.py"),
+    ("github_trending", "GitHub Trending", "fetch-github-trending.py"),
+    ("api", "API", "fetch-api.py"),
+    ("v2ex", "V2EX", "fetch-v2ex.py"),
+    ("zhihu", "Zhihu", "fetch-zhihu.py"),
+    ("weibo", "Weibo", "fetch-weibo.py"),
+    ("toutiao", "Toutiao", "fetch-toutiao.py"),
+    ("reddit", "Reddit", "fetch-reddit.py"),
+)
+MERGE_STEP_KEY = "merge-sources"
+HOTSPOTS_STEP_KEY = "merge-hotspots"
 
 
 @dataclass(frozen=True)
 class StepSpec:
     step_key: str
     name: str
-    script: str
+    script_name: str
     args: List[str]
     output_path: Optional[Path]
-    cooldown_s: Optional[float] = None
+    timeout_s: int
 
 
 @dataclass
@@ -62,64 +80,44 @@ class ProcessResult:
     name: str
     status: str
     elapsed_s: float
-    effective_timeout_s: int
-    cooldown_s: Optional[float]
-    stderr_tail: List[str] = field(default_factory=list)
+    timeout_s: int
     stdout_tail: List[str] = field(default_factory=list)
+    stderr_tail: List[str] = field(default_factory=list)
+    returncode: Optional[int] = None
 
 
-@dataclass
-class StepMeta:
-    status: str
-    items: int
-    call_stats: Dict[str, Any]
-    failed_items: List[Dict[str, str]]
-    details: Dict[str, Any]
-
-
-def setup_logging(verbose: bool, log_file: Optional[Path] = None) -> logging.Logger:
+def setup_logging(verbose: bool) -> logging.Logger:
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%H:%M:%S",
     )
-    logger = logging.getLogger(__name__)
-    
-    if log_file:
-        log_file.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = logging.FileHandler(log_file, encoding="utf-8")
-        file_handler.setLevel(level)
-        file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
-        logging.root.addHandler(file_handler)
-    
-    return logger
+    return logging.getLogger(__name__)
 
 
-def note_interrupt(reason: str) -> None:
-    global INTERRUPT_REASON
-    if not INTERRUPT_EVENT.is_set():
-        INTERRUPT_REASON = reason
-    INTERRUPT_EVENT.set()
+def status_icon(status: str) -> str:
+    if status == "ok":
+        return "✅"
+    if status == "partial":
+        return "⚠️"
+    if status == "timeout":
+        return "⏱️"
+    return "❌"
 
 
-def install_signal_handlers(logger: logging.Logger) -> Dict[int, Any]:
-    previous: Dict[int, Any] = {}
-
-    def handler(signum: int, _frame: Any) -> None:
-        signal_name = signal.Signals(signum).name if signum in signal.Signals._value2member_map_ else str(signum)
-        note_interrupt(f"received {signal_name}")
-        logger.warning("⚠️ Received %s, will stop active fetches and try to recover partial outputs", signal_name)
-
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        previous[signum] = signal.getsignal(signum)
-        signal.signal(signum, handler)
-    return previous
+def format_elapsed(elapsed_s: Any) -> str:
+    try:
+        return f"{float(elapsed_s):.1f}s"
+    except (TypeError, ValueError):
+        return "0.0s"
 
 
-def restore_signal_handlers(previous: Dict[int, Any]) -> None:
-    for signum, handler in previous.items():
-        signal.signal(signum, handler)
+def summarize_items(summary: Dict[str, Any]) -> int:
+    try:
+        return int(summary.get("items", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -128,7 +126,7 @@ def write_json(path: Path, payload: Dict[str, Any]) -> None:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
 
 
-def load_json_file(path: Optional[Path]) -> Optional[Dict[str, Any]]:
+def load_json(path: Optional[Path]) -> Optional[Dict[str, Any]]:
     if not path or not path.exists():
         return None
     try:
@@ -139,52 +137,27 @@ def load_json_file(path: Optional[Path]) -> Optional[Dict[str, Any]]:
         return None
 
 
-def normalize_error_text(value: Any, limit: int = ERROR_TEXT_LIMIT) -> str:
-    if value is None:
-        return ""
-    lines = [str(line).strip() for line in str(value).splitlines() if str(line).strip()]
-    if not lines:
-        return ""
-    text = " | ".join(lines[:2])
-    text = " ".join(text.split())
-    if len(text) <= limit:
-        return text
-    return text[: max(limit - 3, 1)].rstrip() + "..."
-
-
-def get_cooldown_for_script(script: str) -> Optional[float]:
-    config = STEP_COOLDOWN_DEFAULTS.get(script)
-    if not config:
-        return None
-    env_name, default = config
-    try:
-        return float(os.environ.get(env_name, str(default)))
-    except ValueError:
-        return default
+def parse_output_markers(lines: Sequence[str]) -> Dict[str, str]:
+    markers: Dict[str, str] = {}
+    for line in lines:
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key and value:
+            markers[key] = value
+    return markers
 
 
 def resolve_debug_dir(debug_dir: Optional[Path]) -> Path:
-    if debug_dir:
+    if debug_dir is not None:
         debug_dir.mkdir(parents=True, exist_ok=True)
         return debug_dir
     return Path(tempfile.mkdtemp(prefix="news-hotspots-pipeline-"))
 
 
-def resolve_unique_output_path(path: Path) -> Path:
-    if not path.exists():
-        return path
-    parent = path.parent
-    stem = path.stem
-    suffix = path.suffix
-    counter = 1
-    while True:
-        candidate = parent / f"{stem}{counter}{suffix}"
-        if not candidate.exists():
-            return candidate
-        counter += 1
-
-
-def cleanup_archive_root(archive_root: Path, retention_days: int = ARCHIVE_RETENTION_DAYS) -> int:
+def cleanup_archive_root(archive_root: Path, retention_days: int) -> int:
     if not archive_root.exists():
         return 0
     cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).date()
@@ -202,978 +175,452 @@ def cleanup_archive_root(archive_root: Path, retention_days: int = ARCHIVE_RETEN
     return removed
 
 
-def archive_meta_outputs(
-    archive_root: Optional[Path],
-    pipeline_meta_output: Path,
-    step_meta_paths: Dict[str, str],
-) -> Dict[str, Any]:
-    if not archive_root:
-        return {}
-
-    today_dir = archive_root / datetime.now().astimezone().date().isoformat()
-    meta_dir = today_dir / "meta"
-    meta_dir.mkdir(parents=True, exist_ok=True)
-
-    archived: Dict[str, Any] = {
-        "date_dir": str(today_dir),
-        "meta_dir": str(meta_dir),
-    }
-
-    if pipeline_meta_output.exists():
-        archived_pipeline_meta = resolve_unique_output_path(meta_dir / pipeline_meta_output.name)
-        shutil.copy2(pipeline_meta_output, archived_pipeline_meta)
-        archived["pipeline_meta"] = str(archived_pipeline_meta)
-
-    archived_step_metas: Dict[str, str] = {}
-    for step_key, path_str in step_meta_paths.items():
-        source_path = Path(path_str)
-        if not source_path.exists():
-            continue
-        archived_path = resolve_unique_output_path(meta_dir / source_path.name)
-        shutil.copy2(source_path, archived_path)
-        archived_step_metas[step_key] = str(archived_path)
-    archived["step_meta_paths"] = archived_step_metas
-    return archived
+def archive_step_meta(step_meta_path: Path, archive_root: Path) -> Optional[Path]:
+    if not step_meta_path.exists():
+        return None
+    date_dir = archive_root / datetime.now().astimezone().date().isoformat() / "meta"
+    date_dir.mkdir(parents=True, exist_ok=True)
+    destination = date_dir / step_meta_path.name
+    shutil.copy2(step_meta_path, destination)
+    return destination
 
 
-def parse_step_output_paths(stdout_tail: Sequence[str]) -> Dict[str, str]:
-    parsed: Dict[str, str] = {}
-    for line in stdout_tail:
-        if "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        value = value.strip()
-        if key and value:
-            parsed[key] = value
-    return parsed
+def load_runtime(defaults_dir: Path, config_dir: Optional[Path]) -> Dict[str, Any]:
+    return load_merged_runtime_config(defaults_dir, config_dir)
 
 
-def extract_items_from_payload(payload: Optional[Dict[str, Any]], fallback: int = 0) -> int:
-    if not payload:
-        return int(fallback or 0)
-    
-    if isinstance(payload.get("topics"), list):
-        total = 0
-        for topic in payload["topics"]:
-            if isinstance(topic, dict):
-                items = topic.get("items")
-                if isinstance(items, list):
-                    total += len(items)
-                elif isinstance(items, int):
-                    total += items
-        return total
-    
-    return int(
-        payload.get("items_total")
-        or payload.get("total_articles")
-        or payload.get("total_posts")
-        or payload.get("total_releases")
-        or payload.get("total_results")
-        or payload.get("total")
-        or payload.get("output_stats", {}).get("total_articles")
-        or fallback
-        or 0
-    )
+def build_fetch_step_specs(
+        defaults_dir: Path,
+        config_dir: Optional[Path],
+        debug_dir: Path,
+        hours: int,
+        verbose: bool,
+        force: bool,
+        runtime: Dict[str, Any],
+) -> List[StepSpec]:
+    timeout_s = int(runtime.get("pipeline", {}).get("fetch_step_timeout_s", 2000) or 2000)
+    specs: List[StepSpec] = []
+    for step_key, name, script_name in FETCH_STEPS:
+        args = ["--defaults", str(defaults_dir)]
+        if config_dir is not None:
+            args.extend(["--config", str(config_dir)])
+        args.extend(["--output", str(debug_dir / f"{step_key}.json"), "--hours", str(hours)])
+        if verbose:
+            args.append("--verbose")
+        if force:
+            args.append("--force")
+        specs.append(
+            StepSpec(
+                step_key=step_key,
+                name=name,
+                script_name=script_name,
+                args=args,
+                output_path=debug_dir / f"{step_key}.json",
+                timeout_s=timeout_s,
+            )
+        )
+    return specs
 
 
-def collect_payload_details(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not payload:
-        return {}
-
-    details: Dict[str, Any] = {}
-    for key in [
-        "generated",
-        "source_type",
-        "total_articles",
-        "total_posts",
-        "total_releases",
-        "total_results",
-        "total",
-    ]:
-        if key in payload:
-            details[key] = payload[key]
-
-    if "sources" in payload and isinstance(payload["sources"], list):
-        statuses = [source.get("status", "error") for source in payload["sources"] if isinstance(source, dict)]
-        details["record_summary"] = {
-            "kind": "sources",
-            "total": len(statuses),
-            "ok": sum(1 for status in statuses if status == "ok"),
-            "error": sum(1 for status in statuses if status != "ok"),
-        }
-    elif "subreddits" in payload and isinstance(payload["subreddits"], list):
-        statuses = [entry.get("status", "error") for entry in payload["subreddits"] if isinstance(entry, dict)]
-        details["record_summary"] = {
-            "kind": "subreddits",
-            "total": len(statuses),
-            "ok": sum(1 for status in statuses if status == "ok"),
-            "error": sum(1 for status in statuses if status != "ok"),
-        }
-    elif "topics" in payload and isinstance(payload["topics"], list):
-        topic_entries = [entry for entry in payload["topics"] if isinstance(entry, dict)]
-        if any("status" in entry for entry in topic_entries):
-            statuses = [entry.get("status", "error") for entry in topic_entries]
-            details["record_summary"] = {
-                "kind": "topics",
-                "total": len(statuses),
-                "ok": sum(1 for status in statuses if status == "ok"),
-                "error": sum(1 for status in statuses if status != "ok"),
-            }
+def build_merge_step_spec(
+        debug_dir: Path,
+        archive_dir: Path,
+        verbose: bool,
+        runtime: Dict[str, Any],
+) -> StepSpec:
+    timeout_s = int(runtime.get("pipeline", {}).get("merge_timeout_s", 300) or 300)
+    args = ["--output", str(debug_dir / "merge-sources.json"), "--archive", str(archive_dir)]
+    for step_key, _, _ in FETCH_STEPS:
+        input_path = debug_dir / f"{step_key}.json"
+        if step_key == "github_trending":
+            args.extend(["--github-trending", str(input_path)])
         else:
-            details["record_summary"] = {
-                "kind": "topics",
-                "total": len(topic_entries),
-                "ok": len(topic_entries),
-                "error": 0,
-            }
-    elif "repos" in payload and isinstance(payload["repos"], list):
-        details["record_summary"] = {
-            "kind": "repos",
-            "total": len(payload["repos"]),
-            "ok": len(payload["repos"]),
-            "error": 0,
-        }
-
-    if "processing" in payload:
-        details["processing"] = payload["processing"]
-    if "input_sources" in payload:
-        details["input_sources"] = payload["input_sources"]
-    if "output_stats" in payload:
-        details["output_stats"] = payload["output_stats"]
-        total_input = payload.get("input_sources", {}).get("total_input")
-        total_output = payload.get("output_stats", {}).get("total_articles")
-        if isinstance(total_input, int) and isinstance(total_output, int) and total_input >= 0:
-            dropped = max(total_input - total_output, 0)
-            details["deduplication"] = {
-                "input_total": total_input,
-                "output_total": total_output,
-                "dropped": dropped,
-                "drop_ratio": round(dropped / total_input, 3) if total_input else 0.0,
-            }
-    if "topic_order" in payload and isinstance(payload["topic_order"], list):
-        details["hotspots_stats"] = {
-            "total_articles": payload.get("total_articles", 0),
-            "topic_count": len(payload["topic_order"]),
-            "topic_order": payload["topic_order"],
-            "source_breakdown": payload.get("source_breakdown", {}),
-        }
-
-    return details
-
-
-def extract_call_stats(payload: Optional[Dict[str, Any]], *, step_key: str, status: str) -> Dict[str, Any]:
-    def single_call(kind: str) -> Dict[str, Any]:
-        if status in {"pending", "skipped"}:
-            return {"kind": kind, "total_calls": 0, "ok_calls": 0, "failed_calls": 0}
-        ok_calls = 1 if status == "ok" else 0
-        return {"kind": kind, "total_calls": 1, "ok_calls": ok_calls, "failed_calls": 1 - ok_calls}
-
-    if not payload:
-        return single_call(step_key)
-
-    if any(key in payload for key in ("calls_total", "calls_ok")):
-        total_calls = int(payload.get("calls_total", 0) or 0)
-        ok_calls = int(payload.get("calls_ok", 0) or 0)
-        return {
-            "kind": str(payload.get("calls_kind", step_key)),
-            "total_calls": total_calls,
-            "ok_calls": ok_calls,
-            "failed_calls": max(total_calls - ok_calls, 0),
-        }
-
-    if isinstance(payload.get("sources"), list):
-        entries = [entry for entry in payload["sources"] if isinstance(entry, dict)]
-        ok_calls = sum(1 for entry in entries if entry.get("status") == "ok")
-        return {"kind": "sources", "total_calls": len(entries), "ok_calls": ok_calls, "failed_calls": max(len(entries) - ok_calls, 0)}
-
-    if isinstance(payload.get("subreddits"), list):
-        entries = [entry for entry in payload["subreddits"] if isinstance(entry, dict)]
-        ok_calls = sum(1 for entry in entries if entry.get("status") == "ok")
-        return {"kind": "subreddits", "total_calls": len(entries), "ok_calls": ok_calls, "failed_calls": max(len(entries) - ok_calls, 0)}
-
-    if isinstance(payload.get("topics"), list):
-        entries = [entry for entry in payload["topics"] if isinstance(entry, dict)]
-        query_stats = [
-            stat
-            for entry in entries
-            for stat in entry.get("query_stats", [])
-            if isinstance(stat, dict)
-        ]
-        if query_stats:
-            ok_calls = sum(1 for stat in query_stats if stat.get("status") == "ok")
-            return {"kind": "queries", "total_calls": len(query_stats), "ok_calls": ok_calls, "failed_calls": max(len(query_stats) - ok_calls, 0)}
-        if any("status" in entry for entry in entries):
-            ok_calls = sum(1 for entry in entries if entry.get("status") == "ok")
-            return {"kind": "topics", "total_calls": len(entries), "ok_calls": ok_calls, "failed_calls": max(len(entries) - ok_calls, 0)}
-
-    if isinstance(payload.get("repos"), list):
-        entries = [entry for entry in payload["repos"] if isinstance(entry, dict)]
-        if any("status" in entry for entry in entries):
-            ok_calls = sum(1 for entry in entries if entry.get("status") == "ok")
-            return {"kind": "repos", "total_calls": len(entries), "ok_calls": ok_calls, "failed_calls": max(len(entries) - ok_calls, 0)}
-        return single_call("repos")
-
-    return single_call(step_key)
-
-
-def extract_failed_items(payload: Optional[Dict[str, Any]], limit: Optional[int] = None) -> List[Dict[str, str]]:
-    if not payload:
-        return []
-
-    failed_items: List[Dict[str, str]] = []
-
-    def append_item(entry_id: Any, error_value: Any) -> None:
-        item_id = str(entry_id).strip() if entry_id is not None else ""
-        error_text = normalize_error_text(error_value)
-        if not error_text:
-            return
-        if not item_id:
-            item_id = "item"
-        candidate = {"id": item_id, "error": error_text}
-        if candidate not in failed_items:
-            failed_items.append(candidate)
-
-    for key in ("sources", "subreddits", "topics", "repos"):
-        entries = payload.get(key)
-        if not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            status = entry.get("status")
-            explicit_error = entry.get("error")
-            error_messages = entry.get("error_messages")
-            has_error = bool(explicit_error) or (
-                isinstance(error_messages, list) and any(str(item).strip() for item in error_messages)
-            )
-            if status == "ok" or (status is None and not has_error):
-                if key != "topics":
-                    continue
-            entry_id = (
-                entry.get("source_id")
-                or entry.get("id")
-                or entry.get("subreddit")
-                or entry.get("topic")
-                or entry.get("repo")
-                or entry.get("name")
-                or entry.get("query")
-                or entry.get("topic_id")
-            )
-            if key == "topics" and isinstance(entry.get("query_stats"), list):
-                topic_query_failures = False
-                for query_stat in entry["query_stats"]:
-                    if not isinstance(query_stat, dict) or query_stat.get("status") == "ok":
-                        continue
-                    topic_query_failures = True
-                    append_item(entry_id or entry.get("topic_id") or entry.get("topic"), query_stat.get("error") or query_stat.get("query"))
-                    if limit is not None and len(failed_items) >= limit:
-                        return failed_items[:limit]
-                if status == "ok" and topic_query_failures:
-                    continue
-            if explicit_error:
-                append_item(entry_id, explicit_error)
-            elif isinstance(error_messages, list) and error_messages:
-                first_message = next((item for item in error_messages if normalize_error_text(item)), None)
-                append_item(entry_id, first_message)
-            if limit is not None and len(failed_items) >= limit:
-                return failed_items[:limit]
-
-    return failed_items if limit is None else failed_items[:limit]
-
-
-def build_diagnostics(payload: Optional[Dict[str, Any]], process_result: ProcessResult, step_key: str) -> StepMeta:
-    details = collect_payload_details(payload)
-    items = extract_items_from_payload(payload)
-    call_stats = extract_call_stats(payload, step_key=step_key, status=process_result.status)
-    failed_items = extract_failed_items(payload)
-    if not failed_items and process_result.status in {"error", "timeout"}:
-        message = next((normalize_error_text(line) for line in process_result.stderr_tail if normalize_error_text(line)), process_result.status)
-        failed_items = [{"id": "__step__", "error": message}]
-    return StepMeta(
-        status=process_result.status,
-        items=items,
-        call_stats=call_stats,
-        failed_items=failed_items,
-        details=details,
+            args.extend([f"--{step_key.replace('_', '-')}", str(input_path)])
+    if verbose:
+        args.append("--verbose")
+    return StepSpec(
+        step_key=MERGE_STEP_KEY,
+        name="Merge Sources",
+        script_name="merge-sources.py",
+        args=args,
+        output_path=debug_dir / "merge-sources.json",
+        timeout_s=timeout_s,
     )
 
 
-def serialize_step_meta(spec: StepSpec, process_result: ProcessResult, meta: StepMeta) -> Dict[str, Any]:
-    return {
-        "meta_version": "1.0",
-        "step_key": spec.step_key,
-        "name": spec.name,
-        "script": spec.script,
-        "status": meta.status,
-        "elapsed_s": process_result.elapsed_s,
-        "items": meta.items,
-        "call_stats": meta.call_stats,
-        "effective_timeout_s": process_result.effective_timeout_s,
-        "cooldown_s": process_result.cooldown_s,
-        "output_path": str(spec.output_path) if spec.output_path else None,
-        "failed_items": meta.failed_items,
-        "details": meta.details,
-    }
-
-
-def build_step_result(spec: StepSpec, process_result: ProcessResult, meta: StepMeta) -> Dict[str, Any]:
-    return {
-        "step_key": spec.step_key,
-        "name": spec.name,
-        "status": meta.status,
-        "elapsed_s": process_result.elapsed_s,
-        "items": meta.items,
-        "effective_timeout_s": process_result.effective_timeout_s,
-        "cooldown_s": process_result.cooldown_s,
-        "stderr_tail": process_result.stderr_tail,
-    }
-
-
-def make_process_result(
-    *,
-    spec: StepSpec,
-    status: str,
-    timeout: int,
-    elapsed_s: float = 0.0,
-    stderr_tail: Optional[Sequence[str]] = None,
-    stdout_tail: Optional[Sequence[str]] = None,
-) -> ProcessResult:
-    return ProcessResult(
-        step_key=spec.step_key,
-        name=spec.name,
-        status=status,
-        elapsed_s=round(elapsed_s, 1),
-        effective_timeout_s=timeout,
-        cooldown_s=spec.cooldown_s,
-        stderr_tail=[str(line).strip() for line in (stderr_tail or []) if str(line).strip()],
-        stdout_tail=[str(line).strip() for line in (stdout_tail or []) if str(line).strip()],
+def build_hotspots_step_spec(
+        debug_dir: Path,
+        archive_dir: Path,
+        mode: str,
+        top_n: int,
+        runtime: Dict[str, Any],
+) -> StepSpec:
+    timeout_s = int(runtime.get("pipeline", {}).get("hotspots_timeout_s", 120) or 120)
+    return StepSpec(
+        step_key=HOTSPOTS_STEP_KEY,
+        name="Merge Hotspots",
+        script_name="merge-hotspots.py",
+        args=[
+            "--input",
+            str(debug_dir / "merge-sources.json"),
+            "--archive",
+            str(archive_dir),
+            "--debug-output",
+            str(debug_dir / "merge-hotspots.json"),
+            "--top",
+            str(top_n),
+            "--mode",
+            mode,
+        ],
+        output_path=None,
+        timeout_s=timeout_s,
     )
 
 
-def resolve_script_path(script: str) -> Path:
-    path = Path(script)
-    if path.is_absolute():
-        return path
-    return SCRIPTS_DIR / script
+def run_step_process(spec: StepSpec) -> ProcessResult:
+    command = [sys.executable, str(SCRIPTS_DIR / spec.script_name), *spec.args]
+    env = os.environ.copy()
 
+    defaults_dir = _extract_cli_value(spec.args, "--defaults")
+    if defaults_dir:
+        env["NEWS_HOTSPOTS_DEFAULTS_DIR"] = defaults_dir
+    config_dir = _extract_cli_value(spec.args, "--config")
+    if config_dir:
+        env["NEWS_HOTSPOTS_CONFIG_DIR"] = config_dir
 
-def get_step_arg_value(args: List[str], flag: str) -> Optional[str]:
+    started = time.monotonic()
     try:
-        index = args.index(flag)
-    except ValueError:
-        return None
-    next_index = index + 1
-    if next_index >= len(args):
-        return None
-    return args[next_index]
-
-
-def run_step_process(
-    spec: StepSpec,
-    *,
-    timeout: int,
-    force: bool = False,
-    output_flag: Optional[str] = "--output",
-    respect_interrupt: bool = True,
-) -> ProcessResult:
-    if respect_interrupt and INTERRUPT_EVENT.is_set():
-        return make_process_result(
-            spec=spec,
-            status="timeout",
-            timeout=timeout,
-            stderr_tail=[f"Interrupted before step start ({INTERRUPT_REASON})"],
-        )
-
-    cmd = [sys.executable, str(resolve_script_path(spec.script)), *spec.args]
-    if spec.output_path is not None and output_flag:
-        cmd += [output_flag, str(spec.output_path)]
-    if force:
-        cmd.append("--force")
-
-    t0 = time.time()
-    try:
-        env = os.environ.copy()
-        defaults_dir = get_step_arg_value(spec.args, "--defaults")
-        config_dir = get_step_arg_value(spec.args, "--config")
-        if defaults_dir:
-            env["NEWS_HOTSPOTS_DEFAULTS_DIR"] = defaults_dir
-        if config_dir:
-            env["NEWS_HOTSPOTS_CONFIG_DIR"] = config_dir
-        process = subprocess.Popen(
-            cmd,
+        completed = subprocess.run(
+            command,
+            capture_output=True,
             text=True,
+            timeout=spec.timeout_s,
             env=env,
-            start_new_session=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
         )
-        deadline = t0 + timeout
-        stdout = ""
-        stderr = ""
-        while True:
-            remaining = max(deadline - time.time(), 0.0)
-            wait_slice = min(0.5, remaining) if remaining > 0 else 0.0
-            try:
-                stdout, stderr = process.communicate(timeout=wait_slice)
-                break
-            except subprocess.TimeoutExpired:
-                if respect_interrupt and INTERRUPT_EVENT.is_set():
-                    if os.name != "nt":
-                        try:
-                            os.killpg(process.pid, signal.SIGTERM)
-                        except ProcessLookupError:
-                            pass
-                    else:
-                        process.kill()
-                    try:
-                        stdout, stderr = process.communicate(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        if os.name != "nt":
-                            try:
-                                os.killpg(process.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                        else:
-                            process.kill()
-                        stdout, stderr = process.communicate()
-                    return make_process_result(
-                        spec=spec,
-                        status="timeout",
-                        timeout=timeout,
-                        elapsed_s=time.time() - t0,
-                        stderr_tail=[f"Interrupted ({INTERRUPT_REASON})"],
-                        stdout_tail=(stdout or "").splitlines()[-10:],
-                    )
-                if time.time() >= deadline:
-                    if os.name != "nt":
-                        try:
-                            os.killpg(process.pid, signal.SIGTERM)
-                        except ProcessLookupError:
-                            pass
-                        try:
-                            stdout, stderr = process.communicate(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            try:
-                                os.killpg(process.pid, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                            stdout, stderr = process.communicate()
-                    else:
-                        process.kill()
-                        stdout, stderr = process.communicate()
-                    return make_process_result(
-                        spec=spec,
-                        status="timeout",
-                        timeout=timeout,
-                        elapsed_s=time.time() - t0,
-                        stderr_tail=[f"Killed after {timeout}s"],
-                        stdout_tail=(stdout or "").splitlines()[-10:],
-                    )
-
-        status = "ok" if process.returncode == 0 else "error"
-        return make_process_result(
-            spec=spec,
+        elapsed_s = round(time.monotonic() - started, 3)
+        stdout_tail = [line for line in completed.stdout.splitlines() if line.strip()][-20:]
+        stderr_tail = [line for line in completed.stderr.splitlines() if line.strip()][-20:]
+        status = "ok" if completed.returncode == 0 else "error"
+        return ProcessResult(
+            step_key=spec.step_key,
+            name=spec.name,
             status=status,
-            timeout=timeout,
-            elapsed_s=time.time() - t0,
-            stderr_tail=(stderr or "").splitlines()[-3:] if status != "ok" else [],
-            stdout_tail=(stdout or "").splitlines()[-10:],
+            elapsed_s=elapsed_s,
+            timeout_s=spec.timeout_s,
+            stdout_tail=stdout_tail,
+            stderr_tail=stderr_tail,
+            returncode=completed.returncode,
+        )
+    except subprocess.TimeoutExpired as exc:
+        elapsed_s = round(time.monotonic() - started, 3)
+        stdout_tail = [line for line in (exc.stdout or "").splitlines() if line.strip()][-20:]
+        stderr_tail = [line for line in (exc.stderr or "").splitlines() if line.strip()][-20:]
+        stderr_tail.append(f"Killed after {spec.timeout_s}s")
+        return ProcessResult(
+            step_key=spec.step_key,
+            name=spec.name,
+            status="timeout",
+            elapsed_s=elapsed_s,
+            timeout_s=spec.timeout_s,
+            stdout_tail=stdout_tail,
+            stderr_tail=stderr_tail,
+            returncode=None,
         )
     except Exception as exc:
-        return make_process_result(
-            spec=spec,
+        elapsed_s = round(time.monotonic() - started, 3)
+        return ProcessResult(
+            step_key=spec.step_key,
+            name=spec.name,
             status="error",
-            timeout=timeout,
-            elapsed_s=time.time() - t0,
+            elapsed_s=elapsed_s,
+            timeout_s=spec.timeout_s,
             stderr_tail=[str(exc)],
+            returncode=None,
         )
 
 
-def load_step_payload(output_path: Optional[Path]) -> Optional[Dict[str, Any]]:
-    return load_json_file(output_path)
+def _extract_cli_value(args: Sequence[str], flag: str) -> Optional[str]:
+    try:
+        index = list(args).index(flag)
+    except ValueError:
+        return None
+    if index + 1 >= len(args):
+        return None
+    return str(args[index + 1])
 
 
-def write_step_meta(debug_dir: Path, spec: StepSpec, process_result: ProcessResult, meta: StepMeta) -> Path:
-    step_meta_path = debug_dir / f"{spec.step_key}.meta.json"
-    write_json(step_meta_path, serialize_step_meta(spec, process_result, meta))
-    return step_meta_path
-
-
-def finalize_step(debug_dir: Path, spec: StepSpec, process_result: ProcessResult) -> Tuple[Dict[str, Any], Path]:
-    payload = load_step_payload(spec.output_path)
-    meta = build_diagnostics(payload, process_result, spec.step_key)
-    step_meta_path = write_step_meta(debug_dir, spec, process_result, meta)
-    return build_step_result(spec, process_result, meta), step_meta_path
-
-
-def build_fetch_steps(
-    *,
-    defaults_dir: Path,
-    config_dir: Optional[Path],
-    hours: int,
-    debug_dir: Path,
-    verbose: bool,
-) -> List[StepSpec]:
-    common = ["--defaults", str(defaults_dir)]
-    if config_dir:
-        common += ["--config", str(config_dir)]
-    common += ["--hours", str(hours)]
-    verbose_flag = ["--verbose"] if verbose else []
-
-    return [
-        StepSpec("rss", "RSS", "fetch-rss.py", common + verbose_flag, debug_dir / "rss.json", None),
-        StepSpec("twitter", "Twitter", "fetch-twitter.py", common + verbose_flag, debug_dir / "twitter.json", get_cooldown_for_script("fetch-twitter.py")),
-        StepSpec("google", "Google News", "fetch-google.py", common + verbose_flag, debug_dir / "google.json", get_cooldown_for_script("fetch-google.py")),
-        StepSpec("github", "GitHub", "fetch-github.py", common + verbose_flag, debug_dir / "github.json", get_cooldown_for_script("fetch-github.py")),
-        StepSpec(
-            "trending",
-            "GitHub Trending",
-            "fetch-github-trending.py",
-            ["--hours", str(hours), "--defaults", str(defaults_dir)] + (["--config", str(config_dir)] if config_dir else []) + verbose_flag,
-            debug_dir / "trending.json",
-            get_cooldown_for_script("fetch-github-trending.py"),
-        ),
-        StepSpec("api", "API Sources", "fetch-api.py", common + verbose_flag, debug_dir / "api.json", None),
-        StepSpec("v2ex", "V2EX Hot", "fetch-v2ex.py", common + verbose_flag, debug_dir / "v2ex.json", get_cooldown_for_script("fetch-v2ex.py")),
-        StepSpec("zhihu", "Zhihu Hot", "fetch-zhihu.py", common + verbose_flag, debug_dir / "zhihu.json", get_cooldown_for_script("fetch-zhihu.py")),
-        StepSpec("weibo", "Weibo Hot", "fetch-weibo.py", common + verbose_flag, debug_dir / "weibo.json", get_cooldown_for_script("fetch-weibo.py")),
-        StepSpec("toutiao", "Toutiao Hot", "fetch-toutiao.py", common + verbose_flag, debug_dir / "toutiao.json", get_cooldown_for_script("fetch-toutiao.py")),
-        StepSpec("reddit", "Reddit", "fetch-reddit.py", common + verbose_flag, debug_dir / "reddit.json", get_cooldown_for_script("fetch-reddit.py")),
-    ]
-
-
-def log_step_completion(logger: logging.Logger, result: Dict[str, Any]) -> None:
-    status_icon = {"ok": "✅", "error": "❌", "timeout": "⏰", "skipped": "⏭️", "pending": "…"}.get(result["status"], "?")
-    logger.info("  %s %s: %s items (%ss)", status_icon, result["name"], result["items"], result["elapsed_s"])
-    if result["status"] not in {"ok", "skipped"} and result["stderr_tail"]:
-        for line in result["stderr_tail"]:
-            logger.debug("    %s", line)
-
-
-def execute_fetch_steps(
-    *,
-    steps: List[StepSpec],
-    skip_steps: set[str],
-    timeout: int,
-    force: bool,
-    debug_dir: Path,
-    logger: logging.Logger,
-) -> Tuple[List[Dict[str, Any]], Dict[str, str], float]:
-    t_start = time.time()
-    step_results: List[Dict[str, Any]] = []
-    step_meta_paths: Dict[str, str] = {}
-    active_specs: List[StepSpec] = []
-
-    for spec in steps:
-        if spec.step_key in skip_steps:
-            skipped_result = make_process_result(spec=spec, status="skipped", timeout=timeout)
-            result, meta_path = finalize_step(debug_dir, spec, skipped_result)
-            step_results.append(result)
-            step_meta_paths[spec.step_key] = str(meta_path)
-            logger.info("  ⏭️  %s: skipped (--skip)", spec.name)
-            continue
-
-        pending_result = make_process_result(spec=spec, status="pending", timeout=timeout)
-        pending_meta = build_diagnostics(None, pending_result, spec.step_key)
-        meta_path = write_step_meta(debug_dir, spec, pending_result, pending_meta)
-        step_meta_paths[spec.step_key] = str(meta_path)
-        active_specs.append(spec)
-
-    if active_specs:
-        spec_by_future: Dict[Any, StepSpec] = {}
-        with ThreadPoolExecutor(max_workers=len(active_specs)) as pool:
-            for spec in active_specs:
-                future = pool.submit(run_step_process, spec, timeout=timeout, force=force)
-                spec_by_future[future] = spec
-
-            for future in as_completed(spec_by_future):
-                spec = spec_by_future[future]
-                try:
-                    process_result = future.result()
-                except Exception as exc:
-                    logger.exception("❌ %s future crashed", spec.name)
-                    process_result = make_process_result(
-                        spec=spec,
-                        status="error",
-                        timeout=timeout,
-                        stderr_tail=[f"future crashed: {exc}"],
-                    )
-                result, meta_path = finalize_step(debug_dir, spec, process_result)
-                step_results.append(result)
-                step_meta_paths[spec.step_key] = str(meta_path)
-                log_step_completion(logger, result)
-
-    completed = {result["step_key"] for result in step_results}
-    for spec in steps:
-        if spec.step_key in completed:
-            continue
-        fallback = make_process_result(
-            spec=spec,
-            status="error",
-            timeout=timeout,
-            stderr_tail=["step finished without final result"],
-        )
-        result, meta_path = finalize_step(debug_dir, spec, fallback)
-        step_results.append(result)
-        step_meta_paths[spec.step_key] = str(meta_path)
-
-    return step_results, step_meta_paths, time.time() - t_start
-
-
-def build_merge_args(debug_dir: Path, archive_dir: Optional[Path], verbose: bool) -> List[str]:
-    merge_args = ["--verbose"] if verbose else []
-    for flag, path in [
-        ("--rss", debug_dir / "rss.json"),
-        ("--twitter", debug_dir / "twitter.json"),
-        ("--google", debug_dir / "google.json"),
-        ("--github", debug_dir / "github.json"),
-        ("--trending", debug_dir / "trending.json"),
-        ("--api", debug_dir / "api.json"),
-        ("--v2ex", debug_dir / "v2ex.json"),
-        ("--zhihu", debug_dir / "zhihu.json"),
-        ("--weibo", debug_dir / "weibo.json"),
-        ("--toutiao", debug_dir / "toutiao.json"),
-        ("--reddit", debug_dir / "reddit.json"),
-    ]:
-        if path.exists():
-            merge_args += [flag, str(path)]
-    if archive_dir:
-        merge_args += ["--archive", str(archive_dir)]
-    return merge_args
-
-
-def run_merge_step(
-    debug_dir: Path,
-    archive_dir: Optional[Path],
-    verbose: bool,
-    *,
-    respect_interrupt: bool = True,
-) -> Tuple[StepSpec, Dict[str, Any], Path]:
-    spec = StepSpec("merge-sources", "Merge", "merge-sources.py", build_merge_args(debug_dir, archive_dir, verbose), debug_dir / "merge-sources.json", None)
-    process_result = run_step_process(spec, timeout=MERGE_TIMEOUT, force=False, respect_interrupt=respect_interrupt)
-    result, meta_path = finalize_step(debug_dir, spec, process_result)
-    return spec, result, meta_path
-
-
-def run_hotspots_step(
-    debug_dir: Path,
-    archive_dir: Path,
-    hotspots_top: int,
-    mode: str,
-    *,
-    respect_interrupt: bool = True,
-) -> Tuple[StepSpec, Dict[str, Any], Path, Dict[str, str]]:
-    debug_output = debug_dir / "merge-hotspots.json"
-    spec = StepSpec(
-        "merge-hotspots",
-        "Hotspots",
-        "merge-hotspots.py",
-        ["--input", str(debug_dir / "merge-sources.json"), "--archive", str(archive_dir), "--debug", str(debug_dir), "--top", str(hotspots_top), "--mode", str(mode)],
-        debug_output,
-        None,
-    )
-    if not (debug_dir / "merge-sources.json").exists():
-        process_result = make_process_result(spec=spec, status="skipped", timeout=SUMMARY_TIMEOUT)
-    else:
-        process_result = run_step_process(spec, timeout=SUMMARY_TIMEOUT, force=False, output_flag=None, respect_interrupt=respect_interrupt)
-    result, meta_path = finalize_step(debug_dir, spec, process_result)
-    return spec, result, meta_path, parse_step_output_paths(process_result.stdout_tail)
-
-
-def recover_partial_outputs(
-    *,
-    debug_dir: Path,
-    archive_dir: Optional[Path],
-    verbose: bool,
-    hotspots_top: int,
-    mode: str,
-    logger: logging.Logger,
-) -> Tuple[Dict[str, Any], Path, Dict[str, Any], Path, Dict[str, str]]:
-    logger.info("🛟 Attempting partial recovery from completed step outputs...")
-    _, merge_result, merge_meta_path = run_merge_step(debug_dir, archive_dir, verbose, respect_interrupt=False)
-    if merge_result["status"] == "ok" and archive_dir:
-        _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(
-            debug_dir,
-            archive_dir,
-            hotspots_top,
-            mode,
-            respect_interrupt=False,
-        )
-    else:
-        hotspots_outputs = {}
-        hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
-        skipped_hotspots = make_process_result(
-            spec=hotspots_spec,
-            status="skipped" if merge_result["status"] == "ok" else "timeout",
-            timeout=SUMMARY_TIMEOUT,
-            stderr_tail=[f"Skipped during recovery ({INTERRUPT_REASON})"] if merge_result["status"] != "ok" else [],
-        )
-        hotspots_result, hotspots_meta_path = finalize_step(debug_dir, hotspots_spec, skipped_hotspots)
-    return merge_result, merge_meta_path, hotspots_result, hotspots_meta_path, hotspots_outputs
-
-
-def build_pipeline_failed_items(step_results: List[Dict[str, Any]], extra_results: Sequence[Dict[str, Any]]) -> List[Dict[str, str]]:
-    failed_items: List[Dict[str, str]] = []
-
-    def append_item(item_id: str, error: str) -> None:
-        text = normalize_error_text(error)
-        if not text:
-            return
-        candidate = {"id": item_id, "error": text}
-        if candidate not in failed_items:
-            failed_items.append(candidate)
-
-    for result in [*step_results, *extra_results]:
-        if result.get("status") not in {"error", "timeout"}:
-            continue
-        if result.get("failed_items"):
-            first = result["failed_items"][0]
-            append_item(str(result.get("step_key", "unknown")), str(first.get("error", "")))
-            continue
-        stderr_tail = [str(line).strip() for line in result.get("stderr_tail", []) if str(line).strip()]
-        append_item(str(result.get("step_key") or result.get("name") or "unknown"), stderr_tail[0] if stderr_tail else str(result.get("status", "error")))
-    return failed_items[:20]
-
-
-def write_pipeline_meta(
-    *,
-    debug_dir: Path,
-    step_results: List[Dict[str, Any]],
-    step_meta_paths: Dict[str, str],
-    merge_result: Dict[str, Any],
-    hotspots_result: Dict[str, Any],
-    hotspots_output: Optional[Path],
-    markdown_output: Optional[Path],
-    hotspots_mode: str,
-    fetch_elapsed: float,
-    total_elapsed: float,
-    interrupted: bool = False,
-    interruption_reason: Optional[str] = None,
-) -> Path:
-    meta_output = debug_dir / "pipeline.meta.json"
-    pipeline_items = merge_result.get("items", 0)
-    ok_calls = (
-        sum(1 for result in step_results if result.get("status") == "ok")
-        + (1 if merge_result.get("status") == "ok" else 0)
-        + (1 if hotspots_result.get("status") == "ok" else 0)
-    )
-    failed_calls = (
-        sum(1 for result in step_results if result.get("status") in {"error", "timeout"})
-        + (1 if merge_result.get("status") in {"error", "timeout"} else 0)
-        + (1 if hotspots_result.get("status") in {"error", "timeout"} else 0)
-    )
-
-    meta = {
-        "pipeline_version": "2.0.0",
-        "debug_dir": str(debug_dir),
-        "total_elapsed_s": round(total_elapsed, 1),
-        "fetch_elapsed_s": round(fetch_elapsed, 1),
-        "overall_status": (
-            "timeout"
-            if interrupted
-            else ("error" if merge_result["status"] != "ok" or hotspots_result["status"] != "ok" else "ok")
-        ),
-        "steps": step_results,
-        "step_meta_paths": step_meta_paths,
-        "items": pipeline_items,
-        "call_stats": {
-            "kind": "steps",
-            "total_calls": len(step_results) + 2,
-            "ok_calls": ok_calls,
-            "failed_calls": failed_calls,
-        },
-        "failed_items": build_pipeline_failed_items(step_results, [merge_result, hotspots_result]),
-        "merge": merge_result,
-        "hotspots_format": "json",
-        "hotspots_mode": hotspots_mode,
-        "hotspots_status": hotspots_result.get("status"),
-        "hotspots_elapsed_s": hotspots_result.get("elapsed_s"),
-        "hotspots_output": str(hotspots_output) if hotspots_output else None,
-        "markdown_output": str(markdown_output) if markdown_output else None,
-        "interrupted": interrupted,
-        "interruption_reason": interruption_reason if interrupted else None,
+def build_simple_meta(
+        step_key: str,
+        result: ProcessResult,
+        items: int = 0,
+        calls_total: int = 0,
+        calls_ok: int = 0,
+        failed_items: Optional[List[Dict[str, Any]]] = None,
+        output_path: Optional[str] = None,
+        extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "step_key": step_key,
+        "status": result.status,
+        "elapsed_s": result.elapsed_s,
+        "items": items,
+        "calls_total": calls_total,
+        "calls_ok": calls_ok,
+        "failed_items": failed_items or [],
+        "timeout_s": result.timeout_s,
     }
-    write_json(meta_output, meta)
-    return meta_output
+    if output_path:
+        payload["output_path"] = output_path
+    if result.stderr_tail:
+        payload["stderr_tail"] = result.stderr_tail
+    if result.stdout_tail:
+        payload["stdout_tail"] = result.stdout_tail
+    if extra:
+        payload.update(extra)
+    return payload
 
 
-def log_pipeline_summary(
-    logger: logging.Logger,
-    *,
-    total_elapsed: float,
-    step_results: List[Dict[str, Any]],
-    merge_result: Dict[str, Any],
-    hotspots_result: Dict[str, Any],
-) -> None:
-    logger.info("%s", "=" * 50)
-    logger.info("📊 Pipeline Summary (%.1fs total)", total_elapsed)
-    for result in [*step_results, merge_result, hotspots_result]:
-        logger.info("   %-14s %-8s %4d items %6.1fs", result["name"], result["status"], result["items"], result["elapsed_s"])
+def fetch_step_meta_path(output_path: Path) -> Path:
+    return output_path.with_suffix(".meta.json")
+
+
+def summarize_fetch_step(spec: StepSpec, result: ProcessResult) -> Dict[str, Any]:
+    output_payload = load_json(spec.output_path)
+    meta_payload = load_json(fetch_step_meta_path(spec.output_path)) if spec.output_path else None
+    if meta_payload:
+        meta_payload.setdefault("step_key", spec.step_key)
+        meta_payload.setdefault("elapsed_s", result.elapsed_s)
+        meta_payload.setdefault("timeout_s", result.timeout_s)
+        meta_payload.setdefault("status", result.status)
+        meta_payload.setdefault("output_path", str(spec.output_path) if spec.output_path else "")
+        return meta_payload
+
+    items = len(output_payload.get("articles", [])) if output_payload else 0
+    status = "ok" if result.status == "ok" and items > 0 else result.status
+    return build_simple_meta(
+        step_key=spec.step_key,
+        result=ProcessResult(**{**result.__dict__, "status": status}),
+        items=items,
+        calls_total=1 if spec.output_path and spec.output_path.exists() else 0,
+        calls_ok=1 if status == "ok" else 0,
+        output_path=str(spec.output_path) if spec.output_path else None,
+    )
+
+
+def run_fetch_phase(
+        logger: logging.Logger,
+        fetch_specs: Sequence[StepSpec],
+        skipped: set[str],
+) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str], float]:
+    step_summaries: Dict[str, Dict[str, Any]] = {}
+    outputs: Dict[str, str] = {}
+    active_specs = [spec for spec in fetch_specs if spec.step_key not in skipped]
+    max_workers = max(1, len(active_specs))
+    started_at = time.monotonic()
+
+    for spec in fetch_specs:
+        if spec.step_key in skipped:
+            logger.info("  ⏭️ %s: skipped", spec.name)
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_spec = {
+            executor.submit(run_step_process, spec): spec
+            for spec in active_specs
+        }
+        for future in as_completed(future_to_spec):
+            spec = future_to_spec[future]
+            result = future.result()
+            summary = summarize_fetch_step(spec, result)
+            step_summaries[spec.step_key] = summary
+            if spec.output_path:
+                outputs[spec.step_key] = str(spec.output_path)
+            logger.info(
+                "  %s %s: %d items (%s)",
+                status_icon(summary.get("status", result.status)),
+                spec.name,
+                summarize_items(summary),
+                format_elapsed(summary.get("elapsed_s", result.elapsed_s)),
+            )
+
+    return step_summaries, outputs, round(time.monotonic() - started_at, 3)
+
+
+def summarize_merge_step(spec: StepSpec, result: ProcessResult) -> Dict[str, Any]:
+    payload = load_json(spec.output_path)
+    items = int(payload.get("output_stats", {}).get("total_articles", 0) or 0) if payload else 0
+    input_items = int(payload.get("input_stats", {}).get("total_articles", 0) or 0) if payload else 0
+    status = "ok" if result.status == "ok" and payload else result.status
+    meta = build_simple_meta(
+        step_key=spec.step_key,
+        result=ProcessResult(**{**result.__dict__, "status": status}),
+        items=items,
+        calls_total=input_items,
+        calls_ok=items,
+        output_path=str(spec.output_path) if spec.output_path else None,
+        extra={"input_items": input_items},
+    )
+    write_json(fetch_step_meta_path(spec.output_path), meta)
+    return meta
+
+
+def build_pipeline_meta(
+        runtime: Dict[str, Any],
+        step_summaries: Dict[str, Dict[str, Any]],
+        outputs: Dict[str, str],
+        archive_root: Path,
+        cleaned_archives: int,
+        started_at: float,
+) -> Dict[str, Any]:
+    statuses = [summary.get("status", "error") for summary in step_summaries.values()]
+    if outputs.get("hotspots_output"):
+        overall_status = "ok"
+    elif any(status == "ok" for status in statuses):
+        overall_status = "partial"
+    else:
+        overall_status = "error"
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "status": overall_status,
+        "elapsed_s": round(time.monotonic() - started_at, 3),
+        "cooldown_s": {key: runtime.get("fetch", {}).get(key, {}).get("cooldown_s", 0) for key, _, _ in FETCH_STEPS},
+        "step_summaries": step_summaries,
+        "hotspots_output": outputs.get("hotspots_output"),
+        "markdown_output": outputs.get("markdown_output"),
+        "merged_output": outputs.get("merged_output"),
+        "archive_root": str(archive_root),
+        "cleaned_archives": cleaned_archives,
+    }
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run the full news-hotspots pipeline and produce a compact hotspots output.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Skill defaults config dir")
-    parser.add_argument("--config", type=Path, default=Path("workspace/config"), help="User config overlay dir (default: workspace/config)")
-    parser.add_argument("--hours", type=int, default=48, help="Time window in hours")
-    parser.add_argument("--archive", dest="archive", type=Path, default=Path("workspace/archive/news-hotspots"), help="Archive root dir for final hotspots outputs (default: workspace/archive/news-hotspots)")
-    parser.add_argument("--debug", type=Path, default=None, help="Directory for debug and intermediate files")
-    parser.add_argument("--mode", type=str, default="daily", choices=["daily", "weekly"], help="Final hotspots mode label and archive file stem")
-    parser.add_argument("--top", type=int, default=DEFAULT_HOTSPOTS_TOP, help="Top N items per topic in hotspots output")
-    parser.add_argument("--step-timeout", type=int, default=DEFAULT_TIMEOUT, help="Per-step timeout in seconds (default: 1800)")
-    parser.add_argument("--verbose", "-v", action="store_true")
-    parser.add_argument("--force", action="store_true", help="Force re-fetch ignoring caches")
-    parser.add_argument("--skip", type=str, default="", help="Comma-separated list of steps to skip")
+    parser = argparse.ArgumentParser(description="Run the sequential news-hotspots pipeline.")
+    parser.add_argument("--defaults", type=Path, default=Path("config/defaults"), help="Defaults config directory. Default: config/defaults")
+    parser.add_argument("--config", type=Path, default=Path("workspace/config"), help="Workspace config directory. Default: workspace/config")
+    parser.add_argument("--archive", type=Path, default=Path("workspace/archive/news-hotspots"), help="Archive root directory for final outputs and meta files. Default: workspace/archive/news-hotspots")
+    parser.add_argument("--debug", type=Path, default=None, help="Debug output directory for step JSON and pipeline meta. Default: auto-created temp dir")
+    parser.add_argument("--mode", choices=["daily", "weekly"], default="daily", help="Hotspots output mode. Default: daily")
+    parser.add_argument("--hours", type=int, default=48, help="Time window in hours passed to fetch steps. Default: 48")
+    parser.add_argument("--top", type=int, default=None, help="Override hotspots top N. Default: runtime pipeline.default_hotspots_top_n")
+    parser.add_argument("--skip", type=str, default="", help="Comma-separated fetch step keys to skip, for example: rss,google,twitter")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--force", action="store_true", help="Pass --force to fetch steps")
     return parser.parse_args()
 
 
 def main() -> int:
-    global INTERRUPT_REASON
-    INTERRUPT_EVENT.clear()
-    INTERRUPT_REASON = "external interrupt"
     args = parse_args()
-    skip_steps = {item.strip().lower() for item in args.skip.split(",") if item.strip()}
-    config_dir = args.config if args.config and args.config.exists() else None
+    logger = setup_logging(args.verbose)
     debug_dir = resolve_debug_dir(args.debug)
-    if args.archive:
-        args.archive.mkdir(parents=True, exist_ok=True)
-    
-    log_file = debug_dir / "pipeline.log"
-    logger = setup_logging(args.verbose, log_file)
-    previous_signal_handlers = install_signal_handlers(logger)
+    config_dir = args.config if args.config.exists() else None
+    runtime = load_runtime(args.defaults, config_dir)
+    archive_root = args.archive
+    archive_root.mkdir(parents=True, exist_ok=True)
+    started_at = time.monotonic()
+    skipped = {item.strip() for item in args.skip.split(",") if item.strip()}
 
     logger.info("📁 Debug directory: %s", debug_dir)
-    logger.info("🗄️ Archive directory: %s", args.archive)
+    logger.info("🗄️ Archive directory: %s", archive_root)
     logger.info("🗂️ Hotspots mode: %s", args.mode)
-    if args.config and not args.config.exists():
+    if config_dir is None:
         logger.info("ℹ️ Config overlay not found, using defaults only: %s", args.config)
+    else:
+        logger.info("🧩 Config overlay: %s", config_dir)
 
-    steps = build_fetch_steps(
-        defaults_dir=args.defaults,
-        config_dir=config_dir,
-        hours=args.hours,
-        debug_dir=debug_dir,
-        verbose=args.verbose,
+    cleaned_archives = cleanup_archive_root(
+        archive_root,
+        int(runtime.get("pipeline", {}).get("archive_retention_days", 90) or 90),
+    )
+    top_n = args.top if args.top is not None else int(runtime.get("pipeline", {}).get("default_hotspots_top_n", 5) or 5)
+
+    fetch_specs = build_fetch_step_specs(args.defaults, config_dir, debug_dir, args.hours, args.verbose, args.force,
+                                         runtime)
+    active_fetch_specs = [spec for spec in fetch_specs if spec.step_key not in skipped]
+
+    logger.info("🚀 Starting pipeline: %d/%d sources, %sh window", len(active_fetch_specs), len(FETCH_STEPS), args.hours)
+    step_summaries, outputs, fetch_elapsed_s = run_fetch_phase(logger, fetch_specs, skipped)
+    logger.info("📡 Fetch phase done in %s", format_elapsed(fetch_elapsed_s))
+
+    merge_spec = build_merge_step_spec(debug_dir, archive_root, args.verbose, runtime)
+    merge_result = run_step_process(merge_spec)
+    merge_summary = summarize_merge_step(merge_spec, merge_result)
+    step_summaries[merge_spec.step_key] = merge_summary
+    if merge_spec.output_path and merge_spec.output_path.exists():
+        outputs["merged_output"] = str(merge_spec.output_path)
+    logger.info(
+        "  %s Merge: %d items (%s)",
+        status_icon(merge_summary.get("status", merge_result.status)),
+        summarize_items(merge_summary),
+        format_elapsed(merge_summary.get("elapsed_s", merge_result.elapsed_s)),
     )
 
-    try:
-        logger.info("🚀 Starting pipeline: %d/%d sources, %sh window", len([step for step in steps if step.step_key not in skip_steps]), len(steps), args.hours)
-        t_start = time.time()
+    hotspots_spec = build_hotspots_step_spec(debug_dir, archive_root, args.mode, top_n, runtime)
+    hotspots_result = run_step_process(hotspots_spec)
+    hotspots_markers = parse_output_markers(hotspots_result.stdout_tail)
+    hotspots_summary = build_simple_meta(
+        step_key=hotspots_spec.step_key,
+        result=hotspots_result,
+        items=sum(
+            len(topic.get("items", []))
+            for topic in (load_json(Path(hotspots_markers["ARCHIVED_JSON"])) or {}).get("topics", [])
+            if isinstance(topic, dict)
+        ) if "ARCHIVED_JSON" in hotspots_markers else 0,
+        calls_total=1 if "ARCHIVED_JSON" in hotspots_markers else 0,
+        calls_ok=1 if hotspots_result.status == "ok" and "ARCHIVED_JSON" in hotspots_markers else 0,
+        output_path=hotspots_markers.get("ARCHIVED_JSON"),
+        extra={
+            "markdown_output": hotspots_markers.get("ARCHIVED_MARKDOWN"),
+            "merged_output": hotspots_markers.get("ARCHIVED_MERGED_JSON"),
+        },
+    )
+    write_json(debug_dir / "merge-hotspots.meta.json", hotspots_summary)
+    step_summaries[hotspots_spec.step_key] = hotspots_summary
+    if "ARCHIVED_JSON" in hotspots_markers:
+        outputs["hotspots_output"] = hotspots_markers["ARCHIVED_JSON"]
+    if "ARCHIVED_MARKDOWN" in hotspots_markers:
+        outputs["markdown_output"] = hotspots_markers["ARCHIVED_MARKDOWN"]
+    if "ARCHIVED_MERGED_JSON" in hotspots_markers:
+        outputs["merged_output"] = hotspots_markers["ARCHIVED_MERGED_JSON"]
+    logger.info(
+        "  %s Hotspots: %d items (%s)",
+        status_icon(hotspots_summary.get("status", hotspots_result.status)),
+        summarize_items(hotspots_summary),
+        format_elapsed(hotspots_summary.get("elapsed_s", hotspots_result.elapsed_s)),
+    )
 
-        step_results, step_meta_paths, fetch_elapsed = execute_fetch_steps(
-            steps=steps,
-            skip_steps=skip_steps,
-            timeout=args.step_timeout,
-            force=args.force,
-            debug_dir=debug_dir,
-            logger=logger,
-        )
-        logger.info("📡 Fetch phase done in %.1fs", fetch_elapsed)
+    pipeline_meta = build_pipeline_meta(runtime, step_summaries, outputs, archive_root, cleaned_archives, started_at)
+    pipeline_meta_path = debug_dir / "pipeline.meta.json"
+    write_json(pipeline_meta_path, pipeline_meta)
 
-        if INTERRUPT_EVENT.is_set():
-            logger.warning("⚠️ Pipeline interrupted during fetch phase (%s)", INTERRUPT_REASON)
-            merge_result, merge_meta_path, hotspots_result, hotspots_meta_path, hotspots_outputs = recover_partial_outputs(
-                debug_dir=debug_dir,
-                archive_dir=args.archive,
-                verbose=args.verbose,
-                hotspots_top=args.top,
-                mode=args.mode,
-                logger=logger,
-            )
-        else:
-            _, merge_result, merge_meta_path = run_merge_step(debug_dir, args.archive, args.verbose)
-            merge_icon = "✅" if merge_result["status"] == "ok" else "❌"
-            logger.info("  %s Merge: %s items (%ss)", merge_icon, merge_result["items"], merge_result["elapsed_s"])
-            if merge_result["status"] == "ok":
-                _, hotspots_result, hotspots_meta_path, hotspots_outputs = run_hotspots_step(debug_dir, args.archive, args.top, args.mode)
-                hotspots_icon = "✅" if hotspots_result["status"] == "ok" else "❌"
-                logger.info("  %s Hotspots: %s items (%ss)", hotspots_icon, hotspots_result["items"], hotspots_result["elapsed_s"])
-            else:
-                hotspots_outputs = {}
-                hotspots_spec = StepSpec("merge-hotspots", "Hotspots", "merge-hotspots.py", [], debug_dir / "merge-hotspots.json", None)
-                skipped_hotspots = make_process_result(spec=hotspots_spec, status="skipped", timeout=SUMMARY_TIMEOUT)
-                hotspots_result, hotspots_meta_path = finalize_step(debug_dir, hotspots_spec, skipped_hotspots)
-            if INTERRUPT_EVENT.is_set() and (merge_result["status"] != "ok" or hotspots_result["status"] != "ok"):
-                logger.warning("⚠️ Pipeline interrupted during merge/render phase (%s)", INTERRUPT_REASON)
-                merge_result, merge_meta_path, hotspots_result, hotspots_meta_path, hotspots_outputs = recover_partial_outputs(
-                    debug_dir=debug_dir,
-                    archive_dir=args.archive,
-                    verbose=args.verbose,
-                    hotspots_top=args.top,
-                    mode=args.mode,
-                    logger=logger,
-                )
+    archived_pipeline_meta = archive_step_meta(pipeline_meta_path, archive_root)
+    archived_step_meta_paths: Dict[str, str] = {}
+    for step_key in list(step_summaries.keys()):
+        meta_path = debug_dir / f"{step_key}.meta.json"
+        archived = archive_step_meta(meta_path, archive_root)
+        if archived:
+            archived_step_meta_paths[step_key] = str(archived)
+    if archived_pipeline_meta:
+        pipeline_meta["archived_pipeline_meta"] = str(archived_pipeline_meta)
+    if archived_step_meta_paths:
+        pipeline_meta["archived_step_meta_paths"] = archived_step_meta_paths
+        write_json(pipeline_meta_path, pipeline_meta)
 
-        step_meta_paths["merge-sources"] = str(merge_meta_path)
-        step_meta_paths["hotspots"] = str(hotspots_meta_path)
-        hotspots_output = Path(hotspots_outputs["ARCHIVED_JSON"]) if hotspots_outputs.get("ARCHIVED_JSON") else None
-        markdown_output = Path(hotspots_outputs["ARCHIVED_MARKDOWN"]) if hotspots_outputs.get("ARCHIVED_MARKDOWN") else None
-
-        total_elapsed = time.time() - t_start
-        meta_output = write_pipeline_meta(
-            debug_dir=debug_dir,
-            step_results=step_results,
-            step_meta_paths=step_meta_paths,
-            merge_result=merge_result,
-            hotspots_result=hotspots_result,
-            hotspots_output=hotspots_output,
-            markdown_output=markdown_output if markdown_output and markdown_output.exists() else None,
-            hotspots_mode=args.mode,
-            fetch_elapsed=fetch_elapsed,
-            total_elapsed=total_elapsed,
-            interrupted=INTERRUPT_EVENT.is_set(),
-            interruption_reason=INTERRUPT_REASON,
-        )
-
-        removed_archive_dirs = cleanup_archive_root(args.archive) if args.archive else 0
-        archived_outputs = archive_meta_outputs(args.archive, meta_output, step_meta_paths)
-        if removed_archive_dirs:
-            logger.info("🧹 Removed %d expired archive date directories", removed_archive_dirs)
-
-        if archived_outputs:
-            logger.info("🗂️ Archived files:")
-            if hotspots_output:
-                logger.info("   Hotspots JSON: %s", hotspots_output)
-            if markdown_output:
-                logger.info("   Markdown: %s", markdown_output)
-            if archived_outputs.get("meta_dir"):
-                logger.info("   Meta: %s", archived_outputs["meta_dir"])
-
-        meta = load_json_file(meta_output) or {}
-        meta["archive"] = {
-            "root": str(args.archive) if args.archive else None,
-            "retention_days": ARCHIVE_RETENTION_DAYS,
-            "removed_expired_date_dirs": removed_archive_dirs,
-            "hotspots_json": str(hotspots_output) if hotspots_output else None,
-            "hotspots_markdown": str(markdown_output) if markdown_output else None,
-            **archived_outputs,
-        }
-        write_json(meta_output, meta)
-
-        if INTERRUPT_EVENT.is_set():
-            logger.warning("⚠️ Pipeline ended after interruption: %s", INTERRUPT_REASON)
-            logger.warning("⚠️ Run source-health.py to report completed vs incomplete steps.")
-            if markdown_output and markdown_output.exists():
-                logger.info("📣 Partial Markdown available: %s", markdown_output)
-            return 1
-        if merge_result["status"] != "ok":
-            logger.error("❌ Merge failed: %s", merge_result["stderr_tail"])
-            return 1
-        if hotspots_result["status"] != "ok":
-            logger.error("❌ Hotspots failed: %s", hotspots_result["stderr_tail"])
-            return 1
-
-        if markdown_output:
-            logger.info("✅ Done → %s", markdown_output)
-        else:
-            logger.info("✅ Done")
-        return 0
-    finally:
-        restore_signal_handlers(previous_signal_handlers)
+    if outputs.get("hotspots_output") or outputs.get("markdown_output"):
+        logger.info("🗂️ Archived files:")
+        if outputs.get("hotspots_output"):
+            logger.info("   Hotspots JSON: %s", outputs["hotspots_output"])
+        if outputs.get("markdown_output"):
+            logger.info("   Markdown: %s", outputs["markdown_output"])
+        if archived_step_meta_paths:
+            sample_meta = next(iter(archived_step_meta_paths.values()))
+            logger.info("   Meta: %s", Path(sample_meta).parent)
+    if cleaned_archives:
+        logger.info("🧹 Cleaned %d expired archive directories", cleaned_archives)
+    if outputs.get("markdown_output"):
+        logger.info("✅ Done → %s", outputs["markdown_output"])
+    else:
+        logger.info("%s Done with status=%s", status_icon(pipeline_meta["status"]), pipeline_meta["status"])
+    return 0 if pipeline_meta["status"] in {"ok", "partial"} else 1
 
 
 if __name__ == "__main__":

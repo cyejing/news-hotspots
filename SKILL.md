@@ -93,4 +93,3 @@ uv run <SKILL_DIR>/scripts/source-health.py \
 
 - `History report`：历史健康趋势
 - `Run details`：每次运行的详细诊断
-

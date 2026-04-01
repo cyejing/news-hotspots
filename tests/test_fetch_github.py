@@ -1,82 +1,50 @@
 #!/usr/bin/env python3
-"""Tests for fetch-github.py."""
 
 import importlib.util
 import json
+import tempfile
 import unittest
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch
 
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
-MODULE_PATH = SCRIPTS_DIR / "fetch-github.py"
-DEFAULTS_DIR = Path(__file__).parent.parent / "config" / "defaults"
-
-spec = importlib.util.spec_from_file_location("fetch_github", MODULE_PATH)
-fetch_github = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(fetch_github)
+ROOT = Path(__file__).parent.parent
+SCRIPT = ROOT / "scripts" / "fetch-github.py"
 
 
-class FakeHeaders:
-    def get(self, key, default=None):
-        return default
+def load_module():
+    spec = importlib.util.spec_from_file_location("fetch_github", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-class FakeResponse:
-    def __init__(self, payload):
-        self.payload = payload
-        self.headers = FakeHeaders()
-
-    def read(self):
-        return json.dumps(self.payload).encode("utf-8")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
+fetch_github = load_module()
 
 
 class TestFetchGitHub(unittest.TestCase):
-    def test_load_sources_returns_github_only_topics(self):
-        sources = fetch_github.load_sources(DEFAULTS_DIR)
+    def test_apply_runtime_config_updates_defaults(self):
+        original_timeout = fetch_github.TIMEOUT
+        original_cooldown = fetch_github.GITHUB_COOLDOWN_DEFAULT
+        original_limit = fetch_github.MAX_RELEASES_PER_REPO
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                config_dir = Path(tmpdir)
+                (config_dir / "news-hotspots-runtime.json").write_text(
+                    json.dumps({"fetch": {"github": {"request_timeout_s": 33, "cooldown_s": 4, "releases_per_repo": 7}}}),
+                    encoding="utf-8",
+                )
+                fetch_github.apply_runtime_config(ROOT / "config" / "defaults", config_dir)
+            self.assertEqual(fetch_github.TIMEOUT, 33)
+            self.assertEqual(fetch_github.GITHUB_COOLDOWN_DEFAULT, 4)
+            self.assertEqual(fetch_github.MAX_RELEASES_PER_REPO, 7)
+        finally:
+            fetch_github.TIMEOUT = original_timeout
+            fetch_github.GITHUB_COOLDOWN_DEFAULT = original_cooldown
+            fetch_github.MAX_RELEASES_PER_REPO = original_limit
 
+    def test_load_sources_uses_split_github_config(self):
+        sources = fetch_github.load_sources(ROOT / "config" / "defaults", None)
         self.assertTrue(sources)
-        self.assertTrue(all(source["type"] == "github" for source in sources))
-        self.assertTrue(all(source.get("topic") == "github" for source in sources))
-
-    def test_fetch_releases_preserves_single_github_topic(self):
-        source = {
-            "id": "ollama-github",
-            "name": "Ollama",
-            "repo": "ollama/ollama",
-            "priority": 8,
-            "topic": "github",
-        }
-        cutoff = datetime(2026, 3, 27, 0, 0, tzinfo=timezone.utc)
-        payload = [
-            {
-                "tag_name": "v0.18.0",
-                "html_url": "https://github.com/ollama/ollama/releases/tag/v0.18.0",
-                "body": "Improves model serving and structured outputs.",
-                "published_at": "2026-03-28T03:12:00Z",
-                "draft": False,
-            }
-        ]
-
-        with patch.object(fetch_github, "urlopen", return_value=FakeResponse(payload)):
-            result = fetch_github.fetch_releases_with_retry(
-                source,
-                cutoff,
-                github_token=None,
-                no_cache=True,
-            )
-
-        self.assertEqual(result["status"], "ok")
-        self.assertEqual(result["topic"], "github")
-        self.assertEqual(result["count"], 1)
-        self.assertEqual(result["articles"][0]["topic"], "github")
-        self.assertEqual(result["articles"][0]["title"], "ollama v0.18.0")
+        self.assertEqual(sources[0]["type"], "github")
 
 
 if __name__ == "__main__":

@@ -3,9 +3,11 @@
 
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
 MODULE_PATH = SCRIPTS_DIR / "source-health.py"
@@ -16,6 +18,67 @@ spec.loader.exec_module(source_health)
 
 
 class TestSourceHealth(unittest.TestCase):
+    def test_apply_runtime_config_prefers_env_paths(self):
+        with tempfile.TemporaryDirectory() as defaults_tmp, tempfile.TemporaryDirectory() as config_tmp:
+            defaults_path = Path(defaults_tmp)
+            config_path = Path(config_tmp)
+            (defaults_path / "runtime.json").write_text(
+                json.dumps(
+                    {
+                        "pipeline": {
+                            "fetch_step_timeout_s": 2000,
+                            "merge_timeout_s": 300,
+                            "hotspots_timeout_s": 120,
+                            "default_hotspots_top_n": 5,
+                            "archive_retention_days": 90,
+                        },
+                        "fetch": {
+                            "rss": {"request_timeout_s": 30, "max_workers": 10, "max_articles_per_feed": 20, "retry_count": 1, "retry_delay_s": 2.0, "cache_ttl_hours": 24},
+                            "github": {"request_timeout_s": 25, "cooldown_s": 2.0, "releases_per_repo": 20, "retry_count": 2, "retry_delay_s": 2.0, "cache_ttl_hours": 24},
+                            "github_trending": {"request_timeout_s": 60, "cooldown_s": 2.0, "min_stars": 50, "per_topic": 15},
+                            "google": {"request_timeout_s": 180, "cooldown_s": 12.0, "results_per_query": 10},
+                            "twitter": {"request_timeout_s": 180, "cooldown_s": 7.0, "count": 20, "results_per_query": 10},
+                            "reddit": {"request_timeout_s": 180, "cooldown_s": 6.0, "results_per_query": 10},
+                            "v2ex": {"request_timeout_s": 60, "cooldown_s": 5.0},
+                            "zhihu": {"request_timeout_s": 120, "cooldown_s": 6.0, "limit": 20},
+                            "weibo": {"request_timeout_s": 120, "cooldown_s": 6.0, "limit": 30},
+                            "toutiao": {"request_timeout_s": 120, "cooldown_s": 6.0, "limit": 20},
+                            "api": {"request_timeout_s": 30, "max_workers": 6, "limit": 15, "host_cooldowns": {"example.com": 1.0}},
+                        },
+                        "diagnostics": {
+                            "history_days": 11,
+                            "degraded_threshold": 0.25,
+                            "report_limit": 9,
+                            "error_text_limit": 77,
+                            "slow_request_thresholds_s": [2.0, 4.0],
+                        },
+                        "cache": {
+                            "rss_cache_path": "/tmp/rss.json",
+                            "github_cache_path": "/tmp/github.json",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (config_path / "news-hotspots-runtime.json").write_text(
+                json.dumps({"diagnostics": {"history_days": 13, "report_limit": 5}}),
+                encoding="utf-8",
+            )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "NEWS_HOTSPOTS_DEFAULTS_DIR": str(defaults_path),
+                    "NEWS_HOTSPOTS_CONFIG_DIR": str(config_path),
+                },
+                clear=False,
+            ):
+                source_health.apply_runtime_config()
+
+        self.assertEqual(source_health.HISTORY_DAYS, 13)
+        self.assertEqual(source_health.REPORT_LIMIT, 5)
+        self.assertEqual(source_health.ERROR_TEXT_LIMIT, 77)
+
     def test_parse_args_requires_input(self):
         old_argv = source_health.sys.argv
         try:
@@ -115,7 +178,7 @@ class TestSourceHealth(unittest.TestCase):
             "elapsed_s": 3.2,
             "items": 0,
             "call_stats": {"kind": "sources", "total_calls": 1, "ok_calls": 0, "failed_calls": 1},
-            "failed_items": [{"id": "simon-twitter", "error": "HTTP 429"}],
+            "failed_items": [{"id": "simon-twitter", "error": "HTTP 429", "elapsed_s": 2.1}],
             "details": {},
         }
 
@@ -123,6 +186,7 @@ class TestSourceHealth(unittest.TestCase):
 
         self.assertEqual(diagnostic.failed_items[0]["id"], "simon-twitter")
         self.assertEqual(diagnostic.failed_items[0]["error"], "HTTP 429")
+        self.assertEqual(diagnostic.failed_items[0]["elapsed_s"], 2.1)
 
     def test_build_history_rows_keeps_latest_issue_summary(self):
         now = 1_800_000_000
@@ -159,6 +223,27 @@ class TestSourceHealth(unittest.TestCase):
         self.assertEqual(rows[0].check_details[0]["items"], 10)
         self.assertEqual(rows[0].check_details[0]["failed_items"], [])
         self.assertEqual(rows[0].check_details[1]["failed_items"], [{"id": "simon-twitter", "error": "HTTP 429"}])
+
+    def test_build_history_rows_preserves_failed_item_elapsed(self):
+        now = 1_800_000_000
+        diagnostics = [
+            source_health.DiagnosticRecord(
+                step_key="google",
+                name="Google News",
+                state="error",
+                status="error",
+                elapsed_s=20.0,
+                items=0,
+                call_stats={"kind": "queries", "total_calls": 1, "ok_calls": 0, "failed_calls": 1},
+                failed_items=[{"id": "ai-frontier", "error": "HTTP 429", "elapsed_s": 7.8}],
+                details={},
+                observed_ts=now - 100,
+            )
+        ]
+
+        rows = source_health.build_history_rows(diagnostics, now)
+
+        self.assertEqual(rows[0].check_details[0]["failed_items"], [{"id": "ai-frontier", "error": "HTTP 429", "elapsed_s": 7.8}])
 
     def test_main_reads_meta_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -278,7 +363,7 @@ class TestSourceHealth(unittest.TestCase):
                         "items": 1,
                         "call_stats": {"kind": "steps", "total_calls": 3, "ok_calls": 2, "failed_calls": 1},
                         "steps": [{"name": "Twitter", "status": "error", "stderr_tail": ["HTTP 429"]}],
-                        "failed_items": [{"id": "twitter", "error": "HTTP 429"}],
+                        "failed_items": [{"id": "twitter", "error": "HTTP 429", "elapsed_s": 3.4}],
                         "merge": {"status": "ok", "count": 1, "stderr_tail": []},
                         "hotspots_status": "ok",
                     }
@@ -357,7 +442,30 @@ class TestSourceHealth(unittest.TestCase):
 
         output = "\n".join(source_health.render_run_details(diagnostics))
         self.assertIn("⚠️ Google News - calls:10/1/11 | items:192 | elapsed:583.1s", output)
-        self.assertIn("ai-frontier: [error] site google/news: Error: Timed out loading Google news results | Report: very noisy tail", output)
+        self.assertIn(
+            "ai-frontier: [error] site google/news: Error: Timed out loading Google news results | Report: very noisy tail | elapsed:583.1s",
+            output,
+        )
+
+    def test_render_run_details_prefers_failed_item_elapsed(self):
+        diagnostics = [
+            source_health.DiagnosticRecord(
+                run_label="2026-03-28-2",
+                step_key="reddit",
+                name="Reddit",
+                state="error",
+                status="error",
+                elapsed_s=377.0,
+                items=310,
+                call_stats={"kind": "queries", "total_calls": 9, "ok_calls": 8, "failed_calls": 1},
+                failed_items=[{"id": "r/foo", "error": "HTTP 429", "elapsed_s": 45.6}],
+                details={},
+                observed_ts=0,
+            )
+        ]
+
+        output = "\n".join(source_health.render_run_details(diagnostics))
+        self.assertIn("r/foo: HTTP 429 | elapsed:45.6s", output)
 
 
 if __name__ == "__main__":

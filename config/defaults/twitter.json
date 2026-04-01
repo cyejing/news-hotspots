@@ -1,0 +1,397 @@
+{
+  "_description": "Unified data sources configuration. Priority is a light ranking hint: use 3 for most sources, 4 for clearly authoritative sources, and reserve 5 for a small number of top-tier primary sources.",
+  "_updated": "2026-03-30",
+  "_version": "4.0.0",
+  "sources": [
+    {
+      "id": "sama-twitter",
+      "type": "twitter",
+      "name": "Sam Altman (OpenAI CEO)",
+      "handle": "sama",
+      "enabled": true,
+      "priority": 3,
+      "note": "OpenAI 首席执行官",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "openai-twitter",
+      "type": "twitter",
+      "name": "OpenAI official",
+      "handle": "OpenAI",
+      "enabled": true,
+      "priority": 4,
+      "note": "OpenAI 官方账号",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "anthropic-twitter",
+      "type": "twitter",
+      "name": "Anthropic official",
+      "handle": "AnthropicAI",
+      "enabled": true,
+      "priority": 4,
+      "note": "Anthropic 官方账号",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "ylecun-twitter",
+      "type": "twitter",
+      "name": "Yann LeCun (Meta AI)",
+      "handle": "ylecun",
+      "enabled": true,
+      "priority": 3,
+      "note": "Meta AI 首席科学家",
+      "topic": "social"
+    },
+    {
+      "id": "mistral-twitter",
+      "type": "twitter",
+      "name": "Mistral AI official",
+      "handle": "MistralAI",
+      "enabled": true,
+      "priority": 3,
+      "note": "Mistral AI 官方账号",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "deepmind-twitter",
+      "type": "twitter",
+      "name": "Google DeepMind official",
+      "handle": "GoogleDeepMind",
+      "enabled": true,
+      "priority": 3,
+      "note": "Google DeepMind 官方账号",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "googleai-twitter",
+      "type": "twitter",
+      "name": "Google AI official",
+      "handle": "GoogleAI",
+      "enabled": true,
+      "priority": 3,
+      "note": "Google AI 官方账号",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "xai-twitter",
+      "type": "twitter",
+      "name": "xAI official",
+      "handle": "xai",
+      "enabled": true,
+      "priority": 4,
+      "note": "xAI 官方账号",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "karpathy-twitter",
+      "type": "twitter",
+      "name": "Andrej Karpathy",
+      "handle": "karpathy",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI 研究者",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "andrewng-twitter",
+      "type": "twitter",
+      "name": "Andrew Ng",
+      "handle": "AndrewYNg",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI 教育者",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "jimfan-twitter",
+      "type": "twitter",
+      "name": "Jim Fan (NVIDIA)",
+      "handle": "DrJimFan",
+      "enabled": true,
+      "priority": 5,
+      "note": "NVIDIA AI 研究员",
+      "topic": "ai-infra"
+    },
+    {
+      "id": "hf-twitter",
+      "type": "twitter",
+      "name": "Hugging Face official",
+      "handle": "huggingface",
+      "enabled": true,
+      "priority": 3,
+      "note": "Hugging Face 官方账号",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "emad-twitter",
+      "type": "twitter",
+      "name": "Emad Mostaque",
+      "handle": "EMostaque",
+      "enabled": true,
+      "priority": 3,
+      "note": "Stability AI 创始人",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "sebastian-twitter",
+      "type": "twitter",
+      "name": "Sebastian Raschka",
+      "handle": "rasbt",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI 研究者",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "elon-twitter",
+      "type": "twitter",
+      "name": "Elon Musk",
+      "handle": "elonmusk",
+      "enabled": true,
+      "priority": 5,
+      "note": "马斯克x",
+      "topic": "ai-infra"
+    },
+    {
+      "id": "sundar-twitter",
+      "type": "twitter",
+      "name": "Sundar Pichai",
+      "handle": "sundarpichai",
+      "enabled": true,
+      "priority": 3,
+      "note": "Google 首席执行官",
+      "topic": "technology"
+    },
+    {
+      "id": "pmarca-twitter",
+      "type": "twitter",
+      "name": "Marc Andreessen",
+      "handle": "pmarca",
+      "enabled": true,
+      "priority": 3,
+      "note": "a16z 合伙人",
+      "topic": "business"
+    },
+    {
+      "id": "levie-twitter",
+      "type": "twitter",
+      "name": "Aaron Levie",
+      "handle": "levie",
+      "enabled": true,
+      "priority": 3,
+      "note": "Box 首席执行官",
+      "topic": "business"
+    },
+    {
+      "id": "satya-twitter",
+      "type": "twitter",
+      "name": "Satya Nadella",
+      "handle": "satyanadella",
+      "enabled": true,
+      "priority": 3,
+      "note": "Microsoft 首席执行官",
+      "topic": "business"
+    },
+    {
+      "id": "rowancheung-twitter",
+      "type": "twitter",
+      "name": "Rowan Cheung (The Rundown AI)",
+      "handle": "rowancheung",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI 新闻通讯创始人，57.6 万关注者",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "demis-twitter",
+      "type": "twitter",
+      "name": "Demis Hassabis (DeepMind CEO)",
+      "handle": "demishassabis",
+      "enabled": true,
+      "priority": 3,
+      "note": "DeepMind CEO，诺奖得主",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "dario-twitter",
+      "type": "twitter",
+      "name": "Dario Amodei (Anthropic CEO)",
+      "handle": "DarioAmodei",
+      "enabled": true,
+      "priority": 3,
+      "note": "Anthropic 首席执行官",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "hwchase-twitter",
+      "type": "twitter",
+      "name": "Harrison Chase (LangChain)",
+      "handle": "hwchase17",
+      "enabled": true,
+      "priority": 3,
+      "note": "LangChain 创始人，Agent 生态",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "swyx-twitter",
+      "type": "twitter",
+      "name": "Swyx",
+      "handle": "swyx",
+      "enabled": true,
+      "priority": 3,
+      "note": "AI Engineer 社区，Latent Space 播客",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "twitter-clementdelangue",
+      "type": "twitter",
+      "name": "Clement Delangue",
+      "handle": "ClementDelangue",
+      "enabled": true,
+      "priority": 3,
+      "note": "Hugging Face 首席执行官",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "twitter-zuck",
+      "type": "twitter",
+      "name": "Mark Zuckerberg",
+      "handle": "finkd",
+      "enabled": true,
+      "priority": 3,
+      "note": "Meta 首席执行官",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "wangzhian-twitter",
+      "type": "twitter",
+      "name": "Wang Zhi'an",
+      "handle": "wangzhian8848",
+      "enabled": true,
+      "priority": 3,
+      "note": "时政评论记者，长期关注国际与公共议题",
+      "topic": "world"
+    },
+    {
+      "id": "rusttrending-twitter",
+      "type": "twitter",
+      "name": "RustTrending",
+      "handle": "RustTrending",
+      "enabled": true,
+      "priority": 3,
+      "note": "Rust 生态与趋势信息",
+      "topic": "technology"
+    },
+    {
+      "id": "thisweekinrust-twitter",
+      "type": "twitter",
+      "name": "This Week in Rust",
+      "handle": "ThisWeekInRust",
+      "enabled": true,
+      "priority": 3,
+      "note": "Rust 社区周报与生态动态",
+      "topic": "technology"
+    },
+    {
+      "id": "supfin-twitter",
+      "type": "twitter",
+      "name": "SupFin",
+      "handle": "SupFin",
+      "enabled": true,
+      "priority": 3,
+      "note": "技术与开发相关账号",
+      "topic": "technology"
+    },
+    {
+      "id": "zaobaosg-twitter",
+      "type": "twitter",
+      "name": "Zaobao",
+      "handle": "zaobaosg",
+      "enabled": true,
+      "priority": 3,
+      "note": "联合早报官方账号，关注国际与地区新闻",
+      "topic": "world"
+    },
+    {
+      "id": "uschinatoday-twitter",
+      "type": "twitter",
+      "name": "US China Today",
+      "handle": "USChinaToday",
+      "enabled": true,
+      "priority": 3,
+      "note": "关注中美关系与国际时事",
+      "topic": "world"
+    },
+    {
+      "id": "abcchinese-twitter",
+      "type": "twitter",
+      "name": "ABC Chinese",
+      "handle": "ABCChinese",
+      "enabled": true,
+      "priority": 3,
+      "note": "ABC 中文官方账号，关注国际与地区新闻",
+      "topic": "world"
+    },
+    {
+      "id": "usnews-twitter",
+      "type": "twitter",
+      "name": "U.S. News",
+      "handle": "USNews",
+      "enabled": true,
+      "priority": 3,
+      "note": "U.S. News & World Report 官方账号",
+      "topic": "world"
+    },
+    {
+      "id": "reuters-twitter",
+      "type": "twitter",
+      "name": "Reuters",
+      "handle": "Reuters",
+      "enabled": true,
+      "priority": 3,
+      "note": "Reuters 官方账号，关注全球突发与国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "cnn-twitter",
+      "type": "twitter",
+      "name": "CNN",
+      "handle": "CNN",
+      "enabled": true,
+      "priority": 3,
+      "note": "CNN 官方账号，关注美国与国际新闻",
+      "topic": "world"
+    },
+    {
+      "id": "bbcbreaking-twitter",
+      "type": "twitter",
+      "name": "BBC Breaking News",
+      "handle": "BBCBreaking",
+      "enabled": true,
+      "priority": 4,
+      "note": "BBC 官方突发新闻账号",
+      "topic": "world"
+    },
+    {
+      "id": "realdonaldtrump-twitter",
+      "type": "twitter",
+      "name": "Donald J. Trump",
+      "handle": "realDonaldTrump",
+      "enabled": true,
+      "priority": 3,
+      "note": "特朗普官方账号",
+      "topic": "world"
+    },
+    {
+      "id": "steipete-twitter",
+      "type": "twitter",
+      "name": "Peter Steinberger",
+      "handle": "steipete",
+      "enabled": true,
+      "priority": 4,
+      "note": "OpenClaw 创建者，现任职于 OpenAI",
+      "topic": "technology"
+    }
+  ]
+}

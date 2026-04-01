@@ -2,9 +2,8 @@
 """Tests for fetch-github-trending.py."""
 
 import importlib.util
-import io
 import json
-import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -19,13 +18,21 @@ spec.loader.exec_module(fetch_github_trending)
 
 
 class TestFetchGithubTrending(unittest.TestCase):
-    def test_get_github_trending_cooldown_seconds(self):
-        with patch.dict(os.environ, {"NEWS_HOTSPOTS_GITHUB_TRENDING_COOLDOWN_SECONDS": "3.5"}):
-            self.assertEqual(fetch_github_trending.get_github_trending_cooldown_seconds(), 3.5)
+    def test_apply_runtime_config_updates_cooldown(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            overlay_path = Path(tmpdir) / "news-hotspots-runtime.json"
+            overlay_path.write_text(
+                json.dumps({"fetch": {"github_trending": {"cooldown_s": 3.5}}}),
+                encoding="utf-8",
+            )
+
+            fetch_github_trending.apply_runtime_config(DEFAULTS_DIR, Path(tmpdir))
+
+        self.assertEqual(fetch_github_trending.get_github_trending_cooldown_seconds(), 3.5)
 
     def test_load_queries_only_reads_github_topic(self):
         queries = fetch_github_trending.load_github_trending_queries(DEFAULTS_DIR)
-        self.assertEqual(len(queries), 6)
+        self.assertEqual(len(queries), 5)
         self.assertTrue(all(query["topic"] == "github" for query in queries))
         self.assertTrue(all(" OR " not in query["q"] for query in queries))
 
@@ -89,8 +96,8 @@ class TestFetchGithubTrending(unittest.TestCase):
         repos = result["repos"]
         self.assertEqual(len(repos), 1)
         self.assertEqual(repos[0]["topic"], "github")
-        self.assertEqual(result["queries_total"], 6)
-        self.assertEqual(result["queries_ok"], 6)
+        self.assertEqual(result["queries_total"], 5)
+        self.assertEqual(result["queries_ok"], 5)
 
     def test_trending_returns_empty_when_no_queries_configured(self):
         with patch.object(fetch_github_trending, "load_github_trending_queries", return_value=[]):
@@ -124,7 +131,8 @@ class TestFetchGithubTrending(unittest.TestCase):
 
         self.assertEqual(result["queries_total"], 2)
         self.assertEqual(result["queries_ok"], 0)
-        self.assertEqual(result["query_stats"][0]["status"], "error")
+        self.assertEqual(result["failed_items"][0]["id"], "query one")
+        self.assertEqual(result["request_traces"][0]["status"], "error")
 
 
 if __name__ == "__main__":

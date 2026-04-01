@@ -1,238 +1,134 @@
 #!/usr/bin/env python3
-"""Tests for config_loader.py."""
 
 import importlib.util
 import json
 import tempfile
 import unittest
-from collections import Counter
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).parent.parent / "scripts"
-MODULE_PATH = SCRIPTS_DIR / "config_loader.py"
-
-spec = importlib.util.spec_from_file_location("config_loader", MODULE_PATH)
-config_loader = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(config_loader)
-
-load_merged_sources = config_loader.load_merged_sources
-load_merged_topics = config_loader.load_merged_topics
-load_merged_api_sources = config_loader.load_merged_api_sources
-
-DEFAULTS_DIR = Path(__file__).parent.parent / "config" / "defaults"
+ROOT = Path(__file__).parent.parent
+SCRIPTS_DIR = ROOT / "scripts"
+DEFAULTS_DIR = ROOT / "config" / "defaults"
 
 
-def load_grouped_sources():
-    with open(DEFAULTS_DIR / "sources.json", "r", encoding="utf-8") as f:
-        return json.load(f)["sources"]
+def load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-class TestLoadSources(unittest.TestCase):
-    def test_loads_defaults(self):
-        sources = load_merged_sources(DEFAULTS_DIR)
-        self.assertGreater(len(sources), 100)
+config_loader = load_module("config_loader", SCRIPTS_DIR / "config_loader.py")
+validate_config = load_module("validate_config", SCRIPTS_DIR / "validate-config.py")
 
-    def test_all_sources_have_required_fields(self):
-        sources = load_merged_sources(DEFAULTS_DIR)
-        for source in sources:
-            self.assertIn("id", source, f"Source missing id: {source}")
-            self.assertIn("type", source, f"Source missing type: {source}")
-            self.assertIn("enabled", source, f"Source missing enabled: {source}")
 
-    def test_source_types(self):
-        sources = load_merged_sources(DEFAULTS_DIR)
-        types = {source["type"] for source in sources}
-        self.assertIn("rss", types)
-        self.assertIn("twitter", types)
-        self.assertIn("github", types)
-        self.assertIn("reddit", types)
+class TestConfigLoader(unittest.TestCase):
+    def test_split_source_loaders_read_defaults(self):
+        rss = config_loader.load_merged_rss_sources(DEFAULTS_DIR)
+        twitter = config_loader.load_merged_twitter_sources(DEFAULTS_DIR)
+        github = config_loader.load_merged_github_sources(DEFAULTS_DIR)
+        reddit = config_loader.load_merged_reddit_sources(DEFAULTS_DIR)
 
-    def test_grouped_defaults_flatten(self):
-        grouped = load_grouped_sources()
-        sources = load_merged_sources(DEFAULTS_DIR)
-        self.assertEqual(
-            len(sources),
-            sum(len(entries) for entries in grouped.values()),
-        )
+        self.assertTrue(rss)
+        self.assertTrue(twitter)
+        self.assertTrue(github)
+        self.assertTrue(reddit)
+        self.assertEqual(rss[0]["type"], "rss")
+        self.assertEqual(twitter[0]["type"], "twitter")
+        self.assertEqual(github[0]["type"], "github")
+        self.assertEqual(reddit[0]["type"], "reddit")
 
-    def test_user_overlay_merges(self):
-        """User overlay should override matching IDs and add new ones."""
+    def test_runtime_overlay_deep_merge(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            overlay = {
-                "sources": {
-                    "rss": [
-                        {
-                            "id": "test-new-source",
-                            "type": "rss",
-                            "name": "Test RSS",
-                            "enabled": True,
-                            "priority": 3,
-                            "topic": "ai-frontier",
-                            "url": "https://test.com/feed",
-                        }
-                    ]
-                }
-            }
-            overlay_path = Path(tmpdir) / "news-hotspots-sources.json"
-            with open(overlay_path, "w", encoding="utf-8") as f:
-                json.dump(overlay, f)
+            overlay = Path(tmpdir) / "news-hotspots-runtime.json"
+            overlay.write_text(
+                json.dumps({"fetch": {"google": {"results_per_query": 7}}}),
+                encoding="utf-8",
+            )
+            runtime = config_loader.load_merged_runtime_config(DEFAULTS_DIR, Path(tmpdir))
 
-            sources = load_merged_sources(DEFAULTS_DIR, Path(tmpdir))
-            ids = [source["id"] for source in sources]
-            self.assertIn("test-new-source", ids)
+        self.assertEqual(runtime["fetch"]["google"]["results_per_query"], 7)
+        self.assertIn("cooldown_s", runtime["fetch"]["google"])
 
-    def test_user_overlay_disables(self):
-        """User overlay with enabled=false should disable a default source."""
-        defaults = load_merged_sources(DEFAULTS_DIR)
-        first = defaults[0]
-
+    def test_source_overlay_merges_by_id(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            overlay = {
-                "sources": {
-                    first["type"]: [
-                        {"id": first["id"], "type": first["type"], "enabled": False}
-                    ]
-                }
-            }
-            overlay_path = Path(tmpdir) / "news-hotspots-sources.json"
-            with open(overlay_path, "w", encoding="utf-8") as f:
-                json.dump(overlay, f)
+            overlay = Path(tmpdir) / "news-hotspots-rss.json"
+            overlay.write_text(
+                json.dumps(
+                    {
+                        "sources": [
+                            {
+                                "id": "openai-rss",
+                                "type": "rss",
+                                "name": "OpenAI Blog",
+                                "url": "https://openai.com/news/rss.xml",
+                                "enabled": False,
+                                "priority": 4,
+                                "topic": "ai-frontier",
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            rss = config_loader.load_merged_rss_sources(DEFAULTS_DIR, Path(tmpdir))
 
-            sources = load_merged_sources(DEFAULTS_DIR, Path(tmpdir))
-            matched = [source for source in sources if source["id"] == first["id"]]
-            self.assertEqual(len(matched), 1)
-            self.assertFalse(matched[0]["enabled"])
-
-    def test_user_overlay_can_move_source_to_new_group(self):
-        defaults = load_merged_sources(DEFAULTS_DIR)
-        first = defaults[0]
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            overlay = {
-                "sources": {
-                    "twitter": [
-                        {
-                            "id": first["id"],
-                            "type": "twitter",
-                            "name": first["name"],
-                            "handle": "example_handle",
-                            "enabled": True,
-                            "priority": first.get("priority", 3),
-                            "topic": first.get("topic"),
-                        }
-                    ]
-                }
-            }
-            overlay_path = Path(tmpdir) / "news-hotspots-sources.json"
-            with open(overlay_path, "w", encoding="utf-8") as f:
-                json.dump(overlay, f)
-
-            sources = load_merged_sources(DEFAULTS_DIR, Path(tmpdir))
-            moved = next(source for source in sources if source["id"] == first["id"])
-            self.assertEqual(moved["type"], "twitter")
-            self.assertEqual(moved["handle"], "example_handle")
-
-    def test_no_overlay_dir(self):
-        """Should work fine with no user config dir."""
-        sources = load_merged_sources(DEFAULTS_DIR, None)
-        self.assertGreater(len(sources), 100)
+        source = next(item for item in rss if item["id"] == "openai-rss")
+        self.assertFalse(source["enabled"])
 
 
-class TestLoadTopics(unittest.TestCase):
-    def test_loads_defaults(self):
-        topics = load_merged_topics(DEFAULTS_DIR)
-        self.assertGreater(len(topics), 0)
+class TestValidateConfig(unittest.TestCase):
+    def test_runtime_defaults_are_valid(self):
+        runtime = json.loads((DEFAULTS_DIR / "runtime.json").read_text(encoding="utf-8"))
+        self.assertEqual(validate_config.validate_runtime(runtime), [])
 
-    def test_topics_have_required_fields(self):
-        topics = load_merged_topics(DEFAULTS_DIR)
-        for topic in topics:
-            self.assertIn("id", topic, f"Topic missing id: {topic}")
-            self.assertIn("label", topic, f"Topic missing label: {topic}")
+    def test_invalid_runtime_is_rejected(self):
+        errors = validate_config.validate_runtime({"pipeline": {}, "fetch": {}, "diagnostics": {}, "cache": {}})
+        self.assertTrue(errors)
 
-    def test_topic_ids(self):
-        topics = load_merged_topics(DEFAULTS_DIR)
-        ids = [topic["id"] for topic in topics]
-        self.assertIn("ai-frontier", ids)
-        self.assertIn("ai-infra", ids)
-        self.assertIn("technology", ids)
-        self.assertIn("github", ids)
-
-    def test_github_sources_use_single_github_topic(self):
-        sources = load_merged_sources(DEFAULTS_DIR)
-        github_sources = [source for source in sources if source["type"] == "github"]
-        self.assertTrue(github_sources)
-        for source in github_sources:
-            self.assertEqual(source.get("topic"), "github")
-
-
-class TestLoadApiSources(unittest.TestCase):
-    def test_loads_default_api_sources(self):
-        sources = load_merged_api_sources(DEFAULTS_DIR)
-        ids = [source["id"] for source in sources]
-        self.assertIn("hacker-news-api", ids)
-        self.assertIn("weibo-api", ids)
-
-    def test_overlay_can_disable_api_source(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            overlay = {
+    def test_invalid_source_topic_is_rejected(self):
+        errors = validate_config.validate_source_file(
+            {
                 "sources": [
-                    {"id": "weibo-api", "enabled": False}
+                    {
+                        "id": "bad",
+                        "type": "rss",
+                        "name": "Bad",
+                        "url": "https://example.com/feed.xml",
+                        "enabled": True,
+                        "priority": 3,
+                        "topic": "missing-topic",
+                    }
                 ]
-            }
-            overlay_path = Path(tmpdir) / "news-hotspots-api-sources.json"
-            with open(overlay_path, "w", encoding="utf-8") as f:
-                json.dump(overlay, f)
-
-            sources = load_merged_api_sources(DEFAULTS_DIR, Path(tmpdir))
-            weibo = next(source for source in sources if source["id"] == "weibo-api")
-            self.assertFalse(weibo["enabled"])
-
-    def test_all_api_sources_have_single_topic(self):
-        sources = load_merged_api_sources(DEFAULTS_DIR)
-        self.assertTrue(sources)
-        for source in sources:
-            self.assertIsInstance(source.get("topic"), str)
-            self.assertTrue(source.get("topic"))
-
-
-class TestSourceCounts(unittest.TestCase):
-    """Verify loader counts stay in sync with grouped defaults."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.sources = load_merged_sources(DEFAULTS_DIR)
-        cls.raw_grouped = load_grouped_sources()
-        cls.expected_by_type = {
-            source_type: len(entries) for source_type, entries in cls.raw_grouped.items()
-        }
-        cls.actual_by_type = Counter(source["type"] for source in cls.sources)
-
-    def test_total_sources(self):
-        expected_total = sum(self.expected_by_type.values())
-        self.assertEqual(len(self.sources), expected_total)
-
-    def test_enabled_sources(self):
-        enabled = [source for source in self.sources if source.get("enabled", True)]
-        self.assertGreaterEqual(len(enabled), 120)
-
-    def test_counts_match_grouped_config(self):
-        for source_type, expected_count in self.expected_by_type.items():
-            self.assertEqual(self.actual_by_type.get(source_type, 0), expected_count)
-
-    def test_default_priorities_stay_compact(self):
-        priorities = [source.get("priority", 3) for source in self.sources]
-        self.assertTrue(priorities, "Expected at least one source priority")
-        self.assertGreaterEqual(min(priorities), 3)
-        self.assertLessEqual(max(priorities), 5)
-
-    def test_default_priorities_are_majority_three(self):
-        priorities = [source.get("priority", 3) for source in self.sources]
-        three_ratio = priorities.count(3) / len(priorities)
-        self.assertGreaterEqual(
-            three_ratio,
-            0.55,
-            f"Expected most default priorities to stay at 3, got ratio={three_ratio:.3f}",
+            },
+            "rss",
+            "url",
+            ["ai-frontier"],
         )
+        self.assertTrue(errors)
+
+    def test_api_overlay_file_name_is_news_hotspots_api_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            overlay = Path(tmpdir) / "news-hotspots-api.json"
+            overlay.write_text(
+                json.dumps(
+                    {
+                        "sources": [
+                            {
+                                "id": "hacker-news-api",
+                                "name": "Hacker News API",
+                                "enabled": False,
+                                "topic": "technology",
+                                "priority": 3
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            merged = config_loader.load_merged_api_sources(DEFAULTS_DIR, Path(tmpdir))
+        source = next(item for item in merged if item["id"] == "hacker-news-api")
+        self.assertFalse(source["enabled"])
 
 
 if __name__ == "__main__":

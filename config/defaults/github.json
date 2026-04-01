@@ -1,0 +1,117 @@
+{
+  "_description": "Unified data sources configuration. Priority is a light ranking hint: use 3 for most sources, 4 for clearly authoritative sources, and reserve 5 for a small number of top-tier primary sources.",
+  "_updated": "2026-03-30",
+  "_version": "4.0.0",
+  "sources": [
+    {
+      "id": "transformers-github",
+      "type": "github",
+      "name": "Hugging Face Transformers",
+      "repo": "huggingface/transformers",
+      "enabled": true,
+      "priority": 5,
+      "note": "先进的 Transformer 模型库",
+      "topic": "github"
+    },
+    {
+      "id": "langchain-github",
+      "type": "github",
+      "name": "LangChain",
+      "repo": "langchain-ai/langchain",
+      "enabled": true,
+      "priority": 4,
+      "note": "用于构建 LLM 应用的框架",
+      "topic": "github"
+    },
+    {
+      "id": "ollama-github",
+      "type": "github",
+      "name": "Ollama",
+      "repo": "ollama/ollama",
+      "enabled": true,
+      "priority": 4,
+      "note": "轻松在本地运行 LLM",
+      "topic": "github"
+    },
+    {
+      "id": "vllm-github",
+      "type": "github",
+      "name": "vLLM",
+      "repo": "vllm-project/vllm",
+      "enabled": true,
+      "priority": 3,
+      "note": "高吞吐 LLM 推理引擎",
+      "topic": "github"
+    },
+    {
+      "id": "autogen-github",
+      "type": "github",
+      "name": "AutoGen",
+      "repo": "microsoft/autogen",
+      "enabled": true,
+      "priority": 3,
+      "note": "微软推出的多智能体对话框架",
+      "topic": "github"
+    },
+    {
+      "id": "openclaw-github",
+      "type": "github",
+      "name": "OpenClaw",
+      "repo": "openclaw/openclaw",
+      "enabled": true,
+      "priority": 5,
+      "note": "开源 AI 助手平台",
+      "topic": "github"
+    },
+    {
+      "id": "linux-github",
+      "type": "github",
+      "name": "Linux Kernel",
+      "repo": "torvalds/linux",
+      "enabled": true,
+      "priority": 3,
+      "note": "由 Linus Torvalds 维护的 Linux 内核源码",
+      "topic": "github"
+    },
+    {
+      "id": "rust-github",
+      "type": "github",
+      "name": "Rust",
+      "repo": "rust-lang/rust",
+      "enabled": true,
+      "priority": 3,
+      "note": "Rust 编程语言编译器与标准库",
+      "topic": "github"
+    },
+    {
+      "id": "github-deepseek-v3",
+      "type": "github",
+      "name": "DeepSeek V3",
+      "repo": "deepseek-ai/DeepSeek-V3",
+      "enabled": true,
+      "priority": 4,
+      "note": "DeepSeek 开源大模型",
+      "topic": "github"
+    },
+    {
+      "id": "mem0-github",
+      "type": "github",
+      "repo": "mem0ai/mem0",
+      "name": "Mem0",
+      "enabled": true,
+      "priority": 3,
+      "note": "面向 AI Agent 的记忆层",
+      "topic": "github"
+    },
+    {
+      "id": "openviking-github",
+      "type": "github",
+      "repo": "volcengine/OpenViking",
+      "name": "OpenViking",
+      "enabled": true,
+      "priority": 3,
+      "note": "火山引擎/字节跳动开源 LLM",
+      "topic": "github"
+    }
+  ]
+}

@@ -1,12 +1,24 @@
 #!/usr/bin/env python3
 """
-Fetch RSS feeds from unified sources configuration.
+RSS source_type 抓取脚本。
 
-Reads sources.json, filters RSS sources, fetches feeds in parallel with retry
-mechanism, and outputs structured JSON with articles tagged by a single topic.
+职责：
+- 读取 `rss.json` 中启用的 RSS 源配置
+- 并发抓取 RSS feed，并在单 feed 内按重试策略处理失败
+- 将 feed 内容标准化为统一 `articles`
+- 将失败 feed、耗时与慢请求统计写入 `*.meta.json`
 
-Usage:
-    python3 fetch-rss.py [--config CONFIG_DIR] [--hours 48] [--output FILE] [--verbose]
+执行逻辑：
+1. 加载 runtime 与 RSS source 配置
+2. 使用线程池并发拉取 feed
+3. 每个 feed 成功后立即解析并标准化为 article
+4. 输出结果 JSON 与 sidecar meta JSON
+
+输出文件职责：
+- `<step>.json`
+  只保存标准化后的 RSS article，供 `merge-sources.py` 合并
+- `<step>.meta.json`
+  只保存抓取诊断，包括失败请求与耗时信息
 """
 
 import json
@@ -30,10 +42,12 @@ from xml.etree import ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 try:
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 except ImportError:
     sys.path.append(str(Path(__file__).parent))
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 
 
 def normalize_priority(priority: Any, default: int = 3) -> int:
@@ -54,15 +68,30 @@ except ImportError:
     HAS_FEEDPARSER = False
     logging.warning("feedparser not installed — using XML fallback parser. Install with: pip install feedparser")
 
-RSS_TIMEOUT_ENV = "NEWS_HOTSPOTS_RSS_TIMEOUT_SECONDS"
-RSS_TIMEOUT_DEFAULT = 30
-TIMEOUT = int(float(os.environ.get(RSS_TIMEOUT_ENV, str(RSS_TIMEOUT_DEFAULT))))
+TIMEOUT = 30
 MAX_WORKERS = 10  
 MAX_ARTICLES_PER_FEED = 20
 RETRY_COUNT = 1
 RETRY_DELAY = 2.0  # seconds
 RSS_CACHE_PATH = "/tmp/news-hotspots-rss-cache.json"
 RSS_CACHE_TTL_HOURS = 24
+
+
+def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    global TIMEOUT, MAX_WORKERS, MAX_ARTICLES_PER_FEED, RETRY_COUNT, RETRY_DELAY, RSS_CACHE_PATH, RSS_CACHE_TTL_HOURS
+    runtime = load_merged_runtime_config(defaults_dir, config_dir)
+    fetch_config = runtime.get("fetch", {}).get("rss", {})
+    diagnostics_config = runtime.get("diagnostics", {})
+    cache_config = runtime.get("cache", {})
+    TIMEOUT = int(fetch_config.get("request_timeout_s", TIMEOUT) or TIMEOUT)
+    MAX_WORKERS = int(fetch_config.get("max_workers", MAX_WORKERS) or MAX_WORKERS)
+    MAX_ARTICLES_PER_FEED = int(fetch_config.get("max_articles_per_feed", MAX_ARTICLES_PER_FEED) or MAX_ARTICLES_PER_FEED)
+    RETRY_COUNT = int(fetch_config.get("retry_count", RETRY_COUNT) or RETRY_COUNT)
+    RETRY_DELAY = float(fetch_config.get("retry_delay_s", RETRY_DELAY) or RETRY_DELAY)
+    RSS_CACHE_TTL_HOURS = int(fetch_config.get("cache_ttl_hours", RSS_CACHE_TTL_HOURS) or RSS_CACHE_TTL_HOURS)
+    RSS_CACHE_PATH = str(cache_config.get("rss_cache_path", RSS_CACHE_PATH) or RSS_CACHE_PATH)
+    configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
+    return runtime
 
 
 class RedirectHandler308(HTTPRedirectHandler):
@@ -76,11 +105,12 @@ class RedirectHandler308(HTTPRedirectHandler):
         return None
 
 
-def fetch_with_redirects(url, headers, timeout=TIMEOUT):
+def fetch_with_redirects(url, headers, timeout=None):
     """Fetch URL with support for 308 redirects."""
     opener = build_opener(RedirectHandler308)
     req = Request(url, headers=headers)
-    return opener.open(req, timeout=timeout)
+    effective_timeout = int(timeout if timeout is not None else TIMEOUT)
+    return opener.open(req, timeout=effective_timeout)
 
 
 def is_retryable_rss_error(exc: Exception) -> bool:
@@ -481,8 +511,8 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                         "items": 0,
                         "count": 0,
                         "articles": [],
-                        "request_timings": request_log,
-                        "request_timing_summary": summarize_request_traces(request_log),
+                        "request_traces": request_log,
+                        "failed_items": [],
                     }
                 raise
             request_log.append(
@@ -520,8 +550,8 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                 "items": len(articles),
                 "count": len(articles),
                 "articles": articles,
-                "request_timings": request_log,
-                "request_timing_summary": summarize_request_traces(request_log),
+                "request_traces": request_log,
+                "failed_items": [],
             }
             
         except Exception as e:
@@ -556,30 +586,22 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                     "items": 0,
                     "count": 0,
                     "articles": [],
-                    "request_timings": request_log,
-                    "request_timing_summary": summarize_request_traces(request_log),
+                    "request_traces": request_log,
+                    "failed_items": [normalize_failed_item(source_id, error_msg, time.monotonic() - started_at)],
                 }
 
 
 def load_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    """Load RSS sources from unified configuration with overlay support."""
+    """Load RSS sources from dedicated RSS configuration with overlay support."""
     try:
-        from config_loader import load_merged_sources
+        from config_loader import load_merged_rss_sources
     except ImportError:
-        # Fallback for relative import
         import sys
         sys.path.append(str(Path(__file__).parent))
-        from config_loader import load_merged_sources
-    
-    # Load merged sources from defaults + optional user overlay
-    all_sources = load_merged_sources(defaults_dir, config_dir)
-    
-    # Filter RSS sources that are enabled
-    rss_sources = []
-    for source in all_sources:
-        if source.get("type") == "rss" and source.get("enabled", True):
-            rss_sources.append(source)
-            
+        from config_loader import load_merged_rss_sources
+
+    all_sources = load_merged_rss_sources(defaults_dir, config_dir)
+    rss_sources = [source for source in all_sources if source.get("enabled", True)]
     logging.info(f"Loaded {len(rss_sources)} enabled RSS sources")
     return rss_sources
 
@@ -610,6 +632,8 @@ def main():
     """Main RSS fetching function."""
     args = parse_args()
     logger = setup_logging(args.verbose)
+    effective_config_dir = args.config if args.config and args.config.exists() else None
+    apply_runtime_config(args.defaults, effective_config_dir)
 
     # Resume support: skip if output exists, is valid JSON, and < 1 hour old
     if args.output and args.output.exists() and not args.force:
@@ -632,7 +656,7 @@ def main():
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=args.hours)
         
-        sources = load_sources(args.defaults, args.config)
+        sources = load_sources(args.defaults, effective_config_dir)
         
         if not sources:
             logger.warning("No RSS sources found or all disabled")
@@ -670,36 +694,35 @@ def main():
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
         total_articles = sum(r.get("count", 0) for r in results)
-        all_request_timings = [trace for result in results for trace in result.get("request_timings", []) if isinstance(trace, dict)]
+        articles = [article for result in results for article in result.get("articles", []) if isinstance(article, dict)]
+        failed_items = [
+            normalize_failed_item(result.get("source_id"), result.get("error"), result.get("elapsed_s"))
+            for result in results
+            if result.get("status") != "ok" and result.get("error")
+        ]
 
         output = {
             "generated": datetime.now(timezone.utc).isoformat(),
             "source_type": "rss",
-            "defaults_dir": str(args.defaults),
-            "config_dir": str(args.config) if args.config else None,
-            "hours": args.hours,
-            "request_timeout_s": TIMEOUT,
-            "feedparser_available": HAS_FEEDPARSER,
-            "calls_total": len(results),
-            "calls_ok": ok_count,
-            "calls_kind": "sources",
-            "items_total": total_articles,
-            "sources_total": len(results),
-            "sources_ok": ok_count,
-            "total_articles": total_articles,
-            "request_timing_summary": summarize_request_traces(all_request_timings),
-            "sources": results,
+            "articles": articles,
         }
-
-        # Write output
-        json_str = json.dumps(output, ensure_ascii=False, indent=2)
-        with open(args.output, "w", encoding='utf-8') as f:
-            f.write(json_str)
+        request_traces = [trace for result in results for trace in result.get("request_traces", []) if isinstance(trace, dict)]
+        meta = build_step_meta(
+            step_key="rss",
+            status="ok" if ok_count == len(results) and total_articles > 0 else ("partial" if ok_count > 0 and total_articles > 0 else "error"),
+            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in results),
+            items=total_articles,
+            calls_total=len(results),
+            calls_ok=ok_count,
+            failed_items=failed_items,
+            request_traces=request_traces,
+        )
+        write_result_with_meta(args.output, output, meta)
 
         logger.info(f"✅ Done: {ok_count}/{len(results)} feeds ok, "
                    f"{total_articles} articles → {args.output}")
         
-        return 0
+        return 0 if total_articles > 0 else 1
         
     except Exception as e:
         logger.error(f"💥 RSS fetch failed: {e}")

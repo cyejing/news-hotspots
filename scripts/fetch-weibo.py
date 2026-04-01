@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
 """
-Fetch Weibo hot topics via bb-browser.
+Weibo 热榜抓取脚本。
 
-Uses `bb-browser site weibo/hot` to retrieve structured hot-list
-data, converts it into the news-hotspots source format, and keeps bb-browser
-calls serialized with a conservative cooldown after each success.
+职责：
+- 调用 `bb-browser site weibo/hot` 获取热榜
+- 将热榜条目标准化为统一 `articles`
+- 将抓取耗时、失败信息和慢请求统计写入 `*.meta.json`
+
+执行逻辑：
+1. 加载 runtime 配置
+2. 顺序执行 Weibo 抓取并遵守 cooldown
+3. 将结果转换为统一 article 结构
+4. 输出结果 JSON 与 sidecar meta JSON
+
+输出文件职责：
+- `<step>.json`
+  只保存抓到的 Weibo article
+- `<step>.meta.json`
+  只保存 step 级诊断，不混入结果内容
 """
 
 import argparse
@@ -23,17 +36,19 @@ from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import quote
 
 try:
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 except ImportError:
     sys.path.append(str(Path(__file__).parent))
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_runtime_config
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 
 SOURCE_ID = "weibo-hot"
 SOURCE_NAME = "Weibo Hot"
 SOURCE_PRIORITY = 3
 DEFAULT_TIMEOUT = 120
 DEFAULT_LIMIT = 30
-COOLDOWN_SECONDS = float(os.environ.get("BB_BROWSER_WEIBO_COOLDOWN_SECONDS", "6.0"))
+COOLDOWN_SECONDS = 6.0
 
 _last_success_at: Optional[float] = None
 
@@ -57,15 +72,28 @@ def throttle_after_success() -> None:
         time.sleep(wait_seconds)
 
 
-def run_bb_browser_site(command: Sequence[str], timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
+def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    global DEFAULT_TIMEOUT, DEFAULT_LIMIT, COOLDOWN_SECONDS
+    runtime = load_merged_runtime_config(defaults_dir, config_dir)
+    fetch_config = runtime.get("fetch", {}).get("weibo", {})
+    diagnostics_config = runtime.get("diagnostics", {})
+    DEFAULT_TIMEOUT = int(fetch_config.get("request_timeout_s", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT)
+    DEFAULT_LIMIT = int(fetch_config.get("limit", DEFAULT_LIMIT) or DEFAULT_LIMIT)
+    COOLDOWN_SECONDS = float(fetch_config.get("cooldown_s", COOLDOWN_SECONDS) or 0)
+    configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
+    return runtime
+
+
+def run_bb_browser_site(command: Sequence[str], timeout: Optional[int] = None) -> Dict[str, Any]:
     global _last_success_at
     throttle_after_success()
+    effective_timeout = int(timeout if timeout is not None else DEFAULT_TIMEOUT)
 
     result = subprocess.run(
         ["bb-browser", "site", *command],
         capture_output=True,
         text=True,
-        timeout=timeout,
+        timeout=effective_timeout,
         env=os.environ,
     )
 
@@ -224,13 +252,11 @@ def fetch_weibo_hot(
         "topic": articles[0].get("topic", "social") if articles else "social",
         "status": "ok" if articles else "error",
         "elapsed_s": round(elapsed_s, 3),
-        "timing_keywords": request_trace["timing_keywords"],
         "items": len(articles),
         "count": len(articles),
         "fetched_count": len(raw_items),
         "articles": articles,
-        "request_timings": [request_trace],
-        "request_timing_summary": summarize_request_traces([request_trace]),
+        "request_traces": [request_trace],
     }
     if not articles:
         source_result["error"] = "No tech-relevant Weibo hot topics found"
@@ -244,7 +270,6 @@ def fetch_weibo_hot(
         "sources_total": 1,
         "sources_ok": 1 if articles else 0,
         "total_articles": len(articles),
-        "request_timing_summary": summarize_request_traces([request_trace]),
         "sources": [source_result],
     }
 
@@ -265,7 +290,7 @@ Examples:
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     parser.add_argument("--hours", type=int, default=48, help="Accepted for CLI consistency; not used by Weibo fetch")
     parser.add_argument("--force", action="store_true", help="Accepted for CLI consistency; this fetcher always refreshes")
-    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT, help="Number of Weibo hot items to request (default: 30)")
+    parser.add_argument("--limit", type=int, default=None, help="Number of Weibo hot items to request")
     return parser.parse_args()
 
 
@@ -273,23 +298,34 @@ def main() -> int:
     args = parse_args()
 
     logger = setup_logging(args.verbose)
+    effective_config_dir = args.config if args.config and args.config.exists() else None
+    apply_runtime_config(args.defaults, effective_config_dir)
     if not args.output:
         fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-weibo-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
 
     try:
+        limit = args.limit if args.limit is not None else DEFAULT_LIMIT
         data = fetch_weibo_hot(
             logger,
             defaults_dir=args.defaults,
-            config_dir=args.config,
-            limit=max(1, min(int(args.limit), 50)),
+            config_dir=effective_config_dir,
+            limit=max(1, int(limit)),
         )
-        data["defaults_dir"] = str(args.defaults)
-        data["config_dir"] = str(args.config) if args.config else None
-        data["hours"] = args.hours
-        with open(args.output, "w", encoding="utf-8") as handle:
-            json.dump(data, handle, ensure_ascii=False, indent=2)
+        source_result = (data.get("sources") or [{}])[0]
+        output = {"generated": data.get("generated"), "source_type": "weibo", "articles": source_result.get("articles", [])}
+        meta = build_step_meta(
+            step_key="weibo",
+            status="ok" if int(data.get("calls_ok", 0) or 0) == int(data.get("calls_total", 1) or 1) and int(data.get("items_total", 0) or 0) > 0 else "error",
+            elapsed_s=float(source_result.get("elapsed_s", 0) or 0),
+            items=int(data.get("items_total", 0) or 0),
+            calls_total=int(data.get("calls_total", 1) or 1),
+            calls_ok=int(data.get("calls_ok", 0) or 0),
+            failed_items=[] if source_result.get("status") == "ok" else [normalize_failed_item(SOURCE_ID, source_result.get("error"), source_result.get("elapsed_s"))],
+            request_traces=source_result.get("request_traces", []),
+        )
+        write_result_with_meta(args.output, output, meta)
         logger.info(
             "✅ Done: %d/%d sources ok, %d articles → %s",
             data.get("sources_ok", 0),
@@ -297,7 +333,7 @@ def main() -> int:
             data.get("total_articles", 0),
             args.output,
         )
-        return 0 if data.get("sources_ok", 0) else 1
+        return 0 if data.get("items_total", 0) else 1
     except Exception as exc:
         logger.error("💥 Weibo fetch failed: %s", exc)
         return 1

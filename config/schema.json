@@ -1,116 +1,69 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Tech Digest Configuration Schema",
-  "version": "3.1.0",
+  "title": "News Hotspots Split Config Schema",
+  "version": "6.0.0",
   "definitions": {
-    "apiSource": {
-      "type": "object",
-      "required": ["id", "name", "enabled", "topic", "priority"],
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "enabled": {
-          "type": "boolean"
-        },
-        "topic": {
-          "type": "string"
-        },
-        "priority": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 10
-        }
-      }
-    },
-    "source": {
+    "sourceBase": {
       "type": "object",
       "required": ["id", "type", "name", "enabled", "priority", "topic"],
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique identifier for the source"
-        },
-        "type": {
-          "type": "string",
-          "enum": ["rss", "twitter", "github", "reddit"],
-          "description": "Source type"
-        },
-        "name": {
-          "type": "string",
-          "description": "Human-readable source name"
-        },
-        "enabled": {
-          "type": "boolean",
-          "description": "Whether this source is active"
-        },
-        "priority": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 10,
-          "description": "Priority hint from 1-10. In practice, keep most sources near 3, use 4 for clearly authoritative sources, and reserve 5+ for a very small number of top-tier primary sources."
-        },
-        "topic": {
-          "type": "string",
-          "description": "Single primary topic ID for this source"
-        },
-        "note": {
-          "type": "string",
-          "description": "Optional description or note"
-        },
-        "url": {
-          "type": "string",
-          "format": "uri",
-          "description": "RSS feed URL (required for type=rss)"
-        },
-        "handle": {
-          "type": "string",
-          "description": "Twitter handle without @ (required for type=twitter)"
-        },
-        "repo": {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$",
-          "description": "GitHub repository in owner/repo format (required for type=github)"
-        },
-        "subreddit": {
-          "type": "string",
-          "description": "Subreddit name without r/ prefix (required for type=reddit)"
-        }
-      },
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["rss", "twitter", "github", "reddit"] },
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "priority": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "topic": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    },
+    "rssSource": {
       "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
         {
-          "if": {
-            "properties": { "type": { "const": "rss" } }
-          },
-          "then": {
-            "required": ["url"]
+          "type": "object",
+          "required": ["url"],
+          "properties": {
+            "type": { "const": "rss" },
+            "url": { "type": "string" }
           }
-        },
+        }
+      ]
+    },
+    "twitterSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
         {
-          "if": {
-            "properties": { "type": { "const": "twitter" } }
-          },
-          "then": {
-            "required": ["handle"]
+          "type": "object",
+          "required": ["handle"],
+          "properties": {
+            "type": { "const": "twitter" },
+            "handle": { "type": "string" }
           }
-        },
+        }
+      ]
+    },
+    "githubSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
         {
-          "if": {
-            "properties": { "type": { "const": "github" } }
-          },
-          "then": {
-            "required": ["repo"]
+          "type": "object",
+          "required": ["repo"],
+          "properties": {
+            "type": { "const": "github" },
+            "repo": { "type": "string" }
           }
-        },
+        }
+      ]
+    },
+    "redditSource": {
+      "allOf": [
+        { "$ref": "#/definitions/sourceBase" },
         {
-          "if": {
-            "properties": { "type": { "const": "reddit" } }
-          },
-          "then": {
-            "required": ["subreddit"]
+          "type": "object",
+          "required": ["subreddit"],
+          "properties": {
+            "type": { "const": "reddit" },
+            "subreddit": { "type": "string" }
           }
         }
       ]
@@ -119,140 +72,97 @@
       "type": "object",
       "required": ["id", "emoji", "label", "description", "search", "display"],
       "properties": {
-        "id": {
-          "type": "string",
-          "description": "Unique topic identifier"
-        },
-        "emoji": {
-          "type": "string",
-          "description": "Topic emoji for display"
-        },
-        "label": {
-          "type": "string",
-          "description": "Topic display name"
-        },
-        "description": {
-          "type": "string",
-          "description": "Topic description"
-        },
-        "classification": {
-          "type": "object",
-          "properties": {
-            "definition": {
-              "type": "string"
-            },
-            "when_to_use": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "when_not_to_use": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "examples": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "search": {
-          "type": "object",
-          "properties": {
-            "queries": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Search queries for web search"
-            },
-            "exclude": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Keywords to exclude"
-            },
-            "github_queries": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "description": "Preferred query list for GitHub trending search"
-            }
-          }
-        },
+        "id": { "type": "string" },
+        "emoji": { "type": "string" },
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "search": { "type": "object" },
         "display": {
           "type": "object",
           "required": ["max_items"],
           "properties": {
-            "max_items": {
-              "type": "integer",
-              "minimum": 1,
-              "description": "Maximum items to show for this topic"
-            },
-            "style": {
-              "type": "string",
-              "enum": ["compact", "detailed"],
-              "description": "Display style"
-            }
+            "max_items": { "type": "integer", "minimum": 1 }
           }
         }
       }
     },
-    "sourceGroup": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/source"
+    "apiSource": {
+      "type": "object",
+      "required": ["id", "name", "enabled", "topic", "priority"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "topic": { "type": "string" },
+        "priority": { "type": "integer", "minimum": 1, "maximum": 10 }
       }
     },
-    "apiSourceGroup": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/apiSource"
+    "runtime": {
+      "type": "object",
+      "required": ["pipeline", "fetch", "diagnostics", "cache"],
+      "properties": {
+        "pipeline": { "type": "object" },
+        "fetch": { "type": "object" },
+        "diagnostics": { "type": "object" },
+        "cache": { "type": "object" }
       }
     }
   },
-  "type": "object",
   "properties": {
-    "sources": {
+    "rss": {
       "type": "object",
-      "required": ["rss", "twitter", "github", "reddit"],
-      "additionalProperties": false,
       "properties": {
-        "rss": {
-          "$ref": "#/definitions/sourceGroup"
-        },
-        "twitter": {
-          "$ref": "#/definitions/sourceGroup"
-        },
-        "github": {
-          "$ref": "#/definitions/sourceGroup"
-        },
-        "reddit": {
-          "$ref": "#/definitions/sourceGroup"
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/rssSource" }
+        }
+      }
+    },
+    "twitter": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/twitterSource" }
+        }
+      }
+    },
+    "github": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/githubSource" }
+        }
+      }
+    },
+    "reddit": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/redditSource" }
         }
       }
     },
     "topics": {
-      "type": "array",
-      "items": {
-        "$ref": "#/definitions/topic"
-      }
-    },
-    "api_sources": {
       "type": "object",
-      "required": ["sources"],
       "properties": {
-        "sources": {
-          "$ref": "#/definitions/apiSourceGroup"
+        "topics": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/topic" }
         }
       }
-    }
+    },
+    "api": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/apiSource" }
+        }
+      }
+    },
+    "runtime": { "$ref": "#/definitions/runtime" }
   }
 }

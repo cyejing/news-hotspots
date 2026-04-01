@@ -69,13 +69,15 @@ For diagnostics:
 
 ## Configuration
 
-- `config/defaults/sources.json` — 148 built-in config sources grouped by `type`
+- `config/defaults/rss.json` / `twitter.json` / `github.json` / `reddit.json` — split built-in source configs by fetch type
+- `config/defaults/api.json` — split built-in API sources config
 - `config/defaults/topics.json` — 10 topics with search queries and display settings
+- `config/defaults/runtime.json` — runtime defaults for fetch timeouts, cooldowns, retries, limits, diagnostics, and pipeline settings
 - User overrides in `workspace/config/` take priority
 
 Default topic set includes `ai-frontier`, `ai-infra`, `github`, `technology`, `business`, `world`, `science`, and `social`.
 
-RSS defaults are intentionally conservative: obvious personal blogs stay in `sources.rss` as candidate entries at the end of the list with `"enabled": false`.
+RSS defaults are intentionally conservative: obvious personal blogs stay in `rss.json` as candidate entries at the end of the list with `"enabled": false`.
 
 Priority guideline:
 - `3` is the default for most sources.
@@ -86,17 +88,38 @@ Priority guideline:
 ## Customize Your Sources
 
 ```bash
-cp config/defaults/sources.json workspace/config/news-hotspots-sources.json
+cp config/defaults/rss.json workspace/config/news-hotspots-rss.json
+cp config/defaults/twitter.json workspace/config/news-hotspots-twitter.json
+cp config/defaults/github.json workspace/config/news-hotspots-github.json
+cp config/defaults/reddit.json workspace/config/news-hotspots-reddit.json
 cp config/defaults/topics.json workspace/config/news-hotspots-topics.json
 ```
 
 Overlay files merge with defaults. Matching `id` overrides a source, a new `id` appends a source, and `"enabled": false` disables a built-in source.
+
+## Runtime Overrides
+
+```bash
+cp config/defaults/runtime.json workspace/config/news-hotspots-runtime.json
+```
+
+Runtime config uses deep merge:
+- CLI flags override runtime defaults
+- `workspace/config/news-hotspots-runtime.json` overrides `config/defaults/runtime.json`
+- unspecified sibling fields keep their default values
+
+Use runtime config for:
+- fetch timeouts, cooldowns, retries, concurrency, and limits
+- pipeline step timeout, merge timeout, hotspots timeout, archive retention, and default top N
+- diagnostics thresholds used by `source-health.py` and `step_contract.py`
 
 ## Environment Variables
 
 ```bash
 export GITHUB_TOKEN="..."
 ```
+
+`GITHUB_TOKEN` is the only remaining runtime environment variable. Timeout and cooldown settings are configured through `runtime.json`.
 
 ## Dependencies
 

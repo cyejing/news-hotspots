@@ -13,7 +13,7 @@ DEFAULT_ARCHIVE_ROOT_DIR="$ROOT_DIR/workspace/archive/news-hotspots"
 MERGED_JSON="$DEBUG_DIR/merge-sources.json"
 RSS_JSON="$DEBUG_DIR/rss.json"
 GITHUB_JSON="$DEBUG_DIR/github.json"
-TRENDING_JSON="$DEBUG_DIR/trending.json"
+GITHUB_TRENDING_JSON="$DEBUG_DIR/github_trending.json"
 API_JSON="$DEBUG_DIR/api.json"
 TWITTER_JSON="$DEBUG_DIR/twitter.json"
 REDDIT_JSON="$DEBUG_DIR/reddit.json"
@@ -35,7 +35,7 @@ fetch_step_script() {
   case "$1" in
     rss) echo "$SCRIPT_DIR/fetch-rss.py" ;;
     github) echo "$SCRIPT_DIR/fetch-github.py" ;;
-    trending) echo "$SCRIPT_DIR/fetch-github-trending.py" ;;
+    github_trending) echo "$SCRIPT_DIR/fetch-github-trending.py" ;;
     api) echo "$SCRIPT_DIR/fetch-api.py" ;;
     twitter) echo "$SCRIPT_DIR/fetch-twitter.py" ;;
     reddit) echo "$SCRIPT_DIR/fetch-reddit.py" ;;
@@ -52,7 +52,7 @@ step_output_path() {
   case "$1" in
     rss) echo "$RSS_JSON" ;;
     github) echo "$GITHUB_JSON" ;;
-    trending) echo "$TRENDING_JSON" ;;
+    github_trending) echo "$GITHUB_TRENDING_JSON" ;;
     api) echo "$API_JSON" ;;
     twitter) echo "$TWITTER_JSON" ;;
     reddit) echo "$REDDIT_JSON" ;;
@@ -62,7 +62,7 @@ step_output_path() {
     toutiao) echo "$TOUTIAO_JSON" ;;
     google) echo "$GOOGLE_JSON" ;;
     merge) echo "$MERGED_JSON" ;;
-    hotspots) echo "$STEP_OUTPUT_DIR/merge-hotspots.json" ;;
+    hotspots) echo "$DEFAULT_ARCHIVE_ROOT_DIR" ;;
     *) return 1 ;;
   esac
 }
@@ -73,7 +73,7 @@ Unified maintainer test entrypoint for news-hotspots.
 
 USAGE:
   ./scripts/test-news-hotspots.sh full [--hours N] [--config DIR] [--verbose] [--force] [--skip a,b]
-  ./scripts/test-news-hotspots.sh step <rss|github|trending|api|twitter|reddit|v2ex|zhihu|weibo|toutiao|google|merge|hotspots|validate> [--hours N] [--config DIR] [--verbose] [--force]
+  ./scripts/test-news-hotspots.sh step <rss|github|github_trending|api|twitter|reddit|v2ex|zhihu|weibo|toutiao|google|merge|hotspots|validate> [--hours N] [--config DIR] [--verbose] [--force]
   ./scripts/test-news-hotspots.sh health [--verbose]
   ./scripts/test-news-hotspots.sh unit [tests.test_hotspots tests.test_merge ...]
 
@@ -84,7 +84,7 @@ OUTPUTS:
     /tmp/news-hotspots/debug/twitter.meta.json
     /tmp/news-hotspots/debug/google.meta.json
     /tmp/news-hotspots/debug/github.meta.json
-    /tmp/news-hotspots/debug/trending.meta.json
+    /tmp/news-hotspots/debug/github_trending.meta.json
     /tmp/news-hotspots/debug/api.meta.json
     /tmp/news-hotspots/debug/v2ex.meta.json
     /tmp/news-hotspots/debug/zhihu.meta.json
@@ -97,7 +97,7 @@ OUTPUTS:
     /tmp/news-hotspots/debug/twitter.json
     /tmp/news-hotspots/debug/google.json
     /tmp/news-hotspots/debug/github.json
-    /tmp/news-hotspots/debug/trending.json
+    /tmp/news-hotspots/debug/github_trending.json
     /tmp/news-hotspots/debug/api.json
     /tmp/news-hotspots/debug/v2ex.json
     /tmp/news-hotspots/debug/zhihu.json
@@ -105,14 +105,13 @@ OUTPUTS:
     /tmp/news-hotspots/debug/toutiao.json
     /tmp/news-hotspots/debug/reddit.json
     /tmp/news-hotspots/debug/merge-sources.json
-    /tmp/news-hotspots/debug/merge-hotspots.json
     workspace/archive/news-hotspots/<DATE>/json/daily.json
     workspace/archive/news-hotspots/<DATE>/markdown/daily.md
     workspace/archive/news-hotspots/<DATE>/meta/*.meta.json
   step:
     /tmp/news-hotspots/debug/rss.json
     /tmp/news-hotspots/debug/github.json
-    /tmp/news-hotspots/debug/trending.json
+    /tmp/news-hotspots/debug/github_trending.json
     /tmp/news-hotspots/debug/api.json
     /tmp/news-hotspots/debug/twitter.json
     /tmp/news-hotspots/debug/reddit.json
@@ -122,11 +121,20 @@ OUTPUTS:
     /tmp/news-hotspots/debug/toutiao.json
     /tmp/news-hotspots/debug/google.json
     /tmp/news-hotspots/debug/merge-sources.json
-    /tmp/news-hotspots/debug/merge-hotspots.json
     workspace/archive/news-hotspots/<DATE>/json/daily.json
     workspace/archive/news-hotspots/<DATE>/markdown/daily.md
   health:
     直接输出诊断报告到控制台
+
+RUNTIME CONFIG:
+  defaults:
+    <ROOT>/config/defaults/runtime.json
+  workspace override:
+    <CONFIG_DIR>/news-hotspots-runtime.json
+  precedence:
+    CLI flags > workspace runtime override > defaults runtime
+  env:
+    only GITHUB_TOKEN remains supported
 HELP
 }
 
@@ -254,7 +262,7 @@ run_step() {
       fi
       run_cmd "${cmd[@]}"
       ;;
-    rss|github|trending|api|twitter|reddit|v2ex|zhihu|weibo|toutiao|google)
+    rss|github|github_trending|api|twitter|reddit|v2ex|zhihu|weibo|toutiao|google)
       run_fetch_step "$step"
       ;;
     merge)
@@ -262,7 +270,7 @@ run_step() {
       for pair in \
         "--rss:$RSS_JSON" \
         "--github:$GITHUB_JSON" \
-        "--trending:$TRENDING_JSON" \
+        "--github-trending:$GITHUB_TRENDING_JSON" \
         "--api:$API_JSON" \
         "--twitter:$TWITTER_JSON" \
         "--reddit:$REDDIT_JSON" \
@@ -285,9 +293,8 @@ run_step() {
       ;;
     hotspots)
       [ -f "$MERGED_JSON" ] || { echo "Missing input: $MERGED_JSON" >&2; exit 1; }
-      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --input "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR" --debug "$DEBUG_DIR" --top 15 --mode daily)
+      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --input "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR" --top 15 --mode daily)
       run_cmd "${cmd[@]}"
-      [ -f "$DEBUG_DIR/merge-hotspots.json" ] || { echo "Missing output: $DEBUG_DIR/merge-hotspots.json" >&2; exit 1; }
       ;;
     *)
       echo "Unknown step: $step" >&2
@@ -308,7 +315,11 @@ run_unit() {
     # shellcheck disable=SC2206
     modules=($UNIT_MODULES)
   fi
-  run_cmd uv run python -m unittest "${modules[@]}"
+  if [ -n "$UNIT_MODULES" ]; then
+    run_cmd uv run python -m unittest "${modules[@]}"
+  else
+    run_cmd uv run python -m unittest discover -s tests
+  fi
 }
 
 run_health() {

@@ -1,10 +1,25 @@
 #!/usr/bin/env python3
 """
-Merge data from enabled fetch steps with layered scoring and deduplication.
+merge 中间结果生成脚本。
 
-Reads output from fetch-rss.py, fetch-twitter.py, fetch-google.py,
-fetch-github.py, fetch-github-trending.py, fetch-api.py, fetch-reddit.py,
-fetch-v2ex.py, fetch-zhihu.py, fetch-weibo.py, fetch-toutiao.py, and any other compatible JSON inputs that are provided.
+职责：
+- 读取各 fetch step 的标准化结果 JSON
+- 合并 article 流
+- 计算 `final_score`
+- 执行历史相似性处理与去重
+- 按 `source_type` 输出极简中间结果
+
+执行逻辑：
+1. 读取各 fetch 的 `<step>.json`
+2. 标准化缺省字段并收集为统一 article 列表
+3. 计算各评分分项与 `final_score`
+4. 进行相似性聚类与去重
+5. 按 `source_type` 分组后输出 `merge-sources.json`
+
+输出文件职责：
+- `debug_dir/merge-sources.json`
+  merge 阶段唯一中间结果，只给 `merge-hotspots.py` 消费
+  保留 `final_score` 与最小 `score_components`，不再承载旧 debug 大对象
 """
 
 import argparse
@@ -41,10 +56,6 @@ SCORING_CONFIG = {
     "cross_source_hot_score_cap": 6.0,
     "recency_24h_score": 1.0,
     "recency_6h_score": 0.5,
-    "topic_same_source_score": -1.5,
-    "topic_same_domain_score": -0.75,
-    "topic_first3_source_score": -3.0,
-    "topic_first3_domain_score": -1.5,
 }
 
 SCORE_DEBUG_COMMENTS = {
@@ -63,7 +74,6 @@ SCORE_DISCUSSION_HIGH = 3
 SCORE_DISCUSSION_MED = 2
 SCORE_DISCUSSION_LOW = 1
 
-DOMAIN_LIMIT_EXEMPT = {"x.com", "twitter.com", "github.com", "reddit.com"}
 CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 NON_WORD_RE = re.compile(r"[^\w\s\u3400-\u4dbf\u4e00-\u9fff]+", re.UNICODE)
 SPACE_RE = re.compile(r"\s+")
@@ -701,10 +711,6 @@ def build_output_scoring_config() -> Dict[str, Any]:
         "cross_source_hot_score_cap": SCORING_CONFIG["cross_source_hot_score_cap"],
         "recency_24h_score": SCORING_CONFIG["recency_24h_score"],
         "recency_6h_score": SCORING_CONFIG["recency_6h_score"],
-        "topic_same_source_score": SCORING_CONFIG["topic_same_source_score"],
-        "topic_same_domain_score": SCORING_CONFIG["topic_same_domain_score"],
-        "topic_first3_source_score": SCORING_CONFIG["topic_first3_source_score"],
-        "topic_first3_domain_score": SCORING_CONFIG["topic_first3_domain_score"],
     }
 
 
@@ -801,25 +807,6 @@ def deduplicate_articles(articles: List[Dict[str, Any]], previous_titles: Option
     return deduplicated
 
 
-def apply_domain_limits(articles: List[Dict[str, Any]], max_per_domain: int = 3) -> List[Dict[str, Any]]:
-    domain_counts: Dict[str, int] = {}
-    result = []
-    for article in articles:
-        domain = get_domain(article.get("link", ""))
-        if domain and domain not in DOMAIN_LIMIT_EXEMPT:
-            count = domain_counts.get(domain, 0)
-            if count >= max_per_domain:
-                logging.debug("Domain limit (%d): skipping %s article", max_per_domain, domain)
-                continue
-            domain_counts[domain] = count + 1
-        result.append(article)
-    return result
-
-
-# ---------------------------------------------------------------------------
-# History loading and topic grouping
-# ---------------------------------------------------------------------------
-
 def load_previous_hotspots(archive_dir: Path, days: int = 14) -> List[str]:
     if not archive_dir.exists():
         return []
@@ -838,8 +825,6 @@ def load_previous_hotspots(archive_dir: Path, days: int = 14) -> List[str]:
                         continue
                 except ValueError:
                     continue
-            if not file_path.name.startswith("daily"):
-                continue
             with open(file_path, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
             for topic in data.get("topics", []):
@@ -854,40 +839,11 @@ def load_previous_hotspots(archive_dir: Path, days: int = 14) -> List[str]:
     return seen_titles
 
 
-def group_by_topics(articles: List[Dict[str, Any]], dedup_across_topics: bool = True) -> Dict[str, List[Dict[str, Any]]]:
-    topic_groups: Dict[str, List[Dict[str, Any]]] = {}
-    seen_article_ids: Set[str] = set()
-
-    for article in articles:
-        primary_topic = resolve_article_topic(article, default="uncategorized") or "uncategorized"
-        article_id = normalize_title(article.get("title", ""))
-
-        if dedup_across_topics and article_id in seen_article_ids:
-            continue
-        seen_article_ids.add(article_id)
-
-        topic_groups.setdefault(primary_topic, [])
-        article_copy = article.copy()
-        article_copy["topic"] = primary_topic
-        topic_groups[primary_topic].append(article_copy)
-
-    for topic, topic_articles in topic_groups.items():
-        topic_groups[topic] = sorted(
-            topic_articles,
-            key=lambda item: item.get("final_score", 0),
-            reverse=True,
-        )
-
-    return topic_groups
-
-
 def group_by_source_types(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     source_groups: Dict[str, List[Dict[str, Any]]] = {}
-
     for article in articles:
         source_type = str(article.get("source_type", "") or "unknown")
-        source_groups.setdefault(source_type, [])
-        source_groups[source_type].append(article.copy())
+        source_groups.setdefault(source_type, []).append(article.copy())
 
     for source_type, source_articles in source_groups.items():
         source_groups[source_type] = sorted(
@@ -895,273 +851,122 @@ def group_by_source_types(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict
             key=lambda item: item.get("final_score", 0),
             reverse=True,
         )
-
     return source_groups
 
 
-# ---------------------------------------------------------------------------
-# Input normalization
-# ---------------------------------------------------------------------------
-
-def build_article(title: str, link: str, date: str, source_type: str, source_name: str, source_id: str, source_priority: int, topic: str, **extra: Any) -> Dict[str, Any]:
-    article = {
-        "title": title,
-        "link": link,
-        "date": date,
-        "source_type": source_type,
-        "source_name": source_name,
-        "source_id": source_id,
-        "source_priority": source_priority,
-        "topic": topic,
-    }
-    article.update(extra)
-    return article
+STEP_INPUT_ORDER = (
+    "rss",
+    "twitter",
+    "google",
+    "github",
+    "github_trending",
+    "reddit",
+    "api",
+    "v2ex",
+    "zhihu",
+    "weibo",
+    "toutiao",
+)
 
 
-def collect_articles(
-    rss_data: Dict[str, Any],
-    twitter_data: Dict[str, Any],
-    google_data: Dict[str, Any],
-    github_data: Dict[str, Any],
-    trending_data: Dict[str, Any],
-    reddit_data: Dict[str, Any],
-    api_data: Dict[str, Any],
-    v2ex_data: Dict[str, Any],
-    zhihu_data: Dict[str, Any],
-    weibo_data: Dict[str, Any],
-    toutiao_data: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    all_articles: List[Dict[str, Any]] = []
+def load_articles_payload(file_path: Optional[Path], source_type: str) -> Dict[str, Any]:
+    payload = load_source_data(file_path)
+    articles = payload.get("articles", [])
+    if not isinstance(articles, list):
+        articles = []
 
-    for source in rss_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "rss",
-                "source_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
+    normalized_articles: List[Dict[str, Any]] = []
+    for article in articles:
+        if not isinstance(article, dict):
+            continue
+        normalized = article.copy()
+        normalized["source_type"] = str(normalized.get("source_type") or source_type)
+        normalized["source_priority"] = normalize_priority(normalized.get("source_priority", normalized.get("priority", 3)))
+        normalized["topic"] = resolve_article_topic(normalized, default="uncategorized") or "uncategorized"
+        normalized_articles.append(normalized)
 
-    for source in twitter_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "twitter",
-                "source_name": f"@{source.get('handle', '')}",
-                "display_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    for topic_result in twitter_data.get("topics", []):
-        for article in topic_result.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "twitter",
-                "source_name": "Twitter Search",
-                "source_id": f"twitter-{topic_result.get('topic_id', '')}",
-                "source_priority": 3,
-            })
-            all_articles.append(enriched)
-
-    for topic_result in google_data.get("topics", []):
-        for article in topic_result.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "google",
-                "source_name": "Google News",
-                "source_id": f"google-{topic_result.get('topic_id', '')}",
-                "source_priority": 3,
-            })
-            all_articles.append(enriched)
-
-    for source in github_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "github",
-                "source_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    reddit_source_records = reddit_data.get("sources", [])
-    if not isinstance(reddit_source_records, list) or not reddit_source_records:
-        reddit_source_records = reddit_data.get("subreddits", [])
-
-    for source in reddit_source_records:
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "reddit",
-                "source_name": f"r/{source.get('subreddit', '')}",
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    for topic_result in reddit_data.get("topics", []):
-        for article in topic_result.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "reddit",
-                "source_name": "Reddit Search",
-                "source_id": f"reddit-{topic_result.get('topic_id', '')}",
-                "source_priority": 3,
-            })
-            all_articles.append(enriched)
-
-    for source in api_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "api",
-                "source_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    for source in v2ex_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "v2ex",
-                "source_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    for source in zhihu_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "zhihu",
-                "source_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    for source in weibo_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "weibo",
-                "source_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    for source in toutiao_data.get("sources", []):
-        for article in source.get("articles", []):
-            enriched = article.copy()
-            enriched.update({
-                "source_type": "toutiao",
-                "source_name": source.get("name", ""),
-                "source_id": source.get("source_id", ""),
-                "source_priority": normalize_priority(source.get("priority", 3)),
-            })
-            all_articles.append(enriched)
-
-    for repo in trending_data.get("repos", []):
-        all_articles.append(
-            build_article(
-                title=f"{repo['repo']}: {repo['description']}" if repo.get("description") else repo["repo"],
-                link=repo.get("url", f"https://github.com/{repo['repo']}"),
-                date=repo.get("pushed_at", ""),
-                source_type="github_trending",
-                source_name="GitHub Trending",
-                source_id=f"trending-{repo.get('repo', '')}",
-                source_priority=4,
-                topic=str(repo.get("topic") or ""),
-                snippet=repo.get("description", ""),
-                stars=repo.get("stars", 0),
-                daily_stars_est=repo.get("daily_stars_est", 0),
-                forks=repo.get("forks", 0),
-                language=repo.get("language", ""),
-            )
-        )
-
-    return all_articles
+    return {"generated": payload.get("generated"), "articles": normalized_articles}
 
 
 def load_input_payloads(args: argparse.Namespace) -> Dict[str, Dict[str, Any]]:
     return {
-        "rss": load_source_data(args.rss),
-        "twitter": load_source_data(args.twitter),
-        "google": load_source_data(args.google),
-        "github": load_source_data(args.github),
-        "trending": load_source_data(args.trending),
-        "reddit": load_source_data(args.reddit),
-        "api": load_source_data(args.api),
-        "v2ex": load_source_data(args.v2ex),
-        "zhihu": load_source_data(args.zhihu),
-        "weibo": load_source_data(args.weibo),
-        "toutiao": load_source_data(args.toutiao),
+        "rss": load_articles_payload(args.rss, "rss"),
+        "twitter": load_articles_payload(args.twitter, "twitter"),
+        "google": load_articles_payload(args.google, "google"),
+        "github": load_articles_payload(args.github, "github"),
+        "github_trending": load_articles_payload(args.github_trending, "github_trending"),
+        "reddit": load_articles_payload(args.reddit, "reddit"),
+        "api": load_articles_payload(args.api, "api"),
+        "v2ex": load_articles_payload(args.v2ex, "v2ex"),
+        "zhihu": load_articles_payload(args.zhihu, "zhihu"),
+        "weibo": load_articles_payload(args.weibo, "weibo"),
+        "toutiao": load_articles_payload(args.toutiao, "toutiao"),
     }
 
 
-def log_input_summary(payloads: Dict[str, Dict[str, Any]]) -> None:
-    logging.info(
-        "Loaded sources - RSS: %s, Twitter: %s, Google: %s, GitHub: %s + %s trending, Reddit: %s, API: %s, V2EX: %s, Zhihu: %s, Weibo: %s, Toutiao: %s",
-        payloads["rss"].get("total_articles", 0),
-        payloads["twitter"].get("total_articles", 0),
-        payloads["google"].get("total_articles", 0),
-        payloads["github"].get("total_articles", 0),
-        payloads["trending"].get("total", 0),
-        payloads["reddit"].get("total_posts", 0),
-        payloads["api"].get("total_articles", 0),
-        payloads["v2ex"].get("total_articles", 0),
-        payloads["zhihu"].get("total_articles", 0),
-        payloads["weibo"].get("total_articles", 0),
-        payloads["toutiao"].get("total_articles", 0),
+def collect_articles(payloads: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    all_articles: List[Dict[str, Any]] = []
+    for step_key in STEP_INPUT_ORDER:
+        all_articles.extend(
+            article.copy()
+            for article in payloads.get(step_key, {}).get("articles", [])
+            if isinstance(article, dict)
+        )
+    return all_articles
+
+
+def build_input_stats(payloads: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    distribution = {
+        step_key: len(payloads.get(step_key, {}).get("articles", []))
+        for step_key in STEP_INPUT_ORDER
+    }
+    return {
+        "total_articles": sum(distribution.values()),
+        "source_type_distribution": distribution,
+    }
+
+
+def serialize_article_for_output(article: Dict[str, Any]) -> Dict[str, Any]:
+    score_components = article.get("_score_components", {}) if isinstance(article.get("_score_components"), dict) else {}
+    output = {
+        "title": article.get("title"),
+        "link": article.get("link"),
+        "date": article.get("date"),
+        "topic": article.get("topic"),
+        "source_type": article.get("source_type"),
+        "source_id": article.get("source_id"),
+        "source_name": article.get("source_name"),
+        "source_priority": article.get("source_priority"),
+        "final_score": article.get("final_score"),
+        "score_components": {
+            "base_priority_score": score_components.get("base_priority_score", 0.0),
+            "fetch_local_rank_score": score_components.get("fetch_local_rank_score", 0.0),
+            "history_score": score_components.get("history_score", 0.0),
+            "cross_source_hot_score": score_components.get("cross_source_hot_score", 0.0),
+            "recency_score": score_components.get("recency_score", 0.0),
+            "local_extra_score": score_components.get("local_extra_score", 0.0),
+        },
+    }
+
+    optional_fields = (
+        "summary",
+        "snippet",
+        "metrics",
+        "replies",
+        "num_comments",
+        "score",
+        "reddit_url",
+        "external_url",
+        "name",
+        "repo",
+        "display_name",
+        "published_at",
     )
+    for field in optional_fields:
+        if field in article:
+            output[field] = article.get(field)
+    return output
 
-
-def process_articles(
-    payloads: Dict[str, Dict[str, Any]],
-    archive_dir: Optional[Path],
-) -> Tuple[Dict[str, List[Dict[str, Any]]], List[str], int]:
-    all_articles = collect_articles(
-        payloads["rss"],
-        payloads["twitter"],
-        payloads["google"],
-        payloads["github"],
-        payloads["trending"],
-        payloads["reddit"],
-        payloads["api"],
-        payloads["v2ex"],
-        payloads["zhihu"],
-        payloads["weibo"],
-        payloads["toutiao"],
-    )
-    total_collected = len(all_articles)
-    logging.info("Total articles collected: %d", total_collected)
-
-    previous_titles: List[str] = load_previous_hotspots(archive_dir) if archive_dir else []
-    deduplicated_articles = deduplicate_articles(all_articles, previous_titles)
-    topic_groups = group_by_topics(deduplicated_articles, dedup_across_topics=True)
-
-    for topic, topic_articles in list(topic_groups.items()):
-        before = len(topic_articles)
-        topic_groups[topic] = apply_domain_limits(topic_articles)
-        after = len(topic_groups[topic])
-        if before != after:
-            logging.info("Domain limits (%s): %d → %d", topic, before, after)
-
-    return topic_groups, previous_titles, total_collected
-
-
-# ---------------------------------------------------------------------------
-# Output assembly
-# ---------------------------------------------------------------------------
 
 def build_merged_output(
     payloads: Dict[str, Dict[str, Any]],
@@ -1169,72 +974,44 @@ def build_merged_output(
     previous_titles: List[str],
     total_collected: int,
 ) -> Dict[str, Any]:
-    total_after_domain_limits = sum(len(items) for items in source_groups.values())
-    source_type_counts = {source_type: len(items) for source_type, items in source_groups.items()}
-    serialized_source_types = {
-        source_type: {
-            "count": len(items),
-            "articles": [serialize_article_for_output(article) for article in items],
-        }
-        for source_type, items in source_groups.items()
-    }
+    distribution = {source_type: len(items) for source_type, items in source_groups.items()}
     return {
         "generated": datetime.now(timezone.utc).isoformat(),
-        "input_sources": {
-            "rss_articles": payloads["rss"].get("total_articles", 0),
-            "twitter_articles": payloads["twitter"].get("total_articles", 0),
-            "google_articles": payloads["google"].get("total_articles", 0),
-            "github_articles": payloads["github"].get("total_articles", 0),
-            "github_trending": payloads["trending"].get("total", 0),
-            "reddit_posts": payloads["reddit"].get("total_posts", 0),
-            "api_articles": payloads["api"].get("total_articles", 0),
-            "v2ex_articles": payloads["v2ex"].get("total_articles", 0),
-            "zhihu_articles": payloads["zhihu"].get("total_articles", 0),
-            "weibo_articles": payloads["weibo"].get("total_articles", 0),
-            "toutiao_articles": payloads["toutiao"].get("total_articles", 0),
-            "total_input": total_collected,
+        "input_stats": build_input_stats(payloads),
+        "output_stats": {
+            "total_articles": sum(distribution.values()),
+            "source_types_count": len(source_groups),
+            "source_type_distribution": distribution,
         },
         "processing": {
             "deduplication_applied": True,
-            "multi_source_merging": True,
             "previous_hotspots_scoring_applied": len(previous_titles) > 0,
             "scoring_applied": True,
             "scoring_version": "2.0",
-            "scoring_comment_zh": "merge-sources 会先算每条内容的合并分，并按 source_type 分组后在组内按 final_score 降序输出。",
-            "score_formula": {
-                "merge_score": "base_priority_score + fetch_local_rank_score + history_score + cross_source_hot_score + recency_score",
-                "source_type_grouping": "group_by_source_type_then_sort_by_final_score_desc",
-            },
+            "score_formula": "base_priority_score + fetch_local_rank_score + history_score + cross_source_hot_score + recency_score",
             "scoring_config": build_output_scoring_config(),
+            "input_total_articles": total_collected,
         },
-        "output_stats": {
-            "total_articles": total_after_domain_limits,
-            "source_types_count": len(source_groups),
-            "source_type_distribution": source_type_counts,
+        "source_types": {
+            source_type: {
+                "count": len(items),
+                "articles": [serialize_article_for_output(article) for article in items],
+            }
+            for source_type, items in source_groups.items()
         },
-        "source_types": {source_type: payload for source_type, payload in serialized_source_types.items()},
     }
-
-
-def serialize_article_for_output(article: Dict[str, Any]) -> Dict[str, Any]:
-    output = dict(article)
-    output.pop("_score_components", None)
-    output.pop("quality_score", None)
-    output.pop("cluster_size", None)
-    return output
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Merge articles from all sources with quality scoring and deduplication.",
+        description="Merge standardized fetch outputs with scoring and deduplication.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--rss", type=Path, help="RSS fetch results JSON file")
     parser.add_argument("--twitter", type=Path, help="Twitter fetch results JSON file")
     parser.add_argument("--google", type=Path, help="Google News results JSON file")
-    parser.add_argument("--web", dest="google", type=Path, help="Legacy alias for Google News results JSON file")
     parser.add_argument("--github", type=Path, help="GitHub releases results JSON file")
-    parser.add_argument("--trending", type=Path, help="GitHub trending repos JSON file")
+    parser.add_argument("--github-trending", dest="github_trending", type=Path, help="GitHub trending results JSON file")
     parser.add_argument("--reddit", type=Path, help="Reddit posts results JSON file")
     parser.add_argument("--api", type=Path, help="API sources results JSON file")
     parser.add_argument("--v2ex", type=Path, help="V2EX hot topics results JSON file")
@@ -1249,7 +1026,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-
     logger = setup_logging(args.verbose)
     if not args.output:
         fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-merged-", suffix=".json")
@@ -1258,20 +1034,19 @@ def main() -> int:
 
     try:
         payloads = load_input_payloads(args)
-        log_input_summary(payloads)
-        topic_groups, previous_titles, total_collected = process_articles(payloads, args.archive_dir)
-        source_groups = group_by_source_types(
-            [article for topic_articles in topic_groups.values() for article in topic_articles]
-        )
+        total_collected = sum(len(payload.get("articles", [])) for payload in payloads.values())
+        logger.info("Loaded %d standardized articles", total_collected)
+        previous_titles: List[str] = load_previous_hotspots(args.archive_dir) if args.archive_dir else []
+        deduplicated_articles = deduplicate_articles(collect_articles(payloads), previous_titles)
+        source_groups = group_by_source_types(deduplicated_articles)
         output = build_merged_output(payloads, source_groups, previous_titles, total_collected)
-        total_after_domain_limits = output["output_stats"]["total_articles"]
 
         with open(args.output, "w", encoding="utf-8") as handle:
             json.dump(output, handle, ensure_ascii=False, indent=2)
 
         logger.info("✅ Merged and scored articles:")
         logger.info("   Input: %d articles", total_collected)
-        logger.info("   Output: %d articles across %d source types", total_after_domain_limits, len(source_groups))
+        logger.info("   Output: %d articles across %d source types", output["output_stats"]["total_articles"], len(source_groups))
         logger.info("   File: %s", args.output)
         return 0
     except Exception as exc:

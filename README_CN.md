@@ -69,13 +69,15 @@ clawhub install news-hotspots
 
 ## 配置
 
-- `config/defaults/sources.json` — 148 个按 `type` 分组的内置配置型数据源
+- `config/defaults/rss.json` / `twitter.json` / `github.json` / `reddit.json` — 按抓取类型拆分的内置 source 配置
+- `config/defaults/api.json` — 拆分后的 API source 配置
 - `config/defaults/topics.json` — 10 个主题，含搜索查询和展示配置
+- `config/defaults/runtime.json` — 抓取超时、cooldown、重试、并发、limit、诊断阈值和 pipeline 默认值
 - 用户配置放在 `workspace/config/`，优先级更高
 
 当前默认主题包括 `ai-frontier`、`ai-infra`、`github`、`technology`、`business`、`world`、`science`、`social`。
 
-RSS 默认源池现在更保守：明显的个人博客仍保留在 `sources.rss` 中，但会放到列表尾部并以 `"enabled": false` 作为候选源处理。
+RSS 默认源池现在更保守：明显的个人博客仍保留在 `rss.json` 中，但会放到列表尾部并以 `"enabled": false` 作为候选源处理。
 
 `priority` 使用建议：
 - `3` 作为大多数 source 的默认值。
@@ -86,17 +88,38 @@ RSS 默认源池现在更保守：明显的个人博客仍保留在 `sources.rss
 ## 自定义数据源
 
 ```bash
-cp config/defaults/sources.json workspace/config/news-hotspots-sources.json
+cp config/defaults/rss.json workspace/config/news-hotspots-rss.json
+cp config/defaults/twitter.json workspace/config/news-hotspots-twitter.json
+cp config/defaults/github.json workspace/config/news-hotspots-github.json
+cp config/defaults/reddit.json workspace/config/news-hotspots-reddit.json
 cp config/defaults/topics.json workspace/config/news-hotspots-topics.json
 ```
 
 工作区配置会与默认配置合并。匹配 `id` 会覆盖默认源，新 `id` 会追加源，`"enabled": false` 可禁用内置源。
+
+## Runtime 覆盖
+
+```bash
+cp config/defaults/runtime.json workspace/config/news-hotspots-runtime.json
+```
+
+runtime 配置采用深合并：
+- CLI 显式参数优先于 runtime 默认值
+- `workspace/config/news-hotspots-runtime.json` 会覆盖 `config/defaults/runtime.json`
+- 未覆盖的兄弟字段继续沿用默认值
+
+runtime 主要收口这些可调参数：
+- 各类 fetch 的 timeout、cooldown、retry、并发、limit
+- pipeline 的 step timeout、merge timeout、hotspots timeout、archive retention、默认 top N
+- `source-health.py` 和 `step_contract.py` 使用的诊断阈值
 
 ## 环境变量
 
 ```bash
 export GITHUB_TOKEN="..."
 ```
+
+现在保留的运行时环境变量只有 `GITHUB_TOKEN`，其余 timeout 和 cooldown 类参数统一通过 `runtime.json` 配置。
 
 ## 依赖
 

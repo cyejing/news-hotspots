@@ -2,6 +2,8 @@
 """Tests for fetch-rss.py parsing helpers."""
 
 import importlib.util
+import json
+import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,11 +15,46 @@ MODULE_PATH = SCRIPTS_DIR / "fetch-rss.py"
 spec = importlib.util.spec_from_file_location("fetch_rss", MODULE_PATH)
 fetch_rss = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fetch_rss)
+DEFAULTS_DIR = Path(__file__).parent.parent / "config" / "defaults"
 
 
 class TestFeedParsing(unittest.TestCase):
     def setUp(self):
         self.cutoff = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    def test_apply_runtime_config_updates_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            overlay_path = Path(tmpdir) / "news-hotspots-runtime.json"
+            overlay_path.write_text(
+                json.dumps(
+                    {
+                        "fetch": {
+                            "rss": {
+                                "request_timeout_s": 44,
+                                "max_workers": 3,
+                                "max_articles_per_feed": 11,
+                                "retry_count": 2,
+                                "retry_delay_s": 1.5,
+                                "cache_ttl_hours": 9,
+                            }
+                        },
+                        "cache": {
+                            "rss_cache_path": "/tmp/custom-rss-cache.json",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            fetch_rss.apply_runtime_config(DEFAULTS_DIR, Path(tmpdir))
+
+        self.assertEqual(fetch_rss.TIMEOUT, 44)
+        self.assertEqual(fetch_rss.MAX_WORKERS, 3)
+        self.assertEqual(fetch_rss.MAX_ARTICLES_PER_FEED, 11)
+        self.assertEqual(fetch_rss.RETRY_COUNT, 2)
+        self.assertEqual(fetch_rss.RETRY_DELAY, 1.5)
+        self.assertEqual(fetch_rss.RSS_CACHE_TTL_HOURS, 9)
+        self.assertEqual(str(fetch_rss.RSS_CACHE_PATH), "/tmp/custom-rss-cache.json")
 
     def test_parse_rss_with_pubdate(self):
         content = """<?xml version="1.0" encoding="UTF-8"?>
@@ -72,7 +109,7 @@ class TestFeedParsing(unittest.TestCase):
     def test_non_feed_is_rejected(self):
         self.assertFalse(fetch_rss.is_probably_feed("<html><body>blocked</body></html>", "text/html"))
 
-    def test_fetch_feed_with_retry_records_request_timing(self):
+    def test_fetch_feed_with_retry_records_request_traces(self):
         source = {
             "id": "example-rss",
             "name": "Example RSS",
@@ -114,8 +151,8 @@ class TestFeedParsing(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["count"], 1)
         self.assertIn("elapsed_s", result)
-        self.assertEqual(result["request_timing_summary"]["requests_total"], 1)
-        self.assertIn("timed_request", result["request_timings"][0]["timing_keywords"])
+        self.assertEqual(len(result["request_traces"]), 1)
+        self.assertEqual(result["request_traces"][0]["status"], "ok")
 
 
 if __name__ == "__main__":

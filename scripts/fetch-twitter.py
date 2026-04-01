@@ -1,9 +1,25 @@
 #!/usr/bin/env python3
 """
-Fetch Twitter/X timelines and topic-grouped search results via bb-browser.
+Twitter / X 抓取脚本。
 
-Reads timeline sources from sources.json and topic queries from topics.json.
-Both modes run sequentially in one step and share a single cooldown bucket.
+职责：
+- 读取 `twitter.json` 中的 timeline 源配置
+- 读取 `topics.json` 中的 Twitter 查询配置
+- 抓取 timeline 与 topic query 两类结果
+- 将两类结果统一标准化为 `source_type=twitter` 的 `articles`
+- 将失败请求、耗时和慢请求统计写入 `*.meta.json`
+
+执行逻辑：
+1. 加载 runtime、twitter source 配置与 topic 配置
+2. 共享同一套 cooldown，顺序执行 timeline 与 query 抓取
+3. 成功结果进入统一 articles；失败请求只记入 meta
+4. 输出结果 JSON 与 sidecar meta JSON
+
+输出文件职责：
+- `<step>.json`
+  只保存标准化后的 Twitter article
+- `<step>.meta.json`
+  只保存抓取诊断与失败明细
 """
 
 import argparse
@@ -20,19 +36,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 try:
-    from config_loader import load_merged_sources, load_merged_topics
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_runtime_config, load_merged_twitter_sources, load_merged_topics
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 except ImportError:
     sys.path.append(str(Path(__file__).parent))
-    from config_loader import load_merged_sources, load_merged_topics
-    from fetch_timing import build_request_trace, summarize_request_traces
+    from config_loader import load_merged_runtime_config, load_merged_twitter_sources, load_merged_topics
+    from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, normalize_failed_item, write_result_with_meta
 
-COOLDOWN_SECONDS = float(os.environ.get("BB_BROWSER_TWITTER_COOLDOWN_SECONDS", "7.0"))
+COOLDOWN_SECONDS = 7.0
 DEFAULT_TIMEOUT = 180
 DEFAULT_COUNT = 20
-DEFAULT_RESULTS_PER_QUERY = 10
-MAX_COUNT = 100
-MAX_RESULTS_PER_QUERY = 20
+RESULTS_PER_QUERY = 10
 TWITTER_DATE_FORMAT = "%a %b %d %H:%M:%S %z %Y"
 _last_success_at: Optional[float] = None
 
@@ -56,14 +70,28 @@ def throttle_after_success() -> None:
         time.sleep(wait_seconds)
 
 
-def run_bb_browser_site(args: Sequence[str], timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
+def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
+    global COOLDOWN_SECONDS, DEFAULT_TIMEOUT, DEFAULT_COUNT, RESULTS_PER_QUERY
+    runtime = load_merged_runtime_config(defaults_dir, config_dir)
+    fetch_config = runtime.get("fetch", {}).get("twitter", {})
+    diagnostics_config = runtime.get("diagnostics", {})
+    COOLDOWN_SECONDS = float(fetch_config.get("cooldown_s", COOLDOWN_SECONDS) or 0)
+    DEFAULT_TIMEOUT = int(fetch_config.get("request_timeout_s", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT)
+    DEFAULT_COUNT = int(fetch_config.get("count", DEFAULT_COUNT) or DEFAULT_COUNT)
+    RESULTS_PER_QUERY = int(fetch_config.get("results_per_query", RESULTS_PER_QUERY) or RESULTS_PER_QUERY)
+    configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
+    return runtime
+
+
+def run_bb_browser_site(args: Sequence[str], timeout: Optional[int] = None) -> Dict[str, Any]:
     global _last_success_at
     throttle_after_success()
+    effective_timeout = int(timeout if timeout is not None else DEFAULT_TIMEOUT)
     result = subprocess.run(
         ["bb-browser", "site", *args],
         capture_output=True,
         text=True,
-        timeout=timeout,
+        timeout=effective_timeout,
         env=os.environ,
     )
     if result.returncode != 0:
@@ -80,8 +108,7 @@ def run_bb_browser_site(args: Sequence[str], timeout: int = DEFAULT_TIMEOUT) -> 
 
 
 def load_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    all_sources = load_merged_sources(defaults_dir, config_dir)
-    return [source for source in all_sources if source.get("type") == "twitter" and source.get("enabled", True)]
+    return [source for source in load_merged_twitter_sources(defaults_dir, config_dir) if source.get("enabled", True)]
 
 
 def normalize_text(text: str) -> str:
@@ -115,16 +142,11 @@ def timeline_count_for_source(source: Dict[str, Any]) -> int:
         count = int(source.get("limit", DEFAULT_COUNT))
     except (TypeError, ValueError):
         count = DEFAULT_COUNT
-    return max(1, min(MAX_COUNT, count))
+    return max(1, count)
 
 
 def result_count_for_topic(topic: Dict[str, Any]) -> int:
-    display = topic.get("display", {})
-    max_items = display.get("max_items", DEFAULT_RESULTS_PER_QUERY)
-    try:
-        return max(1, min(MAX_RESULTS_PER_QUERY, int(max_items)))
-    except (TypeError, ValueError):
-        return DEFAULT_RESULTS_PER_QUERY
+    return max(1, RESULTS_PER_QUERY)
 
 
 def format_search_term(term: str, exclude: bool = False) -> str:
@@ -235,12 +257,11 @@ def fetch_source(source: Dict[str, Any], cutoff: datetime) -> Dict[str, Any]:
             "status": "ok",
             "attempts": 1,
             "elapsed_s": round(elapsed_s, 3),
-            "timing_keywords": request_trace["timing_keywords"],
             "items": len(articles),
             "count": len(articles),
             "articles": articles,
-            "request_timings": [request_trace],
-            "request_timing_summary": summarize_request_traces([request_trace]),
+            "request_traces": [request_trace],
+            "failed_items": [],
         }
     except Exception as exc:
         elapsed_s = time.monotonic() - started_at
@@ -263,12 +284,11 @@ def fetch_source(source: Dict[str, Any], cutoff: datetime) -> Dict[str, Any]:
             "attempts": 1,
             "error": str(exc)[:200],
             "elapsed_s": round(elapsed_s, 3),
-            "timing_keywords": request_trace["timing_keywords"],
             "items": 0,
             "count": 0,
             "articles": [],
-            "request_timings": [request_trace],
-            "request_timing_summary": summarize_request_traces([request_trace]),
+            "request_traces": [request_trace],
+            "failed_items": [normalize_failed_item(source.get("id"), str(exc)[:200], elapsed_s)],
         }
 
 
@@ -278,10 +298,11 @@ def fetch_topic(topic: Dict[str, Any], cutoff: datetime, logger: logging.Logger)
     exclude = search.get("exclude", [])
     per_query = result_count_for_topic(topic)
 
-    query_stats = []
     dedup_by_url: Dict[str, Dict[str, Any]] = {}
-    request_timings: List[Dict[str, Any]] = []
+    request_traces: List[Dict[str, Any]] = []
     started_at = time.monotonic()
+    failed_items: List[Dict[str, Any]] = []
+    ok_queries = 0
 
     for query in queries:
         compiled_query = build_twitter_query(query, exclude)
@@ -297,26 +318,24 @@ def fetch_topic(topic: Dict[str, Any], cutoff: datetime, logger: logging.Logger)
                 dedup_by_url.setdefault(article["link"], article)
                 kept += 1
             elapsed_s = time.monotonic() - query_started_at
-            request_timings.append(build_request_trace(compiled_query, elapsed_s, status="ok", backend="bb-browser", adapter="twitter/search"))
-            query_stats.append({"query": compiled_query, "status": "ok", "count": kept, "elapsed_s": round(elapsed_s, 3), "timing_keywords": request_timings[-1]["timing_keywords"]})
+            request_traces.append(build_request_trace(compiled_query, elapsed_s, status="ok", backend="bb-browser", adapter="twitter/search"))
+            ok_queries += 1
         except Exception as exc:
             logger.warning("Twitter query failed [%s]: %s", topic.get("id"), exc)
             elapsed_s = time.monotonic() - query_started_at
-            request_timings.append(build_request_trace(compiled_query, elapsed_s, status="error", backend="bb-browser", adapter="twitter/search", error=str(exc)[:200]))
-            query_stats.append({"query": compiled_query, "status": "error", "count": 0, "error": str(exc)[:200], "elapsed_s": round(elapsed_s, 3), "timing_keywords": request_timings[-1]["timing_keywords"]})
+            request_traces.append(build_request_trace(compiled_query, elapsed_s, status="error", backend="bb-browser", adapter="twitter/search", error=str(exc)[:200]))
+            failed_items.append(normalize_failed_item(compiled_query, str(exc)[:200], elapsed_s))
 
     articles = list(dedup_by_url.values())
     articles.sort(key=lambda article: article.get("date", ""), reverse=True)
-    ok_queries = sum(1 for stat in query_stats if stat["status"] == "ok")
     return {
         "topic_id": topic.get("id"),
         "status": "ok" if articles else "error",
-        "queries_executed": len(queries),
-        "queries_ok": ok_queries,
         "elapsed_s": round(time.monotonic() - started_at, 3),
-        "query_stats": query_stats,
-        "request_timings": request_timings,
-        "request_timing_summary": summarize_request_traces(request_timings),
+        "calls_total": len(queries),
+        "calls_ok": ok_queries,
+        "failed_items": failed_items,
+        "request_traces": request_traces,
         "items": len(articles),
         "count": len(articles),
         "articles": articles,
@@ -345,14 +364,16 @@ Examples:
 def main() -> int:
     args = parse_args()
     logger = setup_logging(args.verbose)
+    effective_config_dir = args.config if args.config and args.config.exists() else None
+    apply_runtime_config(args.defaults, effective_config_dir)
     if not args.output:
         fd, temp_path = tempfile.mkstemp(prefix="news-hotspots-twitter-", suffix=".json")
         os.close(fd)
         args.output = Path(temp_path)
 
     try:
-        sources = load_sources(args.defaults, args.config)
-        topics = load_merged_topics(args.defaults, args.config)
+        sources = load_sources(args.defaults, effective_config_dir)
+        topics = load_merged_topics(args.defaults, effective_config_dir)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=args.hours)
         logger.info("Fetching %d Twitter sources and %d topic query groups sequentially", len(sources), len(topics))
         logger.info("Twitter bb-browser cooldown: %.1fs", COOLDOWN_SECONDS)
@@ -367,47 +388,32 @@ def main() -> int:
         topic_results = [fetch_topic(topic, cutoff, logger) for topic in topics if topic.get("search", {}).get("twitter_queries")]
         ok_sources = sum(1 for result in source_results if result["status"] == "ok")
         ok_topics = sum(1 for result in topic_results if result["status"] == "ok")
-        total_query_calls = sum(len(result.get("query_stats", [])) for result in topic_results)
-        ok_query_calls = sum(
-            1
-            for result in topic_results
-            for stat in result.get("query_stats", [])
-            if isinstance(stat, dict) and stat.get("status") == "ok"
-        )
+        total_query_calls = sum(int(result.get("calls_total", 0) or 0) for result in topic_results)
+        ok_query_calls = sum(int(result.get("calls_ok", 0) or 0) for result in topic_results)
         total_articles = sum(result.get("count", 0) for result in source_results) + sum(result.get("count", 0) for result in topic_results)
         total_calls = len(source_results) + total_query_calls
         ok_calls = ok_sources + ok_query_calls
-        all_request_timings = [
-            trace
-            for result in [*source_results, *topic_results]
-            for trace in result.get("request_timings", [])
-            if isinstance(trace, dict)
-        ]
+        articles = [article for result in source_results for article in result.get("articles", []) if isinstance(article, dict)]
+        articles.extend(article for result in topic_results for article in result.get("articles", []) if isinstance(article, dict))
+        failed_items = [item for result in [*source_results, *topic_results] for item in result.get("failed_items", []) if isinstance(item, dict)]
+        request_traces = [trace for result in [*source_results, *topic_results] for trace in result.get("request_traces", []) if isinstance(trace, dict)]
 
         output = {
             "generated": datetime.now(timezone.utc).isoformat(),
             "source_type": "twitter",
-            "backend": "bb-browser",
-            "defaults_dir": str(args.defaults),
-            "config_dir": str(args.config) if args.config else None,
-            "hours": args.hours,
-            "calls_total": total_calls,
-            "calls_ok": ok_calls,
-            "calls_kind": "mixed",
-            "items_total": total_articles,
-            "sources_total": len(source_results),
-            "sources_ok": ok_sources,
-            "topics_total": len(topic_results),
-            "topics_ok": ok_topics,
-            "queries_total": total_query_calls,
-            "queries_ok": ok_query_calls,
-            "total_articles": total_articles,
-            "request_timing_summary": summarize_request_traces(all_request_timings),
-            "sources": source_results,
-            "topics": topic_results,
+            "articles": articles,
         }
-        with open(args.output, "w", encoding="utf-8") as handle:
-            json.dump(output, handle, ensure_ascii=False, indent=2)
+        meta = build_step_meta(
+            step_key="twitter",
+            status="ok" if ok_calls == total_calls and total_articles > 0 else ("partial" if ok_calls > 0 and total_articles > 0 else "error"),
+            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in [*source_results, *topic_results]),
+            items=total_articles,
+            calls_total=total_calls,
+            calls_ok=ok_calls,
+            failed_items=failed_items,
+            request_traces=request_traces,
+        )
+        write_result_with_meta(args.output, output, meta)
 
         logger.info(
             "✅ Done: %d/%d sources ok, %d/%d query groups ok, %d tweets → %s",
@@ -418,7 +424,7 @@ def main() -> int:
             total_articles,
             args.output,
         )
-        return 0 if ok_sources == len(source_results) and ok_topics == len(topic_results) else 1
+        return 0 if total_articles > 0 else 1
     except Exception as exc:
         logger.error("💥 Twitter fetch failed: %s", exc)
         return 1
