@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 MODULE_PATH = ROOT / "scripts" / "run-pipeline.py"
+REGISTRY_PATH = ROOT / "scripts" / "step_registry.py"
 
 
 def load_module():
@@ -19,6 +20,16 @@ def load_module():
 
 
 run_pipeline = load_module()
+
+
+def load_registry_module():
+    spec = importlib.util.spec_from_file_location("step_registry", REGISTRY_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+step_registry = load_registry_module()
 
 
 class TestRunPipeline(unittest.TestCase):
@@ -101,6 +112,19 @@ class TestRunPipeline(unittest.TestCase):
         self.assertEqual(specs[4].step_key, "github_trending")
         self.assertTrue(str(specs[0].output_path).endswith("rss.json"))
         self.assertEqual(specs[0].timeout_s, 99)
+
+    def test_build_fetch_specs_match_registry_order(self):
+        runtime = {"pipeline": {"fetch_step_timeout_s": 99}}
+        specs = run_pipeline.build_fetch_step_specs(
+            defaults_dir=Path("/tmp/defaults"),
+            config_dir=Path("/tmp/config"),
+            debug_dir=Path("/tmp/debug"),
+            hours=48,
+            verbose=False,
+            force=False,
+            runtime=runtime,
+        )
+        self.assertEqual([spec.step_key for spec in specs], list(step_registry.STEP_KEYS))
 
     def test_build_pipeline_meta_reports_partial_when_only_some_outputs_exist(self):
         meta = run_pipeline.build_pipeline_meta(

@@ -42,24 +42,13 @@ from typing import Any, Dict, List, Optional, Sequence
 
 try:
     from config_loader import load_merged_runtime_config
+    from step_registry import ALL_SOURCE_STEPS, iter_fetch_steps
 except ImportError:
     sys.path.append(str(Path(__file__).parent))
     from config_loader import load_merged_runtime_config
+    from step_registry import ALL_SOURCE_STEPS, iter_fetch_steps
 
 SCRIPTS_DIR = Path(__file__).parent
-FETCH_STEPS = (
-    ("rss", "RSS", "fetch-rss.py"),
-    ("twitter", "Twitter", "fetch-twitter.py"),
-    ("google", "Google News", "fetch-google.py"),
-    ("github", "GitHub", "fetch-github.py"),
-    ("github_trending", "GitHub Trending", "fetch-github-trending.py"),
-    ("api", "API", "fetch-api.py"),
-    ("v2ex", "V2EX", "fetch-v2ex.py"),
-    ("zhihu", "Zhihu", "fetch-zhihu.py"),
-    ("weibo", "Weibo", "fetch-weibo.py"),
-    ("toutiao", "Toutiao", "fetch-toutiao.py"),
-    ("reddit", "Reddit", "fetch-reddit.py"),
-)
 MERGE_STEP_KEY = "merge-sources"
 HOTSPOTS_STEP_KEY = "merge-hotspots"
 
@@ -200,22 +189,22 @@ def build_fetch_step_specs(
 ) -> List[StepSpec]:
     timeout_s = int(runtime.get("pipeline", {}).get("fetch_step_timeout_s", 2000) or 2000)
     specs: List[StepSpec] = []
-    for step_key, name, script_name in FETCH_STEPS:
+    for step in iter_fetch_steps():
         args = ["--defaults", str(defaults_dir)]
         if config_dir is not None:
             args.extend(["--config", str(config_dir)])
-        args.extend(["--output", str(debug_dir / f"{step_key}.json"), "--hours", str(hours)])
+        args.extend(["--output", str(debug_dir / f"{step.step_key}.json"), "--hours", str(hours)])
         if verbose:
             args.append("--verbose")
         if force:
             args.append("--force")
         specs.append(
             StepSpec(
-                step_key=step_key,
-                name=name,
-                script_name=script_name,
+                step_key=step.step_key,
+                name=step.display_name,
+                script_name=step.script_name,
                 args=args,
-                output_path=debug_dir / f"{step_key}.json",
+                output_path=debug_dir / f"{step.step_key}.json",
                 timeout_s=timeout_s,
             )
         )
@@ -230,12 +219,9 @@ def build_merge_step_spec(
 ) -> StepSpec:
     timeout_s = int(runtime.get("pipeline", {}).get("merge_timeout_s", 300) or 300)
     args = ["--output", str(debug_dir / "merge-sources.json"), "--archive", str(archive_dir)]
-    for step_key, _, _ in FETCH_STEPS:
-        input_path = debug_dir / f"{step_key}.json"
-        if step_key == "github_trending":
-            args.extend(["--github-trending", str(input_path)])
-        else:
-            args.extend([f"--{step_key.replace('_', '-')}", str(input_path)])
+    for step in iter_fetch_steps():
+        input_path = debug_dir / f"{step.step_key}.json"
+        args.extend([step.merge_arg, str(input_path)])
     if verbose:
         args.append("--verbose")
     return StepSpec(
@@ -483,7 +469,7 @@ def build_pipeline_meta(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "status": overall_status,
         "elapsed_s": round(time.monotonic() - started_at, 3),
-        "cooldown_s": {key: runtime.get("fetch", {}).get(key, {}).get("cooldown_s", 0) for key, _, _ in FETCH_STEPS},
+        "cooldown_s": {step.step_key: runtime.get("fetch", {}).get(step.step_key, {}).get("cooldown_s", 0) for step in ALL_SOURCE_STEPS},
         "step_summaries": step_summaries,
         "hotspots_output": outputs.get("hotspots_output"),
         "markdown_output": outputs.get("markdown_output"),
@@ -537,7 +523,7 @@ def main() -> int:
                                          runtime)
     active_fetch_specs = [spec for spec in fetch_specs if spec.step_key not in skipped]
 
-    logger.info("🚀 Starting pipeline: %d/%d sources, %sh window", len(active_fetch_specs), len(FETCH_STEPS), args.hours)
+    logger.info("🚀 Starting pipeline: %d/%d sources, %sh window", len(active_fetch_specs), len(ALL_SOURCE_STEPS), args.hours)
     step_summaries, outputs, fetch_elapsed_s = run_fetch_phase(logger, fetch_specs, skipped)
     logger.info("📡 Fetch phase done in %s", format_elapsed(fetch_elapsed_s))
 

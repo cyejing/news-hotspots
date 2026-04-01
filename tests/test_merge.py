@@ -59,6 +59,18 @@ class TestMergeSources(unittest.TestCase):
         self.assertEqual([item["title"] for item in grouped["rss"]], ["B", "A"])
         self.assertEqual(grouped["twitter"][0]["title"], "C")
 
+    def test_build_input_stats_uses_registry_order(self):
+        payloads = {
+            "rss": {"articles": [{}]},
+            "twitter": {"articles": [{}, {}]},
+            "github_trending": {"articles": [{}]},
+        }
+        stats = merge_sources.build_input_stats(payloads)
+        self.assertEqual(list(stats["source_type_distribution"].keys()), list(merge_sources.STEP_KEYS))
+        self.assertEqual(stats["source_type_distribution"]["rss"], 1)
+        self.assertEqual(stats["source_type_distribution"]["twitter"], 2)
+        self.assertEqual(stats["source_type_distribution"]["github_trending"], 1)
+
     def test_main_merges_standardized_articles_only(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

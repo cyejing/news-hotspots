@@ -37,9 +37,12 @@ from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 try:
+    from step_registry import ALL_SOURCE_STEPS, STEP_KEYS
     from rapidfuzz import fuzz
 except ImportError:  # pragma: no cover - defensive fallback
     fuzz = None
+    sys.path.append(str(Path(__file__).parent))
+    from step_registry import ALL_SOURCE_STEPS, STEP_KEYS
 
 
 SCORING_CONFIG = {
@@ -854,21 +857,6 @@ def group_by_source_types(articles: List[Dict[str, Any]]) -> Dict[str, List[Dict
     return source_groups
 
 
-STEP_INPUT_ORDER = (
-    "rss",
-    "twitter",
-    "google",
-    "github",
-    "github_trending",
-    "reddit",
-    "api",
-    "v2ex",
-    "zhihu",
-    "weibo",
-    "toutiao",
-)
-
-
 def load_articles_payload(file_path: Optional[Path], source_type: str) -> Dict[str, Any]:
     payload = load_source_data(file_path)
     articles = payload.get("articles", [])
@@ -890,23 +878,14 @@ def load_articles_payload(file_path: Optional[Path], source_type: str) -> Dict[s
 
 def load_input_payloads(args: argparse.Namespace) -> Dict[str, Dict[str, Any]]:
     return {
-        "rss": load_articles_payload(args.rss, "rss"),
-        "twitter": load_articles_payload(args.twitter, "twitter"),
-        "google": load_articles_payload(args.google, "google"),
-        "github": load_articles_payload(args.github, "github"),
-        "github_trending": load_articles_payload(args.github_trending, "github_trending"),
-        "reddit": load_articles_payload(args.reddit, "reddit"),
-        "api": load_articles_payload(args.api, "api"),
-        "v2ex": load_articles_payload(args.v2ex, "v2ex"),
-        "zhihu": load_articles_payload(args.zhihu, "zhihu"),
-        "weibo": load_articles_payload(args.weibo, "weibo"),
-        "toutiao": load_articles_payload(args.toutiao, "toutiao"),
+        step.step_key: load_articles_payload(getattr(args, step.step_key), step.source_type)
+        for step in ALL_SOURCE_STEPS
     }
 
 
 def collect_articles(payloads: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     all_articles: List[Dict[str, Any]] = []
-    for step_key in STEP_INPUT_ORDER:
+    for step_key in STEP_KEYS:
         all_articles.extend(
             article.copy()
             for article in payloads.get(step_key, {}).get("articles", [])
@@ -918,7 +897,7 @@ def collect_articles(payloads: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]
 def build_input_stats(payloads: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     distribution = {
         step_key: len(payloads.get(step_key, {}).get("articles", []))
-        for step_key in STEP_INPUT_ORDER
+        for step_key in STEP_KEYS
     }
     return {
         "total_articles": sum(distribution.values()),
@@ -1007,17 +986,8 @@ def parse_args() -> argparse.Namespace:
         description="Merge standardized fetch outputs with scoring and deduplication.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--rss", type=Path, help="RSS fetch results JSON file")
-    parser.add_argument("--twitter", type=Path, help="Twitter fetch results JSON file")
-    parser.add_argument("--google", type=Path, help="Google News results JSON file")
-    parser.add_argument("--github", type=Path, help="GitHub releases results JSON file")
-    parser.add_argument("--github-trending", dest="github_trending", type=Path, help="GitHub trending results JSON file")
-    parser.add_argument("--reddit", type=Path, help="Reddit posts results JSON file")
-    parser.add_argument("--api", type=Path, help="API sources results JSON file")
-    parser.add_argument("--v2ex", type=Path, help="V2EX hot topics results JSON file")
-    parser.add_argument("--zhihu", type=Path, help="Zhihu hot topics results JSON file")
-    parser.add_argument("--weibo", type=Path, help="Weibo hot topics results JSON file")
-    parser.add_argument("--toutiao", type=Path, help="Toutiao hot topics results JSON file")
+    for step in ALL_SOURCE_STEPS:
+        parser.add_argument(step.merge_arg, dest=step.step_key, type=Path, help=f"{step.display_name} fetch results JSON file")
     parser.add_argument("--output", "-o", type=Path, help="Output JSON path (default: auto-generated temp file)")
     parser.add_argument("--archive", dest="archive_dir", type=Path, help="Archive directory for previous hotspots scoring history")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
