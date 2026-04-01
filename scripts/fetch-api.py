@@ -398,6 +398,7 @@ def main() -> int:
     try:
         default_limit = int(runtime.get("fetch", {}).get("api", {}).get("limit", 15) or 15)
         effective_limit = args.limit if args.limit is not None else default_limit
+        step_started_at = time.monotonic()
         sources = [
             source for source in load_api_sources(args.defaults, effective_config_dir)
             if source.get("enabled", True)
@@ -438,7 +439,7 @@ def main() -> int:
         meta = build_step_meta(
             step_key="api",
             status="ok" if ok_count == len(results) and total_articles > 0 else ("partial" if ok_count > 0 and total_articles > 0 else "error"),
-            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in results),
+            elapsed_s=time.monotonic() - step_started_at,
             items=total_articles,
             calls_total=len(results),
             calls_ok=ok_count,

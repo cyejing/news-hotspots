@@ -375,6 +375,7 @@ def main() -> int:
         sources = load_sources(args.defaults, effective_config_dir)
         topics = load_merged_topics(args.defaults, effective_config_dir)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=args.hours)
+        step_started_at = time.monotonic()
         logger.info("Fetching %d Twitter sources and %d topic query groups sequentially", len(sources), len(topics))
         logger.info("Twitter bb-browser cooldown: %.1fs", COOLDOWN_SECONDS)
 
@@ -406,7 +407,7 @@ def main() -> int:
         meta = build_step_meta(
             step_key="twitter",
             status="ok" if ok_calls == total_calls and total_articles > 0 else ("partial" if ok_calls > 0 and total_articles > 0 else "error"),
-            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in [*source_results, *topic_results]),
+            elapsed_s=time.monotonic() - step_started_at,
             items=total_articles,
             calls_total=total_calls,
             calls_ok=ok_calls,

@@ -655,6 +655,7 @@ def main():
     
     try:
         cutoff = datetime.now(timezone.utc) - timedelta(hours=args.hours)
+        step_started_at = time.monotonic()
         
         sources = load_sources(args.defaults, effective_config_dir)
         
@@ -710,7 +711,7 @@ def main():
         meta = build_step_meta(
             step_key="rss",
             status="ok" if ok_count == len(results) and total_articles > 0 else ("partial" if ok_count > 0 and total_articles > 0 else "error"),
-            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in results),
+            elapsed_s=time.monotonic() - step_started_at,
             items=total_articles,
             calls_total=len(results),
             calls_ok=ok_count,

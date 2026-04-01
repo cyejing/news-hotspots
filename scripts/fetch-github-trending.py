@@ -315,6 +315,7 @@ def main() -> int:
     min_stars = args.min_stars if args.min_stars is not None else int(fetch_config.get("min_stars", 50) or 50)
     per_topic = args.per_topic if args.per_topic is not None else int(fetch_config.get("per_topic", 15) or 15)
     github_token = resolve_github_token()
+    step_started_at = time.monotonic()
     trending_result = fetch_trending_repos(
         args.hours, github_token, min_stars, per_topic,
         defaults_dir=args.defaults,
@@ -349,7 +350,7 @@ def main() -> int:
     meta = build_step_meta(
         step_key="github_trending",
         status="ok" if trending_result["queries_ok"] == trending_result["queries_total"] and len(repos) > 0 else ("partial" if trending_result["queries_ok"] > 0 and len(repos) > 0 else "error"),
-        elapsed_s=0.0,
+        elapsed_s=time.monotonic() - step_started_at,
         items=len(repos),
         calls_total=trending_result["queries_total"],
         calls_ok=trending_result["queries_ok"],

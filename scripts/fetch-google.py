@@ -219,6 +219,7 @@ def main() -> int:
 
     try:
         topics = load_merged_topics(args.defaults, effective_config_dir)
+        step_started_at = time.monotonic()
         logger.info("Fetching Google News for %d topics sequentially", len(topics))
         logger.info("Google bb-browser cooldown: %.1fs", COOLDOWN_SECONDS)
         topic_results = [fetch_topic(topic, logger) for topic in topics if topic.get("search", {}).get("google_queries")]
@@ -237,7 +238,7 @@ def main() -> int:
         meta = build_step_meta(
             step_key="google",
             status="ok" if ok_queries == total_queries and total_articles > 0 else ("partial" if ok_queries > 0 and total_articles > 0 else "error"),
-            elapsed_s=sum(float(result.get("elapsed_s", 0) or 0) for result in topic_results),
+            elapsed_s=time.monotonic() - step_started_at,
             items=total_articles,
             calls_total=total_queries,
             calls_ok=ok_queries,
