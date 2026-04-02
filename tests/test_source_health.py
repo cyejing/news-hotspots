@@ -94,8 +94,8 @@ class TestSourceHealth(unittest.TestCase):
         meta = {
             "pipeline_version": "2.0.0",
             "overall_status": "ok",
-            "total_elapsed_s": 120.0,
-            "fetch_elapsed_s": 119.0,
+            "timing_s": {"active": 100.0, "total": 120.0},
+            "fetch_timing_s": {"active": 99.0, "total": 119.0},
             "items": 42,
             "call_stats": {"kind": "steps", "total_calls": 4, "ok_calls": 3, "failed_calls": 0},
             "steps": [
@@ -118,7 +118,7 @@ class TestSourceHealth(unittest.TestCase):
             "step_key": "rss",
             "name": "RSS",
             "status": "ok",
-            "elapsed_s": 12.5,
+            "timing_s": {"active": 12.5, "total": 12.5},
             "items": 20,
             "call_stats": {"kind": "sources", "total_calls": 5, "ok_calls": 4, "failed_calls": 1},
             "details": {
@@ -141,7 +141,7 @@ class TestSourceHealth(unittest.TestCase):
             "step_key": "twitter",
             "name": "Twitter",
             "status": "pending",
-            "elapsed_s": 0,
+            "timing_s": {"active": 0, "total": 0},
             "items": 0,
             "call_stats": {"kind": "sources", "total_calls": 0, "ok_calls": 0, "failed_calls": 0},
             "failed_items": [],
@@ -157,7 +157,7 @@ class TestSourceHealth(unittest.TestCase):
             "step_key": "merge-sources",
             "name": "Merge",
             "status": "ok",
-            "elapsed_s": 3.2,
+            "timing_s": {"active": 3.2, "total": 3.2},
             "items": 90,
             "call_stats": {"kind": "merge", "total_calls": 1, "ok_calls": 1, "failed_calls": 0},
             "details": {
@@ -176,10 +176,10 @@ class TestSourceHealth(unittest.TestCase):
             "step_key": "twitter",
             "name": "Twitter",
             "status": "error",
-            "elapsed_s": 3.2,
+            "timing_s": {"active": 3.2, "total": 3.2},
             "items": 0,
             "call_stats": {"kind": "sources", "total_calls": 1, "ok_calls": 0, "failed_calls": 1},
-            "failed_items": [{"source_id": "simon-twitter", "error": "HTTP 429", "elapsed_s": 2.1}],
+            "failed_items": [{"source_id": "simon-twitter", "error": "HTTP 429", "timing_s": {"active": 2.1, "total": 2.1}}],
             "details": {},
         }
 
@@ -187,7 +187,7 @@ class TestSourceHealth(unittest.TestCase):
 
         self.assertEqual(diagnostic.failed_items[0]["source_id"], "simon-twitter")
         self.assertEqual(diagnostic.failed_items[0]["error"], "HTTP 429")
-        self.assertEqual(diagnostic.failed_items[0]["elapsed_s"], 2.1)
+        self.assertEqual(diagnostic.failed_items[0]["timing_s"]["active"], 2.1)
 
     def test_build_history_rows_keeps_latest_issue_summary(self):
         now = 1_800_000_000

@@ -99,8 +99,6 @@ class TestFetchGitHub(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["request_traces"][0]["attempt"], 2)
-        self.assertEqual(result["request_traces"][0]["elapsed_s"], 1.7)
-        self.assertEqual(result["request_traces"][0]["total_elapsed_s"], 2.5)
         self.assertEqual(result["request_traces"][0]["timing_s"]["active"], 1.7)
         self.assertEqual(result["request_traces"][0]["timing_s"]["total"], 2.5)
         self.assertEqual(result["articles"][0]["source_name"], "Example Repo")

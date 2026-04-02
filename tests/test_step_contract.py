@@ -28,19 +28,22 @@ class TestStepContract(unittest.TestCase):
         meta = step_contract.build_step_meta(
             step_key="twitter",
             status="partial",
-            elapsed_s=8.0,
+            elapsed_active_s=8.0,
+            elapsed_total_s=10.0,
             items=2,
             calls_total=2,
             calls_ok=1,
             request_traces=[
-                {"source_id": "sama-twitter", "target": "@sama", "elapsed_s": 2.5, "status": "ok", "source_type": "twitter", "method": "CLI", "backend": "bb-browser", "adapter": "twitter/tweets"},
-                {"source_id": "openai-twitter", "target": "@openai", "elapsed_s": 6.2, "status": "error", "source_type": "twitter", "method": "CLI", "attempt": 2, "backend": "bb-browser", "adapter": "twitter/tweets", "error": "boom"},
+                {"source_id": "sama-twitter", "target": "@sama", "timing_s": {"active": 2.5, "total": 2.5}, "status": "ok", "source_type": "twitter", "method": "CLI", "backend": "bb-browser", "adapter": "twitter/tweets"},
+                {"source_id": "openai-twitter", "target": "@openai", "timing_s": {"active": 6.2, "total": 7.0}, "status": "error", "source_type": "twitter", "method": "CLI", "attempt": 2, "backend": "bb-browser", "adapter": "twitter/tweets", "error": "boom"},
             ],
         )
 
         self.assertIn("request_timing_summary", meta)
         self.assertNotIn("timing_summary", meta)
         self.assertEqual(meta["request_timing_summary"]["requests_total"], 2)
+        self.assertEqual(meta["timing_s"]["active"], 8.0)
+        self.assertEqual(meta["timing_s"]["total"], 10.0)
         self.assertEqual(meta["failed_items"][0]["source_id"], "openai-twitter")
         self.assertEqual(meta["failed_items"][0]["attempt"], 2)
         self.assertEqual(meta["slow_requests"]["total_count"], 1)

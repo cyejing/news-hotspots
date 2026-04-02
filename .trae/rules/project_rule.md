@@ -139,6 +139,14 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
 
 **废弃字段**：不要把 `count` 恢复成 pipeline / meta / 日志的主语义
 
+### 契约演进规则
+
+- 不保留旧字段、旧 payload 形状或旧行为的兼容层
+- 契约变更时，必须在同一次修改里同步更新生产端、消费端、测试和文档
+- 同一语义只保留一个规范字段，不要输出重复别名
+- 耗时字段统一使用 `timing_s.active` 和 `timing_s.total`
+- 日志字段统一使用 `logs`，不要并行维护多套日志 tail 结构
+
 ---
 
 ## Topic 与排序规则

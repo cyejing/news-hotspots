@@ -94,8 +94,6 @@ def build_request_trace(request_id: Any, target: Any = None, elapsed_s: Any = No
         "source_id": str(extra.pop("source_id", request_id or target or "request")).strip() or "request",
         "target": str(target or request_id or "").strip(),
         "status": str(status or "ok"),
-        "elapsed_s": timing["active"],
-        "total_elapsed_s": timing["total"],
         "timing_s": timing,
         "attempt": max(1, int(extra.pop("attempt", 1) or 1)),
         "method": str(extra.pop("method", "") or "").strip(),
@@ -140,27 +138,19 @@ def timing_active(record: Dict[str, Any]) -> float:
     timing = record.get("timing_s")
     if isinstance(timing, dict):
         try:
-            return round(float(timing.get("active", record.get("elapsed_s", 0)) or 0), 3)
+            return round(float(timing.get("active", 0) or 0), 3)
         except (TypeError, ValueError):
-            pass
-    try:
-        return round(float(record.get("elapsed_s", 0) or 0), 3)
-    except (TypeError, ValueError):
-        return 0.0
+            return 0.0
+    return 0.0
 
 
 def timing_total(record: Dict[str, Any]) -> float:
     timing = record.get("timing_s")
     if isinstance(timing, dict):
         try:
-            return round(float(timing.get("total", timing.get("active", record.get("total_elapsed_s", record.get("elapsed_s", 0)))) or 0), 3)
+            return round(float(timing.get("total", timing.get("active", 0)) or 0), 3)
         except (TypeError, ValueError):
-            pass
-    for key in ("total_elapsed_s", "elapsed_s"):
-        try:
-            return round(float(record.get(key, 0) or 0), 3)
-        except (TypeError, ValueError):
-            continue
+            return 0.0
     return 0.0
 
 
@@ -181,8 +171,8 @@ def _quantile(sorted_values: List[float], q: float) -> float:
 
 def _normalize_request_record(trace: Dict[str, Any], default_source_type: str = "") -> Dict[str, Any]:
     timing = normalize_timing(
-        elapsed_active_s=(trace.get("timing_s", {}) if isinstance(trace.get("timing_s"), dict) else {}).get("active", trace.get("elapsed_s", 0)),
-        elapsed_total_s=(trace.get("timing_s", {}) if isinstance(trace.get("timing_s"), dict) else {}).get("total", trace.get("total_elapsed_s", trace.get("elapsed_s", 0))),
+        elapsed_active_s=(trace.get("timing_s", {}) if isinstance(trace.get("timing_s"), dict) else {}).get("active"),
+        elapsed_total_s=(trace.get("timing_s", {}) if isinstance(trace.get("timing_s"), dict) else {}).get("total"),
     )
     payload = build_request_trace(
         trace.get("source_id") or trace.get("id") or trace.get("target") or "request",
@@ -328,7 +318,6 @@ def build_step_meta(
     *,
     step_key: str,
     status: str,
-    elapsed_s: Optional[float] = None,
     elapsed_active_s: Optional[float] = None,
     elapsed_total_s: Optional[float] = None,
     items: int,
@@ -340,14 +329,12 @@ def build_step_meta(
     traces = [_normalize_request_record(trace, default_source_type=step_key) for trace in request_traces if isinstance(trace, dict)]
     derived_failed_items = build_failed_items(traces, default_source_type=step_key)
     timing = normalize_timing(
-        elapsed_active_s=elapsed_active_s if elapsed_active_s is not None else elapsed_s,
-        elapsed_total_s=elapsed_total_s if elapsed_total_s is not None else elapsed_s,
+        elapsed_active_s=elapsed_active_s,
+        elapsed_total_s=elapsed_total_s,
     )
     return {
         "step_key": step_key,
         "status": status,
-        "elapsed_s": timing["active"],
-        "total_elapsed_s": timing["total"],
         "timing_s": timing,
         "items": int(items),
         "calls_total": int(calls_total),

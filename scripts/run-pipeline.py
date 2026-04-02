@@ -132,6 +132,14 @@ def format_elapsed(elapsed_s: Any) -> str:
         return "0.0s"
 
 
+def format_timing_summary(active_s: Any, total_s: Any) -> str:
+    active = format_elapsed(active_s)
+    total = format_elapsed(total_s)
+    if active == total:
+        return total
+    return f"active {active}, total {total}"
+
+
 def summarize_items(summary: Dict[str, Any]) -> int:
     try:
         return int(summary.get("items", 0) or 0)
@@ -189,10 +197,10 @@ def normalize_meta_timing(meta_payload: Dict[str, Any], default_active: float, d
     timing = meta_payload.get("timing_s")
     if isinstance(timing, dict):
         return normalize_timing(
-            timing.get("active", meta_payload.get("elapsed_s", default_active)),
-            timing.get("total", meta_payload.get("total_elapsed_s", default_total)),
+            timing.get("active", default_active),
+            timing.get("total", default_total),
         )
-    return normalize_timing(meta_payload.get("elapsed_s", default_active), meta_payload.get("total_elapsed_s", default_total))
+    return normalize_timing(default_active, default_total)
 
 
 def parse_output_markers(lines: Sequence[str]) -> Dict[str, str]:
@@ -429,8 +437,6 @@ def build_simple_meta(
     payload: Dict[str, Any] = {
         "step_key": step_key,
         "status": result.status,
-        "elapsed_s": timing["active"],
-        "total_elapsed_s": timing["total"],
         "timing_s": timing,
         "items": items,
         "calls_total": calls_total,
@@ -463,8 +469,6 @@ def summarize_fetch_step(spec: StepSpec, result: ProcessResult) -> Dict[str, Any
     if meta_payload:
         meta_payload.setdefault("step_key", spec.step_key)
         timing = normalize_meta_timing(meta_payload, result.elapsed_s, result.elapsed_s)
-        meta_payload["elapsed_s"] = timing["active"]
-        meta_payload["total_elapsed_s"] = timing["total"]
         meta_payload["timing_s"] = timing
         meta_payload.setdefault("timeout_s", result.timeout_s)
         meta_payload.setdefault("status", result.status)
@@ -524,7 +528,10 @@ def run_fetch_phase(
                 status_icon(summary.get("status", result.status)),
                 spec.name,
                 summarize_items(summary),
-                format_elapsed(summary.get("elapsed_s", result.elapsed_s)),
+                format_timing_summary(
+                    (summary.get("timing_s", {}) if isinstance(summary.get("timing_s"), dict) else {}).get("active", result.elapsed_s),
+                    (summary.get("timing_s", {}) if isinstance(summary.get("timing_s"), dict) else {}).get("total", result.elapsed_s),
+                ),
             )
 
     return step_summaries, outputs, round(time.monotonic() - started_at, 3)
@@ -572,7 +579,7 @@ def build_pipeline_meta(
         summary = step_summaries.get(step.step_key)
         if not isinstance(summary, dict):
             continue
-        step_timing = normalize_meta_timing(summary, float(summary.get("elapsed_s", 0) or 0), float(summary.get("total_elapsed_s", summary.get("elapsed_s", 0)) or 0))
+        step_timing = normalize_meta_timing(summary, 0.0, 0.0)
         fetch_active_s += step_timing["active"]
         failed_items = summary.get("failed_items", [])
         slow_requests = summary.get("slow_requests", {})
@@ -580,8 +587,6 @@ def build_pipeline_meta(
             "status": summary.get("status", "error"),
             "fully_successful": summary.get("status") == "ok",
             "items": int(summary.get("items", 0) or 0),
-            "elapsed_s": step_timing["active"],
-            "total_elapsed_s": step_timing["total"],
             "timing_s": step_timing,
             "calls_total": int(summary.get("calls_total", 0) or 0),
             "calls_ok": int(summary.get("calls_ok", 0) or 0),
@@ -597,7 +602,7 @@ def build_pipeline_meta(
             "step_key": step_key,
             "name": summary.get("name", step_key),
             "status": summary.get("status", "error"),
-            "timing_s": normalize_meta_timing(summary, float(summary.get("elapsed_s", 0) or 0), float(summary.get("total_elapsed_s", summary.get("elapsed_s", 0)) or 0)),
+            "timing_s": normalize_meta_timing(summary, 0.0, 0.0),
             "items": int(summary.get("items", 0) or 0),
             "logs": summary.get("logs", {}),
         }
@@ -614,12 +619,8 @@ def build_pipeline_meta(
         "generated_at": local_now().isoformat(),
         "status": overall_status,
         "overall_status": overall_status,
-        "elapsed_s": pipeline_timing["active"],
-        "total_elapsed_s": pipeline_timing["total"],
         "timing_s": pipeline_timing,
         "fetch_active_elapsed_s": fetch_timing["active"],
-        "fetch_elapsed_s": fetch_timing["total"],
-        "fetch_total_elapsed_s": fetch_timing["total"],
         "fetch_timing_s": fetch_timing,
         "items": total_items,
         "call_stats": {
@@ -702,7 +703,10 @@ def main() -> int:
         "  %s Merge: %d items (%s)",
         status_icon(merge_summary.get("status", merge_result.status)),
         summarize_items(merge_summary),
-        format_elapsed(merge_summary.get("elapsed_s", merge_result.elapsed_s)),
+        format_timing_summary(
+            (merge_summary.get("timing_s", {}) if isinstance(merge_summary.get("timing_s"), dict) else {}).get("active", merge_result.elapsed_s),
+            (merge_summary.get("timing_s", {}) if isinstance(merge_summary.get("timing_s"), dict) else {}).get("total", merge_result.elapsed_s),
+        ),
     )
 
     hotspots_spec = build_hotspots_step_spec(debug_dir, archive_root, args.mode, top_n, runtime)
@@ -736,7 +740,10 @@ def main() -> int:
         "  %s Hotspots: %d items (%s)",
         status_icon(hotspots_summary.get("status", hotspots_result.status)),
         summarize_items(hotspots_summary),
-        format_elapsed(hotspots_summary.get("elapsed_s", hotspots_result.elapsed_s)),
+        format_timing_summary(
+            (hotspots_summary.get("timing_s", {}) if isinstance(hotspots_summary.get("timing_s"), dict) else {}).get("active", hotspots_result.elapsed_s),
+            (hotspots_summary.get("timing_s", {}) if isinstance(hotspots_summary.get("timing_s"), dict) else {}).get("total", hotspots_result.elapsed_s),
+        ),
     )
 
     pipeline_meta = build_pipeline_meta(

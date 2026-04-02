@@ -226,8 +226,6 @@ class TestFeedParsing(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["request_traces"][0]["attempt"], 2)
-        self.assertEqual(result["request_traces"][0]["elapsed_s"], 1.4)
-        self.assertEqual(result["request_traces"][0]["total_elapsed_s"], 2.0)
         self.assertEqual(result["request_traces"][0]["timing_s"]["active"], 1.4)
         self.assertEqual(result["request_traces"][0]["timing_s"]["total"], 2.0)
 

@@ -221,7 +221,7 @@ def build_failed_items(items: Any) -> List[Dict[str, Any]]:
                 "backend": str(item.get("backend", "")).strip(),
                 "adapter": str(item.get("adapter", "")).strip(),
             },
-            **({"elapsed_s": float(item.get("elapsed_s", 0) or 0)} if item.get("elapsed_s") is not None else {}),
+            **({"timing_s": item.get("timing_s")} if isinstance(item.get("timing_s"), dict) else {}),
         )
         for item in (items or [])
         if isinstance(item, dict) and trim_error_text(item.get("error"))
@@ -259,8 +259,8 @@ def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = 
             if isinstance(summary, dict)
             for item in (summary.get("failed_items", []) if isinstance(summary.get("failed_items"), list) else [])
         ])
-        elapsed_s = float(meta.get("timing_s", {}).get("total", meta.get("total_elapsed_s", meta.get("elapsed_s", 0))) or 0)
-        fetch_elapsed_s = float(meta.get("fetch_timing_s", {}).get("total", meta.get("fetch_total_elapsed_s", meta.get("fetch_elapsed_s", 0))) or 0)
+        elapsed_s = float(meta.get("timing_s", {}).get("total", 0) or 0)
+        fetch_elapsed_s = float(meta.get("fetch_timing_s", {}).get("total", 0) or 0)
     else:
         steps = [step for step in meta.get("steps", []) if isinstance(step, dict)]
         failed_items = build_failed_items(meta.get("failed_items", []))
@@ -269,8 +269,8 @@ def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = 
         merge_status = meta.get("merge", {}).get("status", "error") if isinstance(meta.get("merge"), dict) else "error"
         hotspots_status = meta.get("hotspots_status", "error")
         overall_status = meta.get("overall_status", "error")
-        elapsed_s = float(meta.get("total_elapsed_s", meta.get("elapsed_s", 0)) or 0)
-        fetch_elapsed_s = float(meta.get("fetch_total_elapsed_s", meta.get("fetch_elapsed_s", 0)) or 0)
+        elapsed_s = float(meta.get("timing_s", {}).get("total", 0) or 0)
+        fetch_elapsed_s = float(meta.get("fetch_timing_s", {}).get("total", 0) or 0)
     failed_steps = [step.get("name", "unknown") for step in steps if step.get("status") in {"error", "timeout"}]
     skipped_steps = [step.get("name", "unknown") for step in steps if step.get("status") == "skipped"]
 
@@ -351,7 +351,7 @@ def compute_step_state(meta: Dict[str, Any], observed_ts: Optional[float] = None
         name=meta.get("name", meta.get("step_key", "unknown")),
         status=status,
         state=state,
-        elapsed_s=float(meta.get("timing_s", {}).get("total", meta.get("total_elapsed_s", meta.get("elapsed_s", 0))) or 0),
+        elapsed_s=float(meta.get("timing_s", {}).get("total", 0) or 0),
         items=items,
         call_stats={
             "kind": str(call_stats.get("kind", meta.get("step_key", "step"))),

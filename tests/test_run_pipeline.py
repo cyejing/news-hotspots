@@ -161,8 +161,8 @@ class TestRunPipeline(unittest.TestCase):
         meta = run_pipeline.build_pipeline_meta(
             runtime={"fetch": {}, "pipeline": {}},
             step_summaries={
-                "rss": {"status": "ok", "items": 3, "elapsed_s": 4.2, "calls_total": 2, "calls_ok": 2, "failed_calls": 0, "failed_items": [], "slow_requests": {"total_count": 1}},
-                "google": {"status": "error", "items": 0, "elapsed_s": 6.1, "calls_total": 2, "calls_ok": 0, "failed_calls": 2, "failed_items": [{"source_id": "ai", "error": "boom"}], "slow_requests": {"total_count": 2}},
+                "rss": {"status": "ok", "items": 3, "timing_s": {"active": 4.2, "total": 4.2}, "calls_total": 2, "calls_ok": 2, "failed_calls": 0, "failed_items": [], "slow_requests": {"total_count": 1}},
+                "google": {"status": "error", "items": 0, "timing_s": {"active": 6.1, "total": 8.0}, "calls_total": 2, "calls_ok": 0, "failed_calls": 2, "failed_items": [{"source_id": "ai", "error": "boom"}], "slow_requests": {"total_count": 2}},
             },
             outputs={},
             archive_root=Path("/tmp/archive"),
@@ -172,11 +172,13 @@ class TestRunPipeline(unittest.TestCase):
         )
         self.assertEqual(meta["status"], "partial")
         self.assertEqual(meta["cleaned_archives"], 1)
-        self.assertEqual(meta["fetch_elapsed_s"], 12.3)
+        self.assertEqual(meta["fetch_timing_s"]["total"], 12.3)
+        self.assertEqual(meta["fetch_active_elapsed_s"], 10.3)
         rss = meta["source_type_overview"]["rss"]
         google = meta["source_type_overview"]["google"]
         self.assertTrue(rss["fully_successful"])
         self.assertEqual(rss["slow_requests_count"], 1)
+        self.assertEqual(rss["timing_s"]["active"], 4.2)
         self.assertFalse(google["fully_successful"])
         self.assertEqual(google["failed_items_count"], 1)
 

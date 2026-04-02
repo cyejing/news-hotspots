@@ -49,7 +49,8 @@ class TestFetchGoogle(unittest.TestCase):
             meta = fetch_google.build_step_meta(
                 step_key="google",
                 status="error",
-                elapsed_s=1.2,
+                elapsed_active_s=1.2,
+                elapsed_total_s=1.2,
                 items=0,
                 calls_total=2,
                 calls_ok=0,
@@ -58,7 +59,7 @@ class TestFetchGoogle(unittest.TestCase):
                     {
                         "source_id": "q1",
                         "target": "openai",
-                        "elapsed_s": 1.2,
+                        "timing_s": {"active": 1.2, "total": 1.2},
                         "status": "error",
                         "source_type": "google",
                         "method": "CLI",
