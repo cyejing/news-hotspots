@@ -108,9 +108,9 @@
       "type": "rss",
       "name": "VentureBeat AI",
       "url": "https://venturebeat.com/ai/feed/",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "前沿 AI 研究",
+      "note": "【已禁用】RSS源返回404，网站可能已迁移或关闭",
       "topic": "ai-frontier"
     },
     {

@@ -31,7 +31,9 @@ import sys
 import tempfile
 import unicodedata
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 from urllib.parse import urlparse
@@ -207,6 +209,7 @@ def _fallback_ratio(text_a: str, text_b: str) -> float:
     return SequenceMatcher(None, text_a, text_b).ratio()
 
 
+@lru_cache(maxsize=10000)
 def rapidfuzz_ratio(kind: str, text_a: str, text_b: str) -> float:
     if not text_a or not text_b:
         return 0.0
@@ -719,6 +722,13 @@ def build_output_scoring_config() -> Dict[str, Any]:
     }
 
 
+def _compute_pair_similarity(args: Tuple[int, int, Dict[str, Any], Dict[str, Any]]) -> Tuple[Tuple[int, int], float]:
+    """Worker function for parallel similarity computation."""
+    (i, j, features_i, features_j) = args
+    similarity = calculate_similarity_from_features(features_i, features_j)
+    return ((i, j), similarity)
+
+
 def apply_similarity_scoring(articles: List[Dict[str, Any]], previous_titles: Iterable[str]) -> Dict[Tuple[int, int], float]:
     for article in articles:
         article["_similarity_features"] = build_similarity_features(article)
@@ -726,13 +736,30 @@ def apply_similarity_scoring(articles: List[Dict[str, Any]], previous_titles: It
     assign_fetch_rank_scores(articles)
     apply_history_scores(articles, previous_titles)
 
-    pair_similarities: Dict[Tuple[int, int], float] = {}
+    # 收集所有候选对
+    candidate_pairs = []
     for i, j in build_candidate_pairs(articles):
         features_i = articles[i]["_similarity_features"]
         features_j = articles[j]["_similarity_features"]
-        if not should_compare(features_i, features_j):
-            continue
-        pair_similarities[(i, j)] = calculate_similarity_from_features(features_i, features_j)
+        if should_compare(features_i, features_j):
+            candidate_pairs.append((i, j, features_i, features_j))
+
+    # 并行计算相似度
+    pair_similarities: Dict[Tuple[int, int], float] = {}
+    max_workers = min(4, (os.cpu_count() or 2))
+    
+    if len(candidate_pairs) > 100:
+        # 大数据量用并行
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_compute_pair_similarity, pair) for pair in candidate_pairs]
+            for future in as_completed(futures):
+                (i, j), sim = future.result()
+                pair_similarities[(i, j)] = sim
+    else:
+        # 小数据量直接串行（避免线程开销）
+        for pair in candidate_pairs:
+            (i, j), sim = _compute_pair_similarity(pair)
+            pair_similarities[(i, j)] = sim
 
     apply_cross_source_hot_scores(articles, pair_similarities)
     recalculate_final_scores(articles)

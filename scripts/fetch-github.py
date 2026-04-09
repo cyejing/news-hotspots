@@ -471,6 +471,8 @@ def main():
     effective_config_dir = args.config if args.config and args.config.exists() else None
     apply_runtime_config(args.defaults, effective_config_dir)
 
+    started_at = time.monotonic()
+
     # Resume support: skip if output exists, is valid JSON, and < 1 hour old
     if args.output and args.output.exists() and not args.force:
         try:
@@ -546,7 +548,7 @@ def main():
             step_key="github",
             status="ok" if ok_count == len(results) and total_articles > 0 else ("partial" if ok_count > 0 and total_articles > 0 else "error"),
             elapsed_active_s=effective_elapsed_s,
-            elapsed_total_s=time.monotonic() - step_started_at,
+            elapsed_total_s=time.monotonic() - started_at,
             items=total_articles,
             calls_total=len(results),
             calls_ok=ok_count,
