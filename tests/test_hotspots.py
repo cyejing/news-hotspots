@@ -143,6 +143,35 @@ class TestMergeHotspots(unittest.TestCase):
         self.assertEqual(items[1]["selection_debug"]["selection_order"], 1)
         self.assertEqual(items[1]["selection_debug"]["display_rank"], 2)
 
+    def test_build_hotspots_total_articles_and_source_counts_match_displayed_items(self):
+        payload = {
+            "generated": "2026-04-02T00:00:00+00:00",
+            "output_stats": {"total_articles": 4},
+            "source_types": {
+                "rss": {
+                    "count": 3,
+                    "articles": [
+                        {"title": "A", "link": "https://example.com/a", "topic": "ai-frontier", "source_type": "rss", "source_name": "RSS", "final_score": 9.0},
+                        {"title": "B", "link": "https://example.com/b", "topic": "ai-frontier", "source_type": "rss", "source_name": "RSS", "final_score": 8.0},
+                        {"title": "C", "link": "https://example.com/c", "topic": "ai-frontier", "source_type": "rss", "source_name": "RSS", "final_score": 7.0},
+                    ],
+                },
+                "twitter": {
+                    "count": 1,
+                    "articles": [
+                        {"title": "D", "link": "https://x.com/d", "topic": "ai-frontier", "source_type": "twitter", "source_name": "@d", "final_score": 8.5},
+                    ],
+                },
+            },
+        }
+
+        hotspots = merge_hotspots.build_hotspots(payload, top_n=2)
+
+        self.assertEqual(hotspots["total_articles"], 2)
+        self.assertEqual(hotspots["source_type_counts"], {"twitter": 1, "rss": 1})
+        self.assertEqual(hotspots["candidate_total_articles"], 4)
+        self.assertEqual(hotspots["candidate_source_type_counts"], {"rss": 3, "twitter": 1})
+
     def test_topic_display_title_uses_topics_json_metadata(self):
         self.assertEqual(
             merge_hotspots.topic_display_title(

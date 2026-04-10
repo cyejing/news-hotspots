@@ -253,6 +253,25 @@ class TestRunPipeline(unittest.TestCase):
         self.assertEqual(meta["call_stats"].get("partial_calls", 0), 0)
         self.assertEqual(meta["call_stats"]["failed_calls"], 1)
 
+    def test_build_pipeline_meta_uses_wall_clock_for_top_level_timing(self):
+        with patch.object(run_pipeline.time, "monotonic", return_value=112.3):
+            meta = run_pipeline.build_pipeline_meta(
+                runtime={"fetch": {}, "pipeline": {}},
+                step_summaries={
+                    "rss": {"step_key": "rss", "status": "ok", "items": 3, "timing_s": {"active": 4.2, "total": 4.2}, "calls_total": 2, "calls_ok": 2, "failed_calls": 0, "failed_items": [], "slow_requests": {"total_count": 1}},
+                    "twitter": {"step_key": "twitter", "status": "error", "items": 0, "timing_s": {"active": 6.1, "total": 8.0}, "calls_total": 2, "calls_ok": 0, "failed_calls": 2, "failed_items": [{"source_id": "x", "error": "boom"}], "slow_requests": {"total_count": 2}},
+                },
+                outputs={},
+                archive_root=Path("/tmp/archive"),
+                cleaned_archives=0,
+                started_at=100.0,
+                fetch_elapsed_s=12.3,
+            )
+        self.assertEqual(meta["timing_s"]["active"], 12.3)
+        self.assertEqual(meta["timing_s"]["total"], 12.3)
+        self.assertEqual(meta["fetch_timing_s"]["active"], 10.3)
+        self.assertEqual(meta["fetch_timing_s"]["total"], 12.3)
+
     def test_summarize_merge_step_uses_single_merge_call_semantics(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)

@@ -391,11 +391,13 @@ def build_hotspots(
     topic_metadata: Optional[Dict[str, Dict[str, str]]] = None,
 ) -> Dict[str, Any]:
     topic_entries: List[Dict[str, Any]] = []
-    source_breakdown: Dict[str, int] = {
+    candidate_source_breakdown: Dict[str, int] = {
         source_type: int(source_type_data.get("count", 0) or 0)
         for source_type, source_type_data in data.get("source_types", {}).items()
         if isinstance(source_type_data, dict)
     }
+    selected_source_breakdown: Dict[str, int] = {}
+    displayed_total = 0
     effective_seen_titles = seen_titles or set()
     effective_seen_links = seen_links or set()
     source_rank_index = build_source_rank_index(data)
@@ -420,6 +422,12 @@ def build_hotspots(
             )
             for index, article in enumerate(display_articles, start=1)
         ]
+        displayed_total += len(items)
+        for item in items:
+            source_type = str(item.get("source_type") or "").strip()
+            if not source_type:
+                continue
+            selected_source_breakdown[source_type] = selected_source_breakdown.get(source_type, 0) + 1
 
         topic_entries.append(
             {
@@ -433,8 +441,10 @@ def build_hotspots(
 
     return {
         "generated_at": data.get("generated"),
-        "total_articles": data.get("output_stats", {}).get("total_articles", 0),
-        "source_type_counts": source_breakdown,
+        "total_articles": displayed_total,
+        "source_type_counts": selected_source_breakdown,
+        "candidate_total_articles": data.get("output_stats", {}).get("total_articles", 0),
+        "candidate_source_type_counts": candidate_source_breakdown,
         "topics": topic_entries,
     }
 

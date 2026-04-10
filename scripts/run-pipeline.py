@@ -597,7 +597,8 @@ def build_pipeline_meta(
             "slow_requests_count": int(slow_requests.get("total_count", 0) or 0) if isinstance(slow_requests, dict) else 0,
         }
 
-    pipeline_timing = normalize_timing(fetch_active_s, time.monotonic() - started_at)
+    pipeline_elapsed_s = round(time.monotonic() - started_at, 3)
+    pipeline_timing = normalize_timing(pipeline_elapsed_s, pipeline_elapsed_s)
     fetch_timing = normalize_timing(fetch_active_s, fetch_elapsed_s)
     total_items = 0
     if isinstance(pipeline_step_summaries.get(HOTSPOTS_STEP_KEY), dict):
@@ -756,6 +757,8 @@ def main() -> int:
         pipeline_meta["archived_step_meta_paths"] = archived_step_meta_paths
     pipeline_meta["logs"] = pipeline_log_capture.snapshot()
     write_json(pipeline_meta_path, pipeline_meta)
+    if archived_pipeline_meta:
+        write_json(Path(archived_pipeline_meta), pipeline_meta)
 
     if outputs.get("hotspots_output") or outputs.get("markdown_output"):
         logger.info("🗂️ Archived files:")
