@@ -228,6 +228,43 @@ class TestMergeSources(unittest.TestCase):
         similarity = merge_sources.best_history_similarity(article, previous_index)
         self.assertGreaterEqual(similarity, 0.96)
 
+    def test_noise_filter_drops_tracking_promo_post_without_keyword_blacklist(self):
+        article = {
+            "title": "88VIP邀请 - https://m.tb.cn/h.ioWIQD6?tk=Dnp35UdOaHE MF168",
+            "summary": "好友喊你开通88VIP啦 2 个帖子 - 2 位参与者 阅读完整话题",
+            "link": "https://linux.do/t/topic/123",
+            "source_type": "rss",
+            "topic": "technology",
+        }
+
+        self.assertTrue(merge_sources.is_likely_promotional_noise(article))
+
+    def test_noise_filter_keeps_real_news_with_numbers(self):
+        article = {
+            "title": "Pinterest 通过自动内存重试将 Spark 的 OOM 故障减少了 96%",
+            "summary": "这篇文章介绍了生产环境容错策略和批处理系统调优方法。",
+            "link": "https://www.infoq.cn/article/zIgDwX3KbGVGPsebIv76",
+            "source_type": "rss",
+            "topic": "technology",
+        }
+
+        self.assertFalse(merge_sources.is_likely_promotional_noise(article))
+
+    def test_build_candidate_pairs_stays_within_topic(self):
+        articles = [
+            {"title": "OpenAI releases GPT-5", "link": "https://a.com/1", "topic": "ai-frontier"},
+            {"title": "OpenAI releases GPT-5", "link": "https://b.com/2", "topic": "business"},
+        ]
+        features = [merge_sources.build_similarity_features(article) for article in articles]
+
+        self.assertEqual(list(merge_sources.build_candidate_pairs(features)), [])
+
+    def test_similarity_bucket_limits_shrink_on_small_machine(self):
+        profile = merge_sources.MachineProfile(cpu_count=2, memory_gb=4.0, max_workers=1, batch_size=128)
+        limits = merge_sources.similarity_bucket_limits(profile)
+        self.assertLess(limits["max_word_bucket_size"], merge_sources.SIMILARITY_LIMITS["max_word_bucket_size"])
+        self.assertLess(limits["max_cjk_bucket_size"], merge_sources.SIMILARITY_LIMITS["max_cjk_bucket_size"])
+
     def test_deduplicate_articles_keeps_exact_duplicates_even_with_large_common_bucket(self):
         articles = [
             {

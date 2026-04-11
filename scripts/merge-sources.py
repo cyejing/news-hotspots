@@ -33,11 +33,12 @@ import time
 import unicodedata
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
-from urllib.parse import urlparse
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from urllib.parse import parse_qsl, urlparse
 
 try:
     from step_registry import ALL_SOURCE_STEPS, STEP_KEYS
@@ -107,6 +108,18 @@ SCORE_DISCUSSION_LOW = 1
 CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 NON_WORD_RE = re.compile(r"[^\w\s\u3400-\u4dbf\u4e00-\u9fff]+", re.UNICODE)
 SPACE_RE = re.compile(r"\s+")
+RAW_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+COUNT_UNIT_RE = re.compile(r"\b\d+\s*(?:posts?|participants?|comments?|replies?)\b|\d+\s*(?:个帖子|位参与者|条评论|条回复|人参与)", re.IGNORECASE)
+PROMOTION_SHAPE_RE = re.compile(r"(?:[¥￥$€£]\s*\d)|(?:\d+\s*(?:折|off))", re.IGNORECASE)
+TRACKING_PARAM_PREFIXES = ("utm_", "spm", "scm", "mc_", "ref", "refer", "aff", "share", "tk")
+
+
+@dataclass(frozen=True)
+class MachineProfile:
+    cpu_count: int
+    memory_gb: float
+    max_workers: int
+    batch_size: int
 
 
 def resolve_article_topic(article: Dict[str, Any], default: str = "") -> str:
@@ -199,6 +212,156 @@ def contains_cjk(text: str) -> bool:
     return bool(CJK_RE.search(text))
 
 
+def detect_total_memory_gb() -> float:
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        phys_pages = os.sysconf("SC_PHYS_PAGES")
+        if isinstance(page_size, int) and isinstance(phys_pages, int) and page_size > 0 and phys_pages > 0:
+            return round((page_size * phys_pages) / (1024 ** 3), 2)
+    except (AttributeError, OSError, ValueError):
+        pass
+    return 0.0
+
+
+def detect_machine_profile() -> MachineProfile:
+    cpu_count = max(1, int(os.cpu_count() or 1))
+    memory_gb = detect_total_memory_gb()
+
+    if cpu_count <= 2 or (memory_gb and memory_gb <= 4.5):
+        return MachineProfile(
+            cpu_count=cpu_count,
+            memory_gb=memory_gb,
+            max_workers=1,
+            batch_size=128,
+        )
+    if cpu_count <= 4 or (memory_gb and memory_gb <= 8.0):
+        return MachineProfile(
+            cpu_count=cpu_count,
+            memory_gb=memory_gb,
+            max_workers=min(2, cpu_count),
+            batch_size=256,
+        )
+    return MachineProfile(
+        cpu_count=cpu_count,
+        memory_gb=memory_gb,
+        max_workers=min(4, cpu_count),
+        batch_size=512,
+    )
+
+
+def similarity_bucket_limits(machine_profile: MachineProfile) -> Dict[str, int]:
+    if machine_profile.cpu_count <= 2 or (machine_profile.memory_gb and machine_profile.memory_gb <= 4.5):
+        return {
+            "max_word_bucket_size": 48,
+            "max_cjk_bucket_size": 64,
+        }
+    if machine_profile.cpu_count <= 4 or (machine_profile.memory_gb and machine_profile.memory_gb <= 8.0):
+        return {
+            "max_word_bucket_size": 80,
+            "max_cjk_bucket_size": 96,
+        }
+    return {
+        "max_word_bucket_size": SIMILARITY_LIMITS["max_word_bucket_size"],
+        "max_cjk_bucket_size": SIMILARITY_LIMITS["max_cjk_bucket_size"],
+    }
+
+
+def count_tracking_params(url: str) -> int:
+    try:
+        parsed = urlparse(url or "")
+    except Exception:
+        return 0
+    if not parsed.query:
+        return 0
+    total = 0
+    for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
+        normalized = key.strip().lower()
+        if any(normalized.startswith(prefix) for prefix in TRACKING_PARAM_PREFIXES):
+            total += 1
+    return total
+
+
+def normalize_text(value: Any) -> str:
+    return SPACE_RE.sub(" ", str(value or "").strip())
+
+
+def extract_embedded_domains(text: str) -> Set[str]:
+    domains: Set[str] = set()
+    for match in RAW_URL_RE.findall(text or ""):
+        domain = get_domain(match)
+        if domain:
+            domains.add(domain)
+    return domains
+
+
+def informative_token_count(text: str) -> int:
+    return sum(1 for token in normalize_title(text).split() if len(token) >= 2)
+
+
+def build_noise_signals(article: Dict[str, Any]) -> Dict[str, float]:
+    title = normalize_text(article.get("title"))
+    summary = normalize_text(article.get("summary") or article.get("snippet"))
+    combined_text = normalize_text(" ".join(part for part in (title, summary) if part))
+    link = str(article.get("link") or article.get("external_url") or article.get("reddit_url") or "")
+    signals: Dict[str, float] = {}
+    article_domain = get_domain(link)
+    embedded_domains = extract_embedded_domains(combined_text)
+
+    if RAW_URL_RE.search(combined_text):
+        signals["embedded_url_text"] = 1.5
+    if embedded_domains and article_domain and any(domain != article_domain for domain in embedded_domains):
+        signals["embedded_external_redirect"] = 1.5
+    if count_tracking_params(link) >= 1:
+        signals["tracking_url"] = 1.5
+    if len(COUNT_UNIT_RE.findall(combined_text)) >= 2:
+        signals["engagement_chrome"] = 1.0
+    if PROMOTION_SHAPE_RE.search(combined_text):
+        signals["promotion_shape"] = 1.5
+    if informative_token_count(title) <= 4 and len(title) <= 48:
+        signals["short_low_information_title"] = 1.0
+    return signals
+
+
+def is_likely_promotional_noise(article: Dict[str, Any]) -> bool:
+    signals = build_noise_signals(article)
+    score = sum(signals.values())
+    if score < 4.0:
+        return False
+    forum_wrapper_like = "engagement_chrome" in signals and any(
+        key in signals for key in ("embedded_url_text", "embedded_external_redirect")
+    )
+    tracked_promo_like = "tracking_url" in signals and "promotion_shape" in signals
+    compact_promo_like = "promotion_shape" in signals and "short_low_information_title" in signals and any(
+        key in signals for key in ("embedded_url_text", "embedded_external_redirect", "tracking_url")
+    )
+    return forum_wrapper_like or tracked_promo_like or compact_promo_like
+
+
+def filter_noise_articles(articles: Iterable[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    kept: List[Dict[str, Any]] = []
+    removed = 0
+    samples: List[Dict[str, Any]] = []
+    for article in articles:
+        if not isinstance(article, dict):
+            continue
+        if is_likely_promotional_noise(article):
+            removed += 1
+            if len(samples) < 5:
+                samples.append(
+                    {
+                        "title": normalize_text(article.get("title"))[:160],
+                        "link": str(article.get("link") or article.get("external_url") or article.get("reddit_url") or ""),
+                        "signals": build_noise_signals(article),
+                    }
+                )
+            continue
+        kept.append(article)
+    return kept, {
+        "filtered_noise_articles": removed,
+        "noise_filter_samples": samples,
+    }
+
+
 def tokenize_words(text: str) -> Set[str]:
     return {token for token in normalize_title(text).split() if len(token) >= 2}
 
@@ -250,6 +413,7 @@ def build_similarity_features(article: Dict[str, Any]) -> Dict[str, Any]:
     normalized = normalize_title(title)
     compact = normalized.replace(" ", "")
     return {
+        "topic": resolve_article_topic(article, default="uncategorized") or "uncategorized",
         "normalized_title": normalized,
         "normalized_compact": compact,
         "word_tokens": tokenize_words(title),
@@ -592,6 +756,7 @@ def build_scoring_debug_state() -> Dict[str, Any]:
     return {
         "_comment": SCORE_DEBUG_COMMENTS["scoring_debug"],
         "final_score_formula": "base_priority_score + fetch_local_rank_score + history_score + cross_source_hot_score + recency_score",
+        "local_extra_score_note": "local_extra_score 仅作为站内热度参考信号输出，不直接计入 final_score。",
     }
 
 
@@ -601,6 +766,7 @@ def ensure_scoring_debug(article: Dict[str, Any]) -> Dict[str, Any]:
         raw_debug = build_scoring_debug_state()
     raw_debug.setdefault("_comment", SCORE_DEBUG_COMMENTS["scoring_debug"])
     raw_debug.setdefault("final_score_formula", build_scoring_debug_state()["final_score_formula"])
+    raw_debug.setdefault("local_extra_score_note", build_scoring_debug_state()["local_extra_score_note"])
     article["scoring_debug"] = raw_debug
     return raw_debug
 
@@ -799,59 +965,119 @@ def apply_history_scores(articles: List[Dict[str, Any]], previous_titles: Iterab
     started = time.perf_counter()
     previous_index = build_previous_title_index(previous_titles)
     logging.info("History similarity index: %d titles", len(previous_index["features"]))
+    similarity_cache: Dict[Tuple[str, str, str], float] = {}
     for article in articles:
-        similarity = best_history_similarity(article, previous_index)
+        features = ensure_similarity_features(article)
+        cache_key = (
+            features.get("normalized_title", ""),
+            features.get("normalized_compact", ""),
+            features.get("normalized_url", ""),
+        )
+        similarity = similarity_cache.get(cache_key)
+        if similarity is None:
+            similarity = best_history_similarity(article, previous_index)
+            similarity_cache[cache_key] = similarity
         score = history_score_for_similarity(similarity)
         ensure_score_components(article)["history_score"] = score
         set_history_similarity_debug(article, similarity=similarity, is_duplicate=score < 0)
-    logging.info("History similarity scoring finished in %.3fs", time.perf_counter() - started)
+    logging.info(
+        "History similarity scoring finished in %.3fs (cache=%d)",
+        time.perf_counter() - started,
+        len(similarity_cache),
+    )
 
 
-def build_candidate_pairs(articles: List[Dict[str, Any]]) -> Iterable[Tuple[int, int]]:
-    word_buckets: Dict[str, List[int]] = defaultdict(list)
-    cjk_buckets: Dict[str, List[int]] = defaultdict(list)
-    url_buckets: Dict[str, List[int]] = defaultdict(list)
-    title_buckets: Dict[str, List[int]] = defaultdict(list)
-    compact_buckets: Dict[str, List[int]] = defaultdict(list)
-
-    for idx, article in enumerate(articles):
-        features = ensure_similarity_features(article)
-        for token in features["word_tokens"]:
-            word_buckets[token].append(idx)
-        for token in features["cjk_bigrams"]:
-            cjk_buckets[token].append(idx)
-        if features["normalized_url"]:
-            url_buckets[features["normalized_url"]].append(idx)
-        if features["normalized_title"]:
-            title_buckets[features["normalized_title"]].append(idx)
-        if features["normalized_compact"]:
-            compact_buckets[features["normalized_compact"]].append(idx)
-
-    pair_counts: Dict[Tuple[int, int], int] = defaultdict(int)
+def build_candidate_pairs(
+    features_list: Sequence[Dict[str, Any]],
+    machine_profile: Optional[MachineProfile] = None,
+) -> Iterable[Tuple[int, int]]:
+    bucket_limits = similarity_bucket_limits(machine_profile or detect_machine_profile())
+    topic_buckets: Dict[str, List[int]] = defaultdict(list)
+    for idx, features in enumerate(features_list):
+        topic_buckets[str(features.get("topic") or "uncategorized")].append(idx)
+    yielded: Set[Tuple[int, int]] = set()
     skipped_word_buckets = 0
-    for bucket in word_buckets.values():
-        if len(bucket) < 2:
-            continue
-        if len(bucket) > SIMILARITY_LIMITS["max_word_bucket_size"]:
-            skipped_word_buckets += 1
-            continue
-        for i in range(len(bucket)):
-            for j in range(i + 1, len(bucket)):
-                pair = (bucket[i], bucket[j])
-                pair_counts[pair] += 1
-
-    cjk_counts: Dict[Tuple[int, int], int] = defaultdict(int)
     skipped_cjk_buckets = 0
-    for bucket in cjk_buckets.values():
-        if len(bucket) < 2:
-            continue
-        if len(bucket) > SIMILARITY_LIMITS["max_cjk_bucket_size"]:
-            skipped_cjk_buckets += 1
-            continue
-        for i in range(len(bucket)):
-            for j in range(i + 1, len(bucket)):
-                pair = (bucket[i], bucket[j])
-                cjk_counts[pair] += 1
+
+    for topic_indices in topic_buckets.values():
+        word_buckets: Dict[str, List[int]] = defaultdict(list)
+        cjk_buckets: Dict[str, List[int]] = defaultdict(list)
+        url_buckets: Dict[str, List[int]] = defaultdict(list)
+        title_buckets: Dict[str, List[int]] = defaultdict(list)
+        compact_buckets: Dict[str, List[int]] = defaultdict(list)
+
+        for idx in topic_indices:
+            features = features_list[idx]
+            for token in features["word_tokens"]:
+                word_buckets[token].append(idx)
+            for token in features["cjk_bigrams"]:
+                cjk_buckets[token].append(idx)
+            if features["normalized_url"]:
+                url_buckets[features["normalized_url"]].append(idx)
+            if features["normalized_title"]:
+                title_buckets[features["normalized_title"]].append(idx)
+            if features["normalized_compact"]:
+                compact_buckets[features["normalized_compact"]].append(idx)
+
+        pair_counts: Dict[Tuple[int, int], int] = defaultdict(int)
+        for bucket in word_buckets.values():
+            if len(bucket) < 2:
+                continue
+            if len(bucket) > bucket_limits["max_word_bucket_size"]:
+                skipped_word_buckets += 1
+                continue
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    pair = (bucket[i], bucket[j])
+                    pair_counts[pair] += 1
+
+        cjk_counts: Dict[Tuple[int, int], int] = defaultdict(int)
+        for bucket in cjk_buckets.values():
+            if len(bucket) < 2:
+                continue
+            if len(bucket) > bucket_limits["max_cjk_bucket_size"]:
+                skipped_cjk_buckets += 1
+                continue
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    pair = (bucket[i], bucket[j])
+                    cjk_counts[pair] += 1
+
+        for pair, count in pair_counts.items():
+            if count >= 2 and pair not in yielded:
+                yielded.add(pair)
+                yield pair
+        for pair, count in cjk_counts.items():
+            if count >= 3 and pair not in yielded:
+                yielded.add(pair)
+                yield pair
+        for bucket in url_buckets.values():
+            if len(bucket) < 2:
+                continue
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    pair = (bucket[i], bucket[j])
+                    if pair not in yielded:
+                        yielded.add(pair)
+                        yield pair
+        for bucket in title_buckets.values():
+            if len(bucket) < 2:
+                continue
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    pair = (bucket[i], bucket[j])
+                    if pair not in yielded:
+                        yielded.add(pair)
+                        yield pair
+        for bucket in compact_buckets.values():
+            if len(bucket) < 2:
+                continue
+            for i in range(len(bucket)):
+                for j in range(i + 1, len(bucket)):
+                    pair = (bucket[i], bucket[j])
+                    if pair not in yielded:
+                        yielded.add(pair)
+                        yield pair
 
     if skipped_word_buckets or skipped_cjk_buckets:
         logging.info(
@@ -860,42 +1086,15 @@ def build_candidate_pairs(articles: List[Dict[str, Any]]) -> Iterable[Tuple[int,
             skipped_cjk_buckets,
         )
 
-    yielded: Set[Tuple[int, int]] = set()
-    for pair, count in pair_counts.items():
-        if count >= 2:
-            yielded.add(pair)
-            yield pair
-    for pair, count in cjk_counts.items():
-        if count >= 3 and pair not in yielded:
-            yielded.add(pair)
-            yield pair
-    for bucket in url_buckets.values():
-        if len(bucket) < 2:
-            continue
-        for i in range(len(bucket)):
-            for j in range(i + 1, len(bucket)):
-                pair = (bucket[i], bucket[j])
-                if pair not in yielded:
-                    yielded.add(pair)
-                    yield pair
-    for bucket in title_buckets.values():
-        if len(bucket) < 2:
-            continue
-        for i in range(len(bucket)):
-            for j in range(i + 1, len(bucket)):
-                pair = (bucket[i], bucket[j])
-                if pair not in yielded:
-                    yielded.add(pair)
-                    yield pair
-    for bucket in compact_buckets.values():
-        if len(bucket) < 2:
-            continue
-        for i in range(len(bucket)):
-            for j in range(i + 1, len(bucket)):
-                pair = (bucket[i], bucket[j])
-                if pair not in yielded:
-                    yielded.add(pair)
-                    yield pair
+
+def exact_similarity_hint(features_a: Dict[str, Any], features_b: Dict[str, Any]) -> Optional[float]:
+    if features_a["normalized_title"] and features_a["normalized_title"] == features_b["normalized_title"]:
+        return 1.0
+    if features_a["normalized_compact"] and features_a["normalized_compact"] == features_b["normalized_compact"]:
+        return 1.0
+    if features_a["normalized_url"] and features_a["normalized_url"] == features_b["normalized_url"]:
+        return 1.0
+    return None
 
 
 def apply_cross_source_hot_scores(articles: List[Dict[str, Any]], pair_similarities: Dict[Tuple[int, int], float]) -> None:
@@ -961,73 +1160,107 @@ def build_output_scoring_config() -> Dict[str, Any]:
     }
 
 
-def _compute_pair_similarity(args: Tuple[int, int, Dict[str, Any], Dict[str, Any]]) -> Tuple[Tuple[int, int], float]:
-    """Worker function for parallel similarity computation."""
-    (i, j, features_i, features_j) = args
-    similarity = calculate_similarity_from_features(features_i, features_j)
+def _compute_pair_similarity(args: Tuple[int, int, Dict[str, Any], Dict[str, Any], Optional[float]]) -> Tuple[Tuple[int, int], float]:
+    (i, j, features_i, features_j, hinted_similarity) = args
+    similarity = hinted_similarity if hinted_similarity is not None else calculate_similarity_from_features(features_i, features_j)
     return ((i, j), similarity)
 
 
 def _compute_pair_similarity_batch(
-    batch: List[Tuple[int, int, Dict[str, Any], Dict[str, Any]]]
+    batch: List[Tuple[int, int, Dict[str, Any], Dict[str, Any], Optional[float]]]
 ) -> List[Tuple[Tuple[int, int], float]]:
-    return [_compute_pair_similarity(pair) for pair in batch]
+    results: List[Tuple[Tuple[int, int], float]] = []
+    for pair in batch:
+        pair_key, similarity = _compute_pair_similarity(pair)
+        if similarity >= PAIR_SIMILARITY_MIN:
+            results.append((pair_key, similarity))
+    return results
 
 
-def chunked_pairs(
-    pairs: List[Tuple[int, int, Dict[str, Any], Dict[str, Any]]],
+def iter_similarity_tasks(
+    features_list: Sequence[Dict[str, Any]],
+    machine_profile: Optional[MachineProfile] = None,
+) -> Iterable[Tuple[int, int, Dict[str, Any], Dict[str, Any], Optional[float]]]:
+    for i, j in build_candidate_pairs(features_list, machine_profile=machine_profile):
+        features_i = features_list[i]
+        features_j = features_list[j]
+        if not should_compare(features_i, features_j):
+            continue
+        yield (i, j, features_i, features_j, exact_similarity_hint(features_i, features_j))
+
+
+def batched(
+    values: Iterable[Tuple[int, int, Dict[str, Any], Dict[str, Any], Optional[float]]],
     size: int,
-) -> Iterable[List[Tuple[int, int, Dict[str, Any], Dict[str, Any]]]]:
-    for start in range(0, len(pairs), size):
-        yield pairs[start:start + size]
+) -> Iterable[List[Tuple[int, int, Dict[str, Any], Dict[str, Any], Optional[float]]]]:
+    batch: List[Tuple[int, int, Dict[str, Any], Dict[str, Any], Optional[float]]] = []
+    for value in values:
+        batch.append(value)
+        if len(batch) >= size:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
 
 
 def apply_similarity_scoring(articles: List[Dict[str, Any]], previous_titles: Iterable[str]) -> Dict[Tuple[int, int], float]:
     previous_titles = list(previous_titles)
     assign_fetch_rank_scores(articles)
     apply_history_scores(articles, previous_titles)
+    machine_profile = detect_machine_profile()
+    features_list = [ensure_similarity_features(article) for article in articles]
+    parallel_eligible = machine_profile.max_workers > 1 and machine_profile.cpu_count >= SIMILARITY_LIMITS["parallel_min_cpus"]
 
     candidate_started = time.perf_counter()
-    candidate_pairs = []
-    for i, j in build_candidate_pairs(articles):
-        features_i = ensure_similarity_features(articles[i])
-        features_j = ensure_similarity_features(articles[j])
-        if should_compare(features_i, features_j):
-            candidate_pairs.append((i, j, features_i, features_j))
-    candidate_elapsed = time.perf_counter() - candidate_started
-
-    logging.info(
-        "Similarity scoring: %d articles, %d history titles, %d candidate pairs built in %.3fs",
-        len(articles),
-        len(previous_titles),
-        len(candidate_pairs),
-        candidate_elapsed,
-    )
+    pair_similarities: Dict[Tuple[int, int], float] = {}
+    if parallel_eligible:
+        tasks = list(iter_similarity_tasks(features_list, machine_profile=machine_profile))
+        candidate_elapsed = time.perf_counter() - candidate_started
+        logging.info(
+            "Similarity scoring: %d articles, %d history titles, %d candidate pairs built in %.3fs (cpu=%d, mem=%.2fGB, workers=%d)",
+            len(articles),
+            len(previous_titles),
+            len(tasks),
+            candidate_elapsed,
+            machine_profile.cpu_count,
+            machine_profile.memory_gb,
+            machine_profile.max_workers,
+        )
+        use_parallel = len(tasks) >= SIMILARITY_LIMITS["parallel_min_pairs"]
+    else:
+        tasks = []
+        use_parallel = False
+        candidate_elapsed = 0.0
 
     similarity_started = time.perf_counter()
-    pair_similarities: Dict[Tuple[int, int], float] = {}
-    cpu_count = os.cpu_count() or 2
-    max_workers = min(4, cpu_count)
-    use_parallel = (
-        len(candidate_pairs) >= SIMILARITY_LIMITS["parallel_min_pairs"]
-        and cpu_count >= SIMILARITY_LIMITS["parallel_min_cpus"]
-    )
 
     if use_parallel:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=machine_profile.max_workers) as executor:
             futures = [
                 executor.submit(_compute_pair_similarity_batch, batch)
-                for batch in chunked_pairs(candidate_pairs, SIMILARITY_LIMITS["batch_size"])
+                for batch in batched(tasks, machine_profile.batch_size)
             ]
             for future in as_completed(futures):
                 for (i, j), sim in future.result():
-                    if sim >= PAIR_SIMILARITY_MIN:
-                        pair_similarities[(i, j)] = sim
+                    pair_similarities[(i, j)] = sim
     else:
-        for pair in candidate_pairs:
+        candidate_count = 0
+        for pair in iter_similarity_tasks(features_list, machine_profile=machine_profile):
+            candidate_count += 1
             (i, j), sim = _compute_pair_similarity(pair)
             if sim >= PAIR_SIMILARITY_MIN:
                 pair_similarities[(i, j)] = sim
+        candidate_elapsed = time.perf_counter() - candidate_started
+        logging.info(
+            "Similarity scoring: %d articles, %d history titles, %d candidate pairs built in %.3fs (cpu=%d, mem=%.2fGB, workers=%d, mode=streaming)",
+            len(articles),
+            len(previous_titles),
+            candidate_count,
+            candidate_elapsed,
+            machine_profile.cpu_count,
+            machine_profile.memory_gb,
+            machine_profile.max_workers,
+        )
 
     logging.info(
         "Similarity calculation finished in %.3fs, kept %d pairs >= %.2f",
@@ -1150,8 +1383,8 @@ def build_working_articles(articles: Iterable[Dict[str, Any]]) -> List[Dict[str,
             continue
         working_article = sanitize_article_record(article)
         normalize_article_source_priority(working_article)
-        initialize_article_scores([working_article])
         working_articles.append(working_article)
+    initialize_article_scores(working_articles)
     return working_articles
 
 
@@ -1200,7 +1433,7 @@ def collect_articles(payloads: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]
     all_articles: List[Dict[str, Any]] = []
     for step_key in STEP_KEYS:
         all_articles.extend(
-            sanitize_article_record(article)
+            article
             for article in payloads.get(step_key, {}).get("articles", [])
             if isinstance(article, dict)
         )
@@ -1221,6 +1454,7 @@ def build_input_stats(payloads: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
 def build_processing_summary(previous_titles: List[str], total_collected: int) -> Dict[str, Any]:
     return {
         "deduplication_applied": True,
+        "noise_filter_applied": True,
         "previous_hotspots_scoring_applied": len(previous_titles) > 0,
         "scoring_applied": True,
         "scoring_version": "2.0",
@@ -1272,6 +1506,7 @@ def build_merged_output(
     source_groups: Dict[str, List[Dict[str, Any]]],
     previous_titles: List[str],
     total_collected: int,
+    noise_report: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     distribution = {source_type: len(items) for source_type, items in source_groups.items()}
     return {
@@ -1282,7 +1517,10 @@ def build_merged_output(
             "source_types_count": len(source_groups),
             "source_type_distribution": distribution,
         },
-        "processing": build_processing_summary(previous_titles, total_collected),
+        "processing": {
+            **build_processing_summary(previous_titles, total_collected),
+            **(noise_report or {}),
+        },
         "source_types": {
             source_type: {
                 "count": len(items),
@@ -1319,9 +1557,13 @@ def main() -> int:
         total_collected = sum(len(payload.get("articles", [])) for payload in payloads.values())
         logger.info("Loaded %d standardized articles", total_collected)
         previous_titles: List[str] = load_previous_hotspots(args.archive_dir) if args.archive_dir else []
-        deduplicated_articles = deduplicate_articles(collect_articles(payloads), previous_titles)
+        collected_articles = collect_articles(payloads)
+        filtered_articles, noise_report = filter_noise_articles(collected_articles)
+        if noise_report.get("filtered_noise_articles", 0):
+            logger.info("Noise filter removed %d low-signal promotional articles", noise_report["filtered_noise_articles"])
+        deduplicated_articles = deduplicate_articles(filtered_articles, previous_titles)
         source_groups = group_by_source_types(deduplicated_articles)
-        output = build_merged_output(payloads, source_groups, previous_titles, total_collected)
+        output = build_merged_output(payloads, source_groups, previous_titles, total_collected, noise_report=noise_report)
 
         with open(args.output, "w", encoding="utf-8") as handle:
             json.dump(output, handle, ensure_ascii=False, indent=2)
