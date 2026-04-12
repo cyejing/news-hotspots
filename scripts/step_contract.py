@@ -18,7 +18,7 @@ import json
 import math
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 SLOW_REQUEST_THRESHOLDS = (3.0, 5.0, 10.0)
 
@@ -310,12 +310,12 @@ def build_call_stats(
     ok_calls: int,
     partial_calls: int = 0,
     failed_calls: Optional[int] = None,
-) -> Dict[str, int | str]:
+) -> Dict[str, Union[int, str]]:
     normalized_total = max(0, int(total_calls or 0))
     normalized_ok = max(0, int(ok_calls or 0))
     normalized_partial = max(0, int(partial_calls or 0))
     normalized_failed = max(0, normalized_total - normalized_ok) if failed_calls is None else max(0, int(failed_calls or 0))
-    payload: Dict[str, int | str] = {
+    payload: Dict[str, Union[int, str]] = {
         "kind": str(kind or "step"),
         "total_calls": normalized_total,
         "ok_calls": normalized_ok,
@@ -342,7 +342,7 @@ def summarize_step_statuses(step_summaries: Iterable[Dict[str, Any]]) -> Dict[st
     }
 
 
-def build_pipeline_call_stats(step_summaries: Iterable[Dict[str, Any]]) -> Dict[str, int | str]:
+def build_pipeline_call_stats(step_summaries: Iterable[Dict[str, Any]]) -> Dict[str, Union[int, str]]:
     counts = summarize_step_statuses(step_summaries)
     return build_call_stats(
         kind="steps",
