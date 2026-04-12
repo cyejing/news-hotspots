@@ -1,7 +1,7 @@
 {
   "_description": "Unified data sources configuration. Priority is a light ranking hint: use 3 for most sources, 4 for clearly authoritative sources, and reserve 5 for a small number of top-tier primary sources.",
-  "_updated": "2026-03-30",
-  "_version": "4.0.0",
+  "_updated": "2026-04-13",
+  "_version": "4.1.0",
   "sources": [
     {
       "id": "sama-twitter",
@@ -59,7 +59,7 @@
       "name": "xAI official",
       "handle": "xai",
       "enabled": true,
-      "priority": 4,
+      "priority": 3,
       "note": "xAI 官方账号",
       "topic": "ai-frontier"
     },
@@ -69,8 +69,8 @@
       "name": "Andrej Karpathy",
       "handle": "karpathy",
       "enabled": true,
-      "priority": 3,
-      "note": "AI 研究者",
+      "priority": 2,
+      "note": "AI 研究者，偏长期思考与知识帖，作为前沿补充源",
       "topic": "ai-frontier"
     },
     {
@@ -89,7 +89,7 @@
       "name": "Jim Fan (NVIDIA)",
       "handle": "DrJimFan",
       "enabled": true,
-      "priority": 5,
+      "priority": 4,
       "note": "NVIDIA AI 研究员",
       "topic": "ai-infra"
     },
@@ -101,16 +101,6 @@
       "enabled": true,
       "priority": 3,
       "note": "Hugging Face 官方账号",
-      "topic": "ai-frontier"
-    },
-    {
-      "id": "emad-twitter",
-      "type": "twitter",
-      "name": "Emad Mostaque",
-      "handle": "EMostaque",
-      "enabled": true,
-      "priority": 3,
-      "note": "Stability AI 创始人",
       "topic": "ai-frontier"
     },
     {
@@ -130,8 +120,8 @@
       "handle": "sundarpichai",
       "enabled": true,
       "priority": 3,
-      "note": "Google 首席执行官",
-      "topic": "technology"
+      "note": "Google 首席执行官，近期以 Gemini/Gemma 与 AI 产品更新为主",
+      "topic": "ai-frontier"
     },
     {
       "id": "levie-twitter",
@@ -140,27 +130,7 @@
       "handle": "levie",
       "enabled": true,
       "priority": 3,
-      "note": "Box 首席执行官",
-      "topic": "business"
-    },
-    {
-      "id": "satya-twitter",
-      "type": "twitter",
-      "name": "Satya Nadella",
-      "handle": "satyanadella",
-      "enabled": true,
-      "priority": 3,
-      "note": "Microsoft 首席执行官",
-      "topic": "business"
-    },
-    {
-      "id": "rowancheung-twitter",
-      "type": "twitter",
-      "name": "Rowan Cheung (The Rundown AI)",
-      "handle": "rowancheung",
-      "enabled": true,
-      "priority": 3,
-      "note": "AI 新闻通讯创始人，57.6 万关注者",
+      "note": "Box 首席执行官，偏企业 AI 采用与软件行业观点",
       "topic": "ai-frontier"
     },
     {
@@ -184,26 +154,6 @@
       "topic": "ai-frontier"
     },
     {
-      "id": "hwchase-twitter",
-      "type": "twitter",
-      "name": "Harrison Chase (LangChain)",
-      "handle": "hwchase17",
-      "enabled": true,
-      "priority": 3,
-      "note": "LangChain 创始人，Agent 生态",
-      "topic": "ai-frontier"
-    },
-    {
-      "id": "swyx-twitter",
-      "type": "twitter",
-      "name": "Swyx",
-      "handle": "swyx",
-      "enabled": true,
-      "priority": 3,
-      "note": "AI Engineer 社区，Latent Space 播客",
-      "topic": "ai-frontier"
-    },
-    {
       "id": "twitter-clementdelangue",
       "type": "twitter",
       "name": "Clement Delangue",
@@ -212,26 +162,6 @@
       "priority": 3,
       "note": "Hugging Face 首席执行官",
       "topic": "ai-frontier"
-    },
-    {
-      "id": "twitter-zuck",
-      "type": "twitter",
-      "name": "Mark Zuckerberg",
-      "handle": "finkd",
-      "enabled": true,
-      "priority": 3,
-      "note": "Meta 首席执行官",
-      "topic": "ai-frontier"
-    },
-    {
-      "id": "wangzhian-twitter",
-      "type": "twitter",
-      "name": "Wang Zhi'an",
-      "handle": "wangzhian8848",
-      "enabled": true,
-      "priority": 3,
-      "note": "时政评论记者，长期关注国际与公共议题",
-      "topic": "world"
     },
     {
       "id": "rusttrending-twitter",
@@ -260,18 +190,8 @@
       "handle": "SupFin",
       "enabled": true,
       "priority": 3,
-      "note": "技术与开发相关账号",
-      "topic": "technology"
-    },
-    {
-      "id": "zaobaosg-twitter",
-      "type": "twitter",
-      "name": "Zaobao",
-      "handle": "zaobaosg",
-      "enabled": true,
-      "priority": 3,
-      "note": "联合早报官方账号，关注国际与地区新闻",
-      "topic": "world"
+      "note": "市场与产业观察账号，偏宏观金融与 AI 资本叙事",
+      "topic": "business"
     },
     {
       "id": "uschinatoday-twitter",
@@ -349,9 +269,9 @@
       "name": "Peter Steinberger",
       "handle": "steipete",
       "enabled": true,
-      "priority": 4,
-      "note": "OpenClaw 创建者，现任职于 OpenAI",
-      "topic": "technology"
+      "priority": 3,
+      "note": "OpenClaw 创建者，偏 AI 工具链与产品使用体验",
+      "topic": "ai-frontier"
     }
   ]
 }

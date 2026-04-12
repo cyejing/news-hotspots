@@ -94,11 +94,11 @@
       "id": "technology",
       "emoji": "🔬",
       "label": "Technology / 科技",
-      "description": "消费电子、计算机硬件、互联网服务、通信技术、数字产品与科技生态。",
+      "description": "消费电子、计算机硬件、软件工程、互联网服务、通信技术、数字产品与科技生态。",
       "search": {
         "google_queries": [
           "\"consumer tech\" OR smartphone OR laptop OR wearable OR gadget",
-          "\"internet service\" OR app OR \"digital product\" OR social media",
+          "\"internet service\" OR app OR \"digital product\" OR social media OR \"open source\"",
           "消费电子 OR 数码产品 OR 互联网服务 OR 科技产品",
           "telecom OR broadband OR handset OR electronics OR device launch"
         ],
@@ -109,7 +109,7 @@
         ],
         "reddit_queries": [
           "(smartphone OR laptop OR tablet OR wearable OR gadget) AND (launch OR review OR update OR feature)",
-          "(\"internet service\" OR app OR \"digital product\" OR social media) AND (launch OR update OR feature OR users)",
+          "(\"internet service\" OR app OR \"digital product\" OR \"social media\" OR \"open source\") AND (launch OR update OR feature OR users)",
           "(telecom OR handset OR broadband OR electronics) AND (market OR launch OR service OR device)",
           "title:(smartphone OR laptop OR gadget OR device) AND (launch OR review OR update OR feature)"
         ],
