@@ -202,6 +202,7 @@ def build_process_logs(result: ProcessResult) -> Dict[str, Any]:
     if result.command:
         summary.append(f"command={' '.join(result.command)}")
     return {
+        "status": result.status,
         "summary": " | ".join(summary),
         "line_count": int(result.stdout_lines) + int(result.stderr_lines),
         "stdout_line_count": int(result.stdout_lines),
@@ -487,7 +488,13 @@ def summarize_fetch_step(spec: StepSpec, result: ProcessResult) -> Dict[str, Any
         timing = normalize_meta_timing(meta_payload, result.elapsed_s, result.elapsed_s)
         meta_payload["timing_s"] = timing
         meta_payload.setdefault("timeout_s", result.timeout_s)
-        meta_payload.setdefault("status", result.status)
+        process_status = result.status
+        meta_status = str(meta_payload.get("status") or process_status)
+        if process_status == "timeout":
+            meta_status = "timeout"
+        elif process_status == "error" and meta_status == "ok":
+            meta_status = "error"
+        meta_payload["status"] = meta_status
         meta_payload.setdefault("output_path", str(spec.output_path) if spec.output_path else "")
         meta_payload["calls_total"] = int(meta_payload.get("calls_total", 0) or 0)
         meta_payload["calls_ok"] = int(meta_payload.get("calls_ok", 0) or 0)
@@ -499,7 +506,7 @@ def summarize_fetch_step(spec: StepSpec, result: ProcessResult) -> Dict[str, Any
             partial_calls=int((meta_payload.get("call_stats", {}) or {}).get("partial_calls", 0) if isinstance(meta_payload.get("call_stats"), dict) else 0),
             failed_calls=meta_payload["failed_calls"],
         )
-        meta_payload["logs"] = build_process_logs(result)
+        meta_payload["logs"] = build_process_logs(ProcessResult(**{**result.__dict__, "status": meta_status}))
         return meta_payload
 
     items = len(output_payload.get("articles", [])) if output_payload else 0
@@ -631,6 +638,11 @@ def build_pipeline_meta(
         "status": overall_status,
         "overall_status": overall_status,
         "timing_s": pipeline_timing,
+        "timing_semantics": {
+            "timing_s": "pipeline 级墙钟时间（wall-clock elapsed），active 与 total 在当前实现中相同。",
+            "fetch_timing_s": "仅针对 fetch phase：active 为各 source 请求 active 时间求和，total 为并行抓取阶段的墙钟时间。",
+            "fetch_active_elapsed_s": "兼容旧字段，等价于 fetch_timing_s.active。",
+        },
         "fetch_active_elapsed_s": fetch_timing["active"],
         "fetch_timing_s": fetch_timing,
         "items": total_items,

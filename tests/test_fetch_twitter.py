@@ -134,6 +134,48 @@ class TestFetchTwitter(unittest.TestCase):
 
         self.assertEqual(article["source_name"], "OpenAI")
 
+    def test_run_bb_browser_site_records_timeout_elapsed(self):
+        with patch.object(fetch_twitter, "throttle_after_success", return_value=None), patch.object(
+            fetch_twitter.subprocess,
+            "run",
+            side_effect=fetch_twitter.subprocess.TimeoutExpired(cmd=["bb-browser"], timeout=20),
+        ):
+            with self.assertRaises(fetch_twitter.TimedRuntimeError) as ctx:
+                fetch_twitter.run_bb_browser_site(["twitter/tweets", "sama", "20"], timeout=20)
+
+        self.assertEqual(ctx.exception.status, "timeout")
+        self.assertIn("timed out after 20 seconds", str(ctx.exception))
+        self.assertGreaterEqual(ctx.exception.elapsed_s, 0.0)
+
+    def test_fetch_source_preserves_timeout_status_and_elapsed_in_trace(self):
+        source = {"id": "openai", "handle": "OpenAI", "name": "OpenAI", "topic": "ai-frontier"}
+        cutoff = fetch_twitter.local_now() - timedelta(hours=24)
+
+        def raise_timeout(*args, **kwargs):
+            raise fetch_twitter.TimedRuntimeError("timed out after 20 seconds", 20.0, status="timeout")
+
+        with patch.object(fetch_twitter, "fetch_timeline", side_effect=raise_timeout):
+            result = fetch_twitter.fetch_source(source, cutoff)
+
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["request_traces"][0]["status"], "timeout")
+        self.assertEqual(result["request_traces"][0]["timing_s"]["active"], 20.0)
+        self.assertEqual(result["request_traces"][0]["timing_s"]["total"], 20.0)
+
+    def test_fetch_topic_preserves_timeout_status_and_elapsed_in_trace(self):
+        topic = {"id": "ai", "search": {"twitter_queries": ["openai"]}}
+        cutoff = fetch_twitter.local_now() - timedelta(hours=24)
+
+        def raise_timeout(*args, **kwargs):
+            raise fetch_twitter.TimedRuntimeError("timed out after 20 seconds", 20.0, status="timeout")
+
+        with patch.object(fetch_twitter, "run_bb_browser_site", side_effect=raise_timeout):
+            result = fetch_twitter.fetch_topic(topic, cutoff, fetch_twitter.logging.getLogger("test"))
+
+        self.assertEqual(result["request_traces"][0]["status"], "timeout")
+        self.assertEqual(result["request_traces"][0]["timing_s"]["active"], 20.0)
+        self.assertEqual(result["request_traces"][0]["timing_s"]["total"], 20.0)
+
 
 if __name__ == "__main__":
     unittest.main()

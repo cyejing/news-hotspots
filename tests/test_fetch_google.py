@@ -51,10 +51,9 @@ class TestFetchGoogle(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output = Path(tmpdir) / "google.json"
             result = {"generated": "2026-04-02T00:00:00+00:00", "source_type": "google", "articles": []}
-            meta = fetch_google.build_step_meta(
+            meta = fetch_google.build_step_meta_from_traces(
                 step_key="google",
                 status="error",
-                elapsed_active_s=1.2,
                 elapsed_total_s=1.2,
                 items=0,
                 calls_total=2,
@@ -114,6 +113,32 @@ class TestFetchGoogle(unittest.TestCase):
             json.loads(json.dumps(result["articles"]))[0]["date"][-6:],
             fetch_google.local_now().strftime("%z")[:3] + ":" + fetch_google.local_now().strftime("%z")[3:],
         )
+
+    def test_run_bb_browser_site_records_timeout_elapsed(self):
+        with patch.object(fetch_google, "throttle_after_success", return_value=None), patch.object(
+            fetch_google.subprocess,
+            "run",
+            side_effect=fetch_google.subprocess.TimeoutExpired(cmd=["bb-browser"], timeout=20),
+        ):
+            with self.assertRaises(fetch_google.TimedRuntimeError) as ctx:
+                fetch_google.run_bb_browser_site(["google/news", "openai", "10"], timeout=20)
+
+        self.assertEqual(ctx.exception.status, "timeout")
+        self.assertIn("timed out after 20 seconds", str(ctx.exception))
+        self.assertGreaterEqual(ctx.exception.elapsed_s, 0.0)
+
+    def test_fetch_topic_preserves_timeout_status_and_elapsed_in_trace(self):
+        topic = {"id": "ai", "search": {"google_queries": ["openai"]}}
+
+        def raise_timeout(*args, **kwargs):
+            raise fetch_google.TimedRuntimeError("timed out after 20 seconds", 20.0, status="timeout")
+
+        with patch.object(fetch_google, "run_bb_browser_site", side_effect=raise_timeout):
+            result = fetch_google.fetch_topic(topic, fetch_google.logging.getLogger("test"))
+
+        self.assertEqual(result["request_traces"][0]["status"], "timeout")
+        self.assertEqual(result["request_traces"][0]["timing_s"]["active"], 20.0)
+        self.assertEqual(result["request_traces"][0]["timing_s"]["total"], 20.0)
 
 
 if __name__ == "__main__":

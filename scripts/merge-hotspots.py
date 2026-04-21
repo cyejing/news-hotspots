@@ -43,7 +43,23 @@ SCORE_COMPONENTS_ZH = {
     "history_score": "与历史热点重复或相似时的修正分",
     "cross_source_hot_score": "被多个 source_type 命中时的加分",
     "recency_score": "按发布时间得到的时效性分",
-    "local_extra_score": "抓取源内部热度信号的附加参考分",
+    "local_extra_score": "抓取源内部热度信号的附加参考分，仅作解释字段，不参与 final_score 求和",
+}
+SCORE_COMPONENT_MEMBERSHIP = {
+    "base_priority_score": True,
+    "fetch_local_rank_score": True,
+    "history_score": True,
+    "cross_source_hot_score": True,
+    "recency_score": True,
+    "local_extra_score": False,
+}
+SCORE_COMPONENT_MEMBERSHIP_ZH = {
+    "base_priority_score": "参与 final_score 求和",
+    "fetch_local_rank_score": "参与 final_score 求和",
+    "history_score": "参与 final_score 求和",
+    "cross_source_hot_score": "参与 final_score 求和",
+    "recency_score": "参与 final_score 求和",
+    "local_extra_score": "仅作站内热度参考，不参与 final_score 求和",
 }
 SELECTION_EXPLANATIONS_ZH = {
     "source_type_rank": "这条内容在所属 source_type 候选列表中的排名",
@@ -165,6 +181,8 @@ def build_hotspot_item(
             "local_extra_score": float(raw_score_components.get("local_extra_score", 0) or 0),
         },
         "components_zh": SCORE_COMPONENTS_ZH,
+        "component_membership": SCORE_COMPONENT_MEMBERSHIP,
+        "component_membership_zh": SCORE_COMPONENT_MEMBERSHIP_ZH,
     }
     item["selection_debug"] = {
         **source_rank_index.get(article_key(article), {"source_type_rank": 0, "source_type_total_candidates": 0}),
@@ -456,7 +474,12 @@ def build_hotspots(
     }
 
 
-def load_failed_source_counts(archive_root: Path) -> Dict[str, int]:
+def archive_suffix_from_output_stem(stem: str, mode: str) -> str:
+    normalized_mode = str(mode or "daily").strip()
+    return stem[len(normalized_mode):] if stem.startswith(normalized_mode) else ""
+
+
+def load_failed_source_counts(archive_root: Path, suffix: str = "") -> Dict[str, int]:
     date_dir = archive_root / datetime.now().astimezone().date().isoformat()
     meta_dir = date_dir / "meta"
     failed_counts: Dict[str, int] = {}
@@ -464,15 +487,16 @@ def load_failed_source_counts(archive_root: Path) -> Dict[str, int]:
         return failed_counts
 
     for file_path in sorted(meta_dir.glob("*.meta.json")):
-        if file_path.name in {"pipeline.meta.json", "merge-sources.meta.json", "merge-hotspots.meta.json"}:
-            continue
         try:
             with open(file_path, "r", encoding="utf-8") as handle:
                 payload = json.load(handle)
         except Exception:
             continue
         step_key = str(payload.get("step_key") or "").strip()
-        if not step_key:
+        if not step_key or step_key.startswith("merge-") or step_key == "pipeline":
+            continue
+        expected_name = f"{step_key}{suffix}.meta.json"
+        if file_path.name != expected_name:
             continue
         failed_counts[step_key] = int(payload.get("failed_calls", 0) or 0)
     return failed_counts
@@ -541,8 +565,9 @@ def main() -> int:
         seen_links=seen_links,
         topic_metadata=topic_metadata,
     )
-    hotspots_json["source_type_failed_counts"] = load_failed_source_counts(args.archive)
     json_output, markdown_output = resolve_archive_pair(json_dir, markdown_dir, stem=args.mode)
+    archive_suffix = archive_suffix_from_output_stem(json_output.stem, args.mode)
+    hotspots_json["source_type_failed_counts"] = load_failed_source_counts(args.archive, suffix=archive_suffix)
     json_output.write_text(json.dumps(hotspots_json, ensure_ascii=False, indent=2), encoding="utf-8")
     merged_archive_output = json_dir / "merge-sources.json"
     if args.input.resolve() != merged_archive_output.resolve():

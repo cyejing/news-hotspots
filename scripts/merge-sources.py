@@ -823,6 +823,17 @@ def build_scoring_debug_state() -> Dict[str, Any]:
         "_comment": SCORE_DEBUG_COMMENTS["scoring_debug"],
         "final_score_formula": "base_priority_score + fetch_local_rank_score + history_score + cross_source_hot_score + recency_score",
         "local_extra_score_note": "local_extra_score 仅作为站内热度参考信号输出，不直接计入 final_score。",
+        "score_component_semantics": {
+            "final_score_includes": [
+                "base_priority_score",
+                "fetch_local_rank_score",
+                "history_score",
+                "cross_source_hot_score",
+                "recency_score",
+            ],
+            "reference_only": ["local_extra_score"],
+            "note_zh": "final_score 只由 final_score_formula 中列出的 5 个分数组件相加得到；local_extra_score 仅用于解释站内热度，不参与 final_score 求和。",
+        },
     }
 
 
@@ -830,9 +841,11 @@ def ensure_scoring_debug(article: Dict[str, Any]) -> Dict[str, Any]:
     raw_debug = article.get("scoring_debug")
     if not isinstance(raw_debug, dict):
         raw_debug = build_scoring_debug_state()
+    defaults = build_scoring_debug_state()
     raw_debug.setdefault("_comment", SCORE_DEBUG_COMMENTS["scoring_debug"])
-    raw_debug.setdefault("final_score_formula", build_scoring_debug_state()["final_score_formula"])
-    raw_debug.setdefault("local_extra_score_note", build_scoring_debug_state()["local_extra_score_note"])
+    raw_debug.setdefault("final_score_formula", defaults["final_score_formula"])
+    raw_debug.setdefault("local_extra_score_note", defaults["local_extra_score_note"])
+    raw_debug.setdefault("score_component_semantics", defaults["score_component_semantics"])
     article["scoring_debug"] = raw_debug
     return raw_debug
 
@@ -872,11 +885,21 @@ def set_final_score_debug(article: Dict[str, Any], score_components: Dict[str, f
         },
         "components_comment_zh": {
             "base_priority_score": "基础分，来自 source_priority。",
-            "local_extra_score": "源内热度参考分，用于解释该条内容的站内热度信号。",
+            "local_extra_score": "站内热度参考分，仅作解释字段；不参与 final_score 求和。",
             "fetch_local_rank_score": "同 source_type 内按排序位置得到的分值影响。",
             "history_score": "与历史热点相似时带来的分值影响，重复时通常为负分。",
             "cross_source_hot_score": "被多个不同 source_type 命中时的分值影响。",
             "recency_score": "时效性带来的分值影响。",
+        },
+        "component_membership": {
+            "included_in_final_score": [
+                "base_priority_score",
+                "fetch_local_rank_score",
+                "history_score",
+                "cross_source_hot_score",
+                "recency_score",
+            ],
+            "reference_only": ["local_extra_score"],
         },
     }
 

@@ -72,6 +72,33 @@ class TestMergeHotspots(unittest.TestCase):
         )
         self.assertIn("---\nsummary: mode:daily | total_articles:3 | rss(0→2,fail=0) | twitter(0→1,fail=0) | generated_at:2026-04-02T00:00:00+00:00\n---", markdown)
 
+    def test_load_failed_source_counts_filters_by_archive_suffix(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            archive = root / "archive"
+            date_dir = archive / merge_hotspots.datetime.now().astimezone().date().isoformat()
+            meta_dir = date_dir / "meta"
+            meta_dir.mkdir(parents=True)
+            (meta_dir / "twitter.meta.json").write_text(
+                json.dumps({"step_key": "twitter", "failed_calls": 4}),
+                encoding="utf-8",
+            )
+            (meta_dir / "twitter1.meta.json").write_text(
+                json.dumps({"step_key": "twitter", "failed_calls": 1}),
+                encoding="utf-8",
+            )
+            (meta_dir / "google1.meta.json").write_text(
+                json.dumps({"step_key": "google", "failed_calls": 2}),
+                encoding="utf-8",
+            )
+            (meta_dir / "merge-sources1.meta.json").write_text(
+                json.dumps({"step_key": "merge-sources", "failed_calls": 99}),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(merge_hotspots.load_failed_source_counts(archive, suffix="1"), {"google": 2, "twitter": 1})
+            self.assertEqual(merge_hotspots.load_failed_source_counts(archive, suffix=""), {"twitter": 4})
+
     def test_markdown_item_renders_single_line_and_omits_empty_summary(self):
         markdown = merge_hotspots.build_markdown(
             {
@@ -305,6 +332,12 @@ class TestMergeHotspots(unittest.TestCase):
             self.assertIn("score_debug", archived_item)
             self.assertEqual(archived_item["score_debug"]["formula_zh"], "基础优先级分 + 源内排序分 + 历史重复修正分 + 跨源共振分 + 时效性分")
             self.assertEqual(archived_item["score_debug"]["components"]["local_extra_score"], 0.5)
+            self.assertFalse(archived_item["score_debug"]["component_membership"]["local_extra_score"])
+            self.assertEqual(
+                archived_item["score_debug"]["component_membership_zh"]["local_extra_score"],
+                "仅作站内热度参考，不参与 final_score 求和",
+            )
+            self.assertIn("不参与 final_score 求和", archived_item["score_debug"]["components_zh"]["local_extra_score"])
             self.assertIn("selection_debug", archived_item)
             self.assertEqual(archived_item["selection_debug"]["source_type_rank"], 1)
             self.assertEqual(archived_item["selection_debug"]["source_type_total_candidates"], 1)

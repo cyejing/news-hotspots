@@ -35,17 +35,21 @@ class TestStepContract(unittest.TestCase):
             calls_ok=1,
             request_traces=[
                 {"source_id": "sama-twitter", "target": "@sama", "timing_s": {"active": 2.5, "total": 2.5}, "status": "ok", "source_type": "twitter", "method": "CLI", "backend": "bb-browser", "adapter": "twitter/tweets"},
-                {"source_id": "openai-twitter", "target": "@openai", "timing_s": {"active": 6.2, "total": 7.0}, "status": "error", "source_type": "twitter", "method": "CLI", "attempt": 2, "backend": "bb-browser", "adapter": "twitter/tweets", "error": "boom"},
+                {"source_id": "openai-twitter", "target": "@openai", "timing_s": {"active": 6.2, "total": 7.0}, "status": "timeout", "source_type": "twitter", "method": "CLI", "attempt": 2, "backend": "bb-browser", "adapter": "twitter/tweets", "error": "timed out after 20 seconds"},
             ],
         )
 
         self.assertIn("request_timing_summary", meta)
         self.assertNotIn("timing_summary", meta)
         self.assertEqual(meta["request_timing_summary"]["requests_total"], 2)
+        self.assertEqual(meta["request_timing_summary"]["requests_error"], 1)
         self.assertEqual(meta["timing_s"]["active"], 8.0)
         self.assertEqual(meta["timing_s"]["total"], 10.0)
         self.assertEqual(meta["failed_items"][0]["source_id"], "openai-twitter")
+        self.assertEqual(meta["failed_items"][0]["status"], "timeout")
         self.assertEqual(meta["failed_items"][0]["attempt"], 2)
+        self.assertEqual(meta["failed_items"][0]["timing_s"]["active"], 6.2)
+        self.assertEqual(meta["failed_items"][0]["timing_s"]["total"], 7.0)
         self.assertNotIn("slow_request_buckets", meta["request_timing_summary"])
         self.assertEqual(meta["slow_requests"]["total_count"], 1)
         slow_bucket = next(bucket for bucket in meta["slow_requests"]["buckets"] if bucket["count"] == 1)

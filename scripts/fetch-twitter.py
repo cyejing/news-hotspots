@@ -69,9 +69,10 @@ _last_request_elapsed_s: Optional[float] = None
 
 
 class TimedRuntimeError(RuntimeError):
-    def __init__(self, message: str, elapsed_s: float):
+    def __init__(self, message: str, elapsed_s: float, *, status: str = "error"):
         super().__init__(message)
         self.elapsed_s = elapsed_s
+        self.status = str(status or "error")
 
 
 def setup_logging(verbose: bool) -> logging.Logger:
@@ -120,13 +121,18 @@ def run_bb_browser_site(args: Sequence[str], timeout: Optional[int] = None) -> D
     throttle_after_success()
     effective_timeout = int(timeout if timeout is not None else DEFAULT_TIMEOUT)
     request_started_at = time.monotonic()
-    result = subprocess.run(
-        ["bb-browser", "site", *args],
-        capture_output=True,
-        text=True,
-        timeout=effective_timeout,
-        env=os.environ,
-    )
+    try:
+        result = subprocess.run(
+            ["bb-browser", "site", *args],
+            capture_output=True,
+            text=True,
+            timeout=effective_timeout,
+            env=os.environ,
+        )
+    except subprocess.TimeoutExpired as exc:
+        elapsed_s = time.monotonic() - request_started_at
+        _last_request_elapsed_s = elapsed_s
+        raise TimedRuntimeError(f"timed out after {effective_timeout} seconds", elapsed_s, status="timeout") from exc
     elapsed_s = time.monotonic() - request_started_at
     _last_request_elapsed_s = elapsed_s
     if result.returncode != 0:
@@ -317,12 +323,12 @@ def fetch_source(source: Dict[str, Any], cutoff: datetime) -> Dict[str, Any]:
             "failed_items": [],
         }
     except Exception as exc:
-        elapsed_s = getattr(exc, "elapsed_s", 0.0)
+        elapsed_s = getattr(exc, "elapsed_s", last_request_elapsed())
         request_trace = build_request_trace(
             source.get("id") or source.get("handle") or "unknown",
             source.get("handle") or source.get("id", "unknown"),
             elapsed_s,
-            status="error",
+            status=getattr(exc, "status", "error"),
             source_type="twitter",
             method="CLI",
             attempt=1,
@@ -398,7 +404,7 @@ def fetch_topic(topic: Dict[str, Any], cutoff: datetime, logger: logging.Logger)
                     topic.get("id") or compiled_query,
                     compiled_query,
                     elapsed_s,
-                    status="error",
+                    status=getattr(exc, "status", "error"),
                     source_type="twitter",
                     method="CLI",
                     attempt=1,
@@ -496,15 +502,27 @@ def main() -> int:
         )
         write_result_with_meta(args.output, output, meta)
 
-        logger.info(
-            "✅ Done: %d/%d sources ok, %d/%d query groups ok, %d tweets → %s",
+        status = meta["status"]
+        failed_calls = max(0, total_calls - ok_calls)
+        log_message = "%s Done: %d/%d sources ok, %d/%d query groups ok, %d/%d calls ok, %d failed, %d tweets → %s"
+        log_args = (
+            "✅" if status == "ok" else ("⚠️" if status == "partial" else "❌"),
             ok_sources,
             len(source_results),
             ok_topics,
             len(topic_results),
+            ok_calls,
+            total_calls,
+            failed_calls,
             total_articles,
             args.output,
         )
+        if status == "partial":
+            logger.warning(log_message, *log_args)
+        elif status == "ok":
+            logger.info(log_message, *log_args)
+        else:
+            logger.error(log_message, *log_args)
         return 0 if total_articles > 0 else 1
     except Exception as exc:
         logger.error("💥 Twitter fetch failed: %s", exc)

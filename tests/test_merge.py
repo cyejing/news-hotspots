@@ -122,6 +122,17 @@ class TestMergeSources(unittest.TestCase):
         self.assertEqual(exported["cross_source_hot_score"], 0.0)
         self.assertEqual(exported["recency_score"], 0.0)
 
+    def test_ensure_scoring_debug_adds_component_semantics(self):
+        article = {}
+
+        scoring_debug = merge_sources.ensure_scoring_debug(article)
+
+        self.assertEqual(
+            scoring_debug["score_component_semantics"]["reference_only"],
+            ["local_extra_score"],
+        )
+        self.assertIn("不直接计入 final_score", scoring_debug["local_extra_score_note"])
+
     def test_set_final_score_debug_populates_expected_component_fields(self):
         article = {"final_score": 8.5}
         score_components = {
@@ -139,6 +150,20 @@ class TestMergeSources(unittest.TestCase):
         self.assertEqual(
             article["scoring_debug"]["final_score"]["components"],
             score_components,
+        )
+        self.assertEqual(
+            article["scoring_debug"]["final_score"]["component_membership"]["included_in_final_score"],
+            [
+                "base_priority_score",
+                "fetch_local_rank_score",
+                "history_score",
+                "cross_source_hot_score",
+                "recency_score",
+            ],
+        )
+        self.assertEqual(
+            article["scoring_debug"]["final_score"]["component_membership"]["reference_only"],
+            ["local_extra_score"],
         )
 
     def test_article_field_helpers_normalize_business_fields(self):

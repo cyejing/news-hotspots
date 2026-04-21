@@ -204,6 +204,7 @@ class TestRunPipeline(unittest.TestCase):
         self.assertEqual(meta["cleaned_archives"], 1)
         self.assertEqual(meta["fetch_timing_s"]["total"], 12.3)
         self.assertEqual(meta["fetch_active_elapsed_s"], 10.3)
+        self.assertEqual(meta["timing_semantics"]["fetch_active_elapsed_s"], "兼容旧字段，等价于 fetch_timing_s.active。")
         self.assertNotIn("steps", meta)
         self.assertNotIn("step_key", meta["step_summaries"]["rss"])
         self.assertNotIn("step_key", meta["step_summaries"]["google"])
@@ -271,6 +272,7 @@ class TestRunPipeline(unittest.TestCase):
         self.assertEqual(meta["timing_s"]["total"], 12.3)
         self.assertEqual(meta["fetch_timing_s"]["active"], 10.3)
         self.assertEqual(meta["fetch_timing_s"]["total"], 12.3)
+        self.assertIn("wall-clock", meta["timing_semantics"]["timing_s"])
 
     def test_summarize_merge_step_uses_single_merge_call_semantics(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -363,6 +365,56 @@ class TestRunPipeline(unittest.TestCase):
             self.assertEqual(first_archived.read_text(encoding="utf-8"), '{"run": 1}')
             self.assertEqual(second_archived.read_text(encoding="utf-8"), '{"run": 2}')
             self.assertEqual(third_archived.read_text(encoding="utf-8"), '{"run": 3}')
+
+
+    def test_summarize_fetch_step_overrides_ok_process_log_with_meta_status(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            output_path = tmp / "google.json"
+            output_path.write_text(json.dumps({"generated": "2026-04-02T00:00:00+08:00", "source_type": "google", "articles": [{"title": "a"}]}), encoding="utf-8")
+            output_path.with_suffix(".meta.json").write_text(
+                json.dumps(
+                    {
+                        "step_key": "google",
+                        "status": "partial",
+                        "timing_s": {"active": 20.0, "total": 40.0},
+                        "items": 1,
+                        "calls_total": 3,
+                        "calls_ok": 2,
+                        "failed_calls": 1,
+                        "failed_items": [{"source_id": "q1", "status": "timeout", "timing_s": {"active": 20.0, "total": 20.0}, "error": "timed out after 20 seconds"}],
+                        "slow_requests": {"total_count": 1},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            spec = run_pipeline.StepSpec(
+                step_key="google",
+                name="Google",
+                script_name="fetch-google.py",
+                args=[],
+                output_path=output_path,
+                timeout_s=2000,
+            )
+            result = run_pipeline.ProcessResult(
+                step_key="google",
+                name="Google",
+                status="ok",
+                elapsed_s=40.0,
+                timeout_s=2000,
+                stdout_tail=[],
+                stderr_tail=[],
+                stdout_lines=0,
+                stderr_lines=0,
+                command=["python3", "fetch-google.py"],
+                returncode=0,
+            )
+
+            summary = run_pipeline.summarize_fetch_step(spec, result)
+
+        self.assertEqual(summary["status"], "partial")
+        self.assertEqual(summary["logs"]["status"], "partial")
+        self.assertIn("status=partial", summary["logs"]["summary"])
 
 
 if __name__ == "__main__":
