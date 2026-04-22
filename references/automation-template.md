@@ -8,6 +8,8 @@
 
 cron payload 的核心要求：**agent 必须在当前 session 内同步完成全流程**（pipeline → 读取 → 翻译 → 输出），不能 spawn 子任务后提前结束。
 
+`<SKILL_DIR>`  替换为 skill 仓库根目录
+
 ---
 
 ## 每日热点
