@@ -30,8 +30,7 @@ clawhub install news-hotspots
 | 层级 | 数量 | 内容 |
 |------|------|------|
 | RSS | 配置驱动订阅源 | OpenAI、NVIDIA、TechCrunch、BBC、Fed、36氪 |
-| GitHub | Releases + Trending | 关键项目更新和 GitHub Trending，统一归到 `github` topic |
-| 社区 / 搜索 | Twitter、Reddit、Google News、V2EX | 高信号社区内容与搜索发现 |
+| 社区 / 搜索 | Twitter、Google News | 高信号社交与搜索发现 |
 | API 源 | 多个接口 | 微博热搜、华尔街见闻、腾讯新闻、Hacker News |
 
 ### 数据管道
@@ -40,13 +39,12 @@ clawhub install news-hotspots
        run-pipeline.py
               ↓
   RSS ────────┐
-  GitHub ─────┤── 并行采集 ──→ merge-sources.py
-  GitHub Tr. ─┤
-  API ────────┤
-  Twitter ────┤
-  Reddit ─────┤
+  Twitter ────┤── 并行采集 ──→ merge-sources.py
   Google ─────┤
-  V2EX ───────┘                          ↓
+  API ────────┤
+  Zhihu ──────┤
+  Weibo ──────┤
+  Toutiao ────┘                          ↓
               质量评分 → 去重 → 主题分组
                              ↓
            merge-hotspots.py → 归档 JSON + Markdown
@@ -69,13 +67,13 @@ clawhub install news-hotspots
 
 ## 配置
 
-- `config/defaults/rss.json` / `twitter.json` / `github.json` / `reddit.json` — 按抓取类型拆分的内置 source 配置
+- `config/defaults/rss.json` / `twitter.json` — 按抓取类型拆分的内置 source 配置
 - `config/defaults/api.json` — 拆分后的 API source 配置
-- `config/defaults/topics.json` — 10 个主题，含搜索查询和展示配置
+- `config/defaults/topics.json` — 主题，含搜索查询和展示配置
 - `config/defaults/runtime.json` — 抓取超时、cooldown、重试、并发、limit、诊断阈值和 pipeline 默认值
 - 用户配置放在 `workspace/config/`，优先级更高
 
-当前默认主题包括 `ai-frontier`、`ai-infra`、`github`、`technology`、`business`、`world`、`science`、`social`。
+当前默认主题包括 `ai-frontier`、`ai-infra`、`twitter`、`technology`、`business`、`world`、`science`、`social`。
 
 RSS 默认源池现在更保守：明显的个人博客仍保留在 `rss.json` 中，但会放到列表尾部并以 `"enabled": false` 作为候选源处理。
 
@@ -90,8 +88,6 @@ RSS 默认源池现在更保守：明显的个人博客仍保留在 `rss.json` �
 ```bash
 cp config/defaults/rss.json workspace/config/news-hotspots-rss.json
 cp config/defaults/twitter.json workspace/config/news-hotspots-twitter.json
-cp config/defaults/github.json workspace/config/news-hotspots-github.json
-cp config/defaults/reddit.json workspace/config/news-hotspots-reddit.json
 cp config/defaults/topics.json workspace/config/news-hotspots-topics.json
 ```
 
@@ -113,13 +109,9 @@ runtime 主要收口这些可调参数：
 - pipeline 的 step timeout、merge timeout、hotspots timeout、archive retention、默认 top N
 - `source-health.py` 和 `step_contract.py` 使用的诊断阈值
 
-## 环境变量
+## 运行时配置
 
-```bash
-export GITHUB_TOKEN="..."
-```
-
-现在保留的运行时环境变量只有 `GITHUB_TOKEN`，其余 timeout 和 cooldown 类参数统一通过 `runtime.json` 配置。
+超时与 cooldown 等参数统一通过 `runtime.json` 配置（见 `config/defaults/runtime.json`），无必需的运行时环境变量。RSS 抓取遵循标准的 `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` 环境变量（含 `socks5h://`），设置即生效。
 
 ## 依赖
 

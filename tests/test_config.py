@@ -26,17 +26,11 @@ class TestConfigLoader(unittest.TestCase):
     def test_split_source_loaders_read_defaults(self):
         rss = config_loader.load_merged_rss_sources(DEFAULTS_DIR)
         twitter = config_loader.load_merged_twitter_sources(DEFAULTS_DIR)
-        github = config_loader.load_merged_github_sources(DEFAULTS_DIR)
-        reddit = config_loader.load_merged_reddit_sources(DEFAULTS_DIR)
 
         self.assertTrue(rss)
         self.assertTrue(twitter)
-        self.assertTrue(github)
-        self.assertTrue(reddit)
         self.assertEqual(rss[0]["type"], "rss")
         self.assertEqual(twitter[0]["type"], "twitter")
-        self.assertEqual(github[0]["type"], "github")
-        self.assertEqual(reddit[0]["type"], "reddit")
 
     def test_runtime_overlay_deep_merge(self):
         with tempfile.TemporaryDirectory() as tmpdir:

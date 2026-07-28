@@ -64,7 +64,7 @@ cat <WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>.md
 ```
 原始：
 ---
-summary: mode:daily | total_articles:15 | rss:8 | twitter:4 | github:3 | generated_at:2026-04-02T10:00:00+00:00
+summary: mode:daily | total_articles:15 | rss:8 | twitter:4 | google:3 | generated_at:2026-04-02T10:00:00+00:00
 ---
 # 2026-04-02 daily 全球科技与 AI 热点
 ## AI Frontier
@@ -72,7 +72,7 @@ summary: mode:daily | total_articles:15 | rss:8 | twitter:4 | github:3 | generat
 
 翻译后（中文）：
 ---
-本次热点汇总：今日共抓取 15 篇文章，主要来源包括 RSS（8 篇）、Twitter（4 篇）和 GitHub（3 篇），生成时间 2026-04-02 10:00。
+本次热点汇总：今日共抓取 15 篇文章，主要来源包括 RSS（8 篇）、Twitter（4 篇）和 Google（3 篇），生成时间 2026-04-02 10:00。
 ---
 # 2026-04-02 daily 全球科技与 AI 热点
 ## AI Frontier

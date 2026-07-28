@@ -15,20 +15,6 @@
       "retry_delay_s": 3.0,
       "cache_ttl_hours": 1
     },
-    "github": {
-      "request_timeout_s": 20,
-      "cooldown_s": 3.0,
-      "releases_per_repo": 20,
-      "retry_count": 1,
-      "retry_delay_s": 2.0,
-      "cache_ttl_hours": 1
-    },
-    "github_trending": {
-      "request_timeout_s": 20,
-      "cooldown_s": 3.0,
-      "min_stars": 50,
-      "per_topic": 15
-    },
     "google": {
       "request_timeout_s": 20,
       "cooldown_s": 15.0,
@@ -39,15 +25,6 @@
       "cooldown_s": 15.0,
       "count": 20,
       "results_per_query": 10
-    },
-    "reddit": {
-      "request_timeout_s": 20,
-      "cooldown_s": 15.0,
-      "results_per_query": 10
-    },
-    "v2ex": {
-      "request_timeout_s": 30,
-      "cooldown_s": 6.0
     },
     "zhihu": {
       "request_timeout_s": 30,
@@ -87,7 +64,6 @@
     ]
   },
   "cache": {
-    "rss_cache_path": "/tmp/news-hotspots-rss-cache.json",
-    "github_cache_path": "/tmp/news-hotspots-github-cache.json"
+    "rss_cache_path": "/tmp/news-hotspots-rss-cache.json"
   }
 }

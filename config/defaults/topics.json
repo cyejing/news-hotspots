@@ -15,11 +15,10 @@
           "大模型 OR 智能体 OR 模型发布 OR 推理能力",
           "multimodal OR reasoning OR benchmark OR \"AI application\""
         ],
-        "reddit_queries": [
-          "(OpenAI OR Anthropic OR Gemini OR Claude) AND (model OR release OR API OR benchmark)",
-          "(\"AI agent\" OR \"agentic AI\" OR assistant OR copilot) AND (workflow OR coding OR automation OR product)",
-          "(reasoning OR multimodal OR benchmark OR evaluation) AND (model OR lab OR capability OR release)",
-          "(\"AI application\" OR assistant OR copilot OR chatbot) AND (launch OR release OR capability OR adoption)"
+        "twitter_queries": [
+          "(OpenAI OR Anthropic OR Gemini OR Claude) (model OR release OR API OR benchmark)",
+          "(\"AI agent\" OR \"agentic AI\" OR assistant OR copilot) (workflow OR coding OR automation OR product)",
+          "(reasoning OR multimodal OR benchmark OR evaluation) (model OR lab OR capability OR release)"
         ],
         "exclude": [
           "tutorial",
@@ -44,11 +43,10 @@
           "芯片 OR 算力 OR 数据中心 OR 机器人",
           "robotics OR humanoid OR self-driving OR space technology"
         ],
-        "reddit_queries": [
-          "(NVIDIA OR AMD OR TSMC OR semiconductor) AND (chip OR GPU OR inference OR supply)",
-          "(\"data center\" OR datacenter OR power OR cooling OR compute) AND (AI OR cluster OR capacity OR demand)",
-          "(robotics OR humanoid OR autonomy OR self-driving OR space) AND (deployment OR factory OR vehicle OR mission)",
-          "(semiconductor OR GPU OR datacenter OR robotics) AND (capacity OR deployment OR supply chain OR energy)"
+        "twitter_queries": [
+          "(NVIDIA OR AMD OR TSMC OR semiconductor OR GPU) (chip OR fab OR supply OR demand)",
+          "(\"data center\" OR datacenter OR power OR cooling) (AI OR cluster OR capacity OR expansion)",
+          "(robotics OR humanoid OR self-driving OR space technology) (deployment OR launch OR factory OR vehicle)"
         ],
         "exclude": [
           "smartphone review",
@@ -64,32 +62,9 @@
       "id": "twitter",
       "emoji": "🐦",
       "label": "Twitter / 推特动态",
-      "description": "来自 Twitter 的科技与 AI 相关推文，按关注账号与话题搜索聚合。",
+      "description": "来自 Twitter 关注账号的推文聚合。按账号来源固定归入本主题；twitter 搜索查询则按各自所属主题分类，不在此聚合。",
       "search": {
-        "exclude": [],
-        "twitter_queries": [
-          "(OpenAI OR Anthropic OR Gemini OR Claude) (model OR release OR API OR benchmark)",
-          "(\"AI agent\" OR \"agentic AI\" OR assistant OR copilot) (workflow OR coding OR automation OR product)",
-          "(reasoning OR multimodal OR benchmark OR evaluation) (model OR lab OR capability OR release)",
-          "(NVIDIA OR AMD OR TSMC OR semiconductor OR GPU) (chip OR fab OR supply OR demand)",
-          "(\"data center\" OR datacenter OR power OR cooling) (AI OR cluster OR capacity OR expansion)",
-          "(robotics OR humanoid OR self-driving OR space technology) (deployment OR launch OR factory OR vehicle)",
-          "(smartphone OR laptop OR wearable OR gadget) (launch OR review OR update OR release)",
-          "(\"internet service\" OR app OR \"digital product\" OR social media) (launch OR update OR users OR feature)",
-          "(telecom OR broadband OR handset OR electronics) (market OR launch OR service OR device)",
-          "(earnings OR revenue OR guidance OR results) (company OR market OR shares OR sector)",
-          "(funding OR acquisition OR merger OR IPO) (startup OR company OR industry OR market)",
-          "(antitrust OR regulation OR investigation OR competition) (company OR industry OR market OR policy)",
-          "(war OR conflict OR diplomacy OR sanctions) (country OR region OR border OR ceasefire)",
-          "(\"foreign policy\" OR geopolitics OR tariffs OR \"global trade\") (China OR US OR Europe OR Middle East)",
-          "(\"supply chain\" OR \"export controls\" OR shipping OR energy) (trade OR conflict OR route OR market)",
-          "(\"research paper\" OR preprint OR study OR paper) (research OR experiment OR results OR journal)",
-          "(breakthrough OR discovery OR laboratory OR experiment) (research OR science OR study OR team)",
-          "(benchmark OR dataset OR replication OR \"peer review\") (paper OR results OR finding OR study)",
-          "(\"public opinion\" OR viral OR trending OR backlash) (social media OR internet OR culture OR app)",
-          "(\"social issue\" OR privacy OR misinformation OR moderation) (platform OR society OR internet OR community)",
-          "(\"social media\" OR harassment OR boycott OR protest) (platform OR app OR culture OR users)"
-        ]
+        "exclude": []
       },
       "display": {
         "max_items": 10,
@@ -108,11 +83,10 @@
           "消费电子 OR 数码产品 OR 互联网服务 OR 科技产品",
           "telecom OR broadband OR handset OR electronics OR device launch"
         ],
-        "reddit_queries": [
-          "(smartphone OR laptop OR tablet OR wearable OR gadget) AND (launch OR review OR update OR feature)",
-          "(\"internet service\" OR app OR \"digital product\" OR \"social media\" OR \"open source\") AND (launch OR update OR feature OR users)",
-          "(telecom OR handset OR broadband OR electronics) AND (market OR launch OR service OR device)",
-          "title:(smartphone OR laptop OR gadget OR device) AND (launch OR review OR update OR feature)"
+        "twitter_queries": [
+          "(smartphone OR laptop OR wearable OR gadget) (launch OR review OR update OR release)",
+          "(\"internet service\" OR app OR \"digital product\" OR social media) (launch OR update OR users OR feature)",
+          "(telecom OR broadband OR handset OR electronics) (market OR launch OR service OR device)"
         ],
         "exclude": []
       },
@@ -133,11 +107,10 @@
           "财报 OR 融资 OR 并购 OR 产业政策",
           "antitrust OR regulation OR investigation OR competition"
         ],
-        "reddit_queries": [
-          "(earnings OR revenue OR guidance OR results) AND (company OR market OR shares OR sector)",
-          "(funding OR acquisition OR merger OR IPO) AND (startup OR company OR market OR industry)",
-          "(antitrust OR regulation OR investigation OR policy) AND (company OR industry OR market OR competition)",
-          "title:(layoffs OR IPO OR acquisition OR earnings) AND (company OR market OR industry OR business)"
+        "twitter_queries": [
+          "(earnings OR revenue OR guidance OR results) (company OR market OR shares OR sector)",
+          "(funding OR acquisition OR merger OR IPO) (startup OR company OR industry OR market)",
+          "(antitrust OR regulation OR investigation OR competition) (company OR industry OR market OR policy)"
         ],
         "exclude": []
       },
@@ -158,11 +131,10 @@
           "国际关系 OR 地缘政治 OR 制裁 OR 关税",
           "\"supply chain\" OR \"export controls\" OR ceasefire OR trade route"
         ],
-        "reddit_queries": [
-          "(war OR conflict OR diplomacy OR sanctions) AND (country OR region OR border OR ceasefire)",
-          "(\"foreign policy\" OR geopolitics OR tariffs OR \"global trade\") AND (China OR US OR Europe OR Middle East)",
-          "(\"supply chain\" OR \"export controls\" OR shipping OR energy) AND (trade OR conflict OR route OR market)",
-          "(international relations OR geopolitics OR sanctions OR tariffs) AND (diplomacy OR conflict OR trade OR supply chain)"
+        "twitter_queries": [
+          "(war OR conflict OR diplomacy OR sanctions) (country OR region OR border OR ceasefire)",
+          "(\"foreign policy\" OR geopolitics OR tariffs OR \"global trade\") (China OR US OR Europe OR Middle East)",
+          "(\"supply chain\" OR \"export controls\" OR shipping OR energy) (trade OR conflict OR route OR market)"
         ],
         "exclude": []
       },
@@ -183,11 +155,10 @@
           "科研 OR 论文 OR 实验室 OR 科学发现",
           "benchmark OR dataset OR replication OR \"peer review\""
         ],
-        "reddit_queries": [
-          "(\"research paper\" OR preprint OR arXiv OR study) AND (research OR science OR experiment OR results)",
-          "(breakthrough OR discovery OR laboratory OR experiment) AND (research OR science OR study OR team)",
-          "(benchmark OR dataset OR replication OR \"peer review\") AND (paper OR study OR results OR finding)",
-          "(science OR research OR paper OR experiment) AND (discovery OR dataset OR results OR laboratory)"
+        "twitter_queries": [
+          "(\"research paper\" OR preprint OR study OR paper) (research OR experiment OR results OR journal)",
+          "(breakthrough OR discovery OR laboratory OR experiment) (research OR science OR study OR team)",
+          "(benchmark OR dataset OR replication OR \"peer review\") (paper OR results OR finding OR study)"
         ],
         "exclude": []
       },
@@ -208,11 +179,10 @@
           "社会事件 OR 舆论热点 OR 公共议题 OR 社会现象",
           "\"social media\" OR moderation OR harassment OR \"online culture\""
         ],
-        "reddit_queries": [
-          "(\"public opinion\" OR viral OR trending OR backlash) AND (social media OR internet OR culture OR app)",
-          "(\"social issue\" OR privacy OR misinformation OR moderation) AND (platform OR society OR internet OR community)",
-          "(\"social media\" OR harassment OR boycott OR protest) AND (platform OR app OR culture OR users)",
-          "(social issue OR public opinion OR online culture OR privacy) AND (platform OR internet OR community OR users)"
+        "twitter_queries": [
+          "(\"public opinion\" OR viral OR trending OR backlash) (social media OR internet OR culture OR app)",
+          "(\"social issue\" OR privacy OR misinformation OR moderation) (platform OR society OR internet OR community)",
+          "(\"social media\" OR harassment OR boycott OR protest) (platform OR app OR culture OR users)"
         ],
         "exclude": []
       },

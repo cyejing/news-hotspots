@@ -145,7 +145,7 @@ def build_hotspot_item(
     source_rank_index: Dict[Tuple[str, str], Dict[str, int]],
     selection_order: int,
 ) -> Dict[str, Any]:
-    link = article.get("link") or article.get("reddit_url") or article.get("external_url", "")
+    link = article.get("link") or article.get("external_url", "")
     title = (
         article.get("title")
         or article.get("name")
@@ -247,14 +247,14 @@ def load_seen_daily_keys(json_dir: Path) -> Tuple[Set[str], Set[str]]:
 
 def is_seen_article(article: Dict[str, Any], seen_titles: Set[str], seen_links: Set[str]) -> bool:
     title_key = normalize_title_key(article.get("title"))
-    link_key = normalize_link_key(article.get("link") or article.get("reddit_url") or article.get("external_url"))
+    link_key = normalize_link_key(article.get("link") or article.get("external_url"))
     return (title_key and title_key in seen_titles) or (link_key and link_key in seen_links)
 
 
 def article_key(article: Dict[str, Any]) -> Tuple[str, str]:
     return (
         normalize_title_key(article.get("title")),
-        normalize_link_key(article.get("link") or article.get("reddit_url") or article.get("external_url")),
+        normalize_link_key(article.get("link") or article.get("external_url")),
     )
 
 

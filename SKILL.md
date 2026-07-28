@@ -1,6 +1,6 @@
 ---
 name: news-hotspots
-description: 聚合 RSS、GitHub、Twitter、Reddit、Google News 等多源科技与 AI 新闻，生成每日/每周热点报告，支持查看新闻热点、换一批新闻热点、创建定时任务与健康诊断。
+description: 聚合 RSS、Twitter、Google News 等多源科技与 AI 新闻，生成每日/每周热点报告，支持查看新闻热点、换一批新闻热点、创建定时任务与健康诊断。
 version: "4.0.2"
 homepage: https://github.com/cyejing/news-hotspots
 source: https://github.com/cyejing/news-hotspots
@@ -9,10 +9,6 @@ metadata:
     requires:
       bins: [ "python3", "uv" ]
     optionalBins: [ "bb-browser" ]
-env:
-  - name: GITHUB_TOKEN
-    required: false
-    description: GitHub token，提高 GitHub API 速率限制
 files:
   read:
     - <SKILL_DIR>/config/defaults/: 默认配置

@@ -13,7 +13,7 @@ news-hotspots 配置加载层。
 3. 为 fetch / merge / pipeline 脚本提供统一配置入口
 
 配置文件职责：
-- `rss.json` / `twitter.json` / `github.json` / `reddit.json` / `api.json`
+- `rss.json` / `twitter.json` / `api.json`
   保存各 source_type 的业务输入配置
 - `topics.json`
   保存 topic 查询配置
@@ -30,16 +30,12 @@ logger = logging.getLogger(__name__)
 
 RSS_DEFAULTS_FILE = "rss.json"
 TWITTER_DEFAULTS_FILE = "twitter.json"
-GITHUB_DEFAULTS_FILE = "github.json"
-REDDIT_DEFAULTS_FILE = "reddit.json"
 TOPICS_DEFAULTS_FILE = "topics.json"
 API_SOURCES_DEFAULTS_FILE = "api.json"
 RUNTIME_DEFAULTS_FILE = "runtime.json"
 
 RSS_OVERLAY_FILE = "news-hotspots-rss.json"
 TWITTER_OVERLAY_FILE = "news-hotspots-twitter.json"
-GITHUB_OVERLAY_FILE = "news-hotspots-github.json"
-REDDIT_OVERLAY_FILE = "news-hotspots-reddit.json"
 TOPICS_OVERLAY_FILE = "news-hotspots-topics.json"
 API_SOURCES_OVERLAY_FILE = "news-hotspots-api.json"
 RUNTIME_OVERLAY_FILE = "news-hotspots-runtime.json"
@@ -134,14 +130,6 @@ def load_merged_rss_sources(defaults_dir: Path, config_dir: Optional[Path] = Non
 
 def load_merged_twitter_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     return _load_merged_record_file(defaults_dir, TWITTER_DEFAULTS_FILE, config_dir, TWITTER_OVERLAY_FILE)
-
-
-def load_merged_github_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    return _load_merged_record_file(defaults_dir, GITHUB_DEFAULTS_FILE, config_dir, GITHUB_OVERLAY_FILE)
-
-
-def load_merged_reddit_sources(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
-    return _load_merged_record_file(defaults_dir, REDDIT_DEFAULTS_FILE, config_dir, REDDIT_OVERLAY_FILE)
 
 
 def load_merged_topics(defaults_dir: Path, config_dir: Optional[Path] = None) -> List[Dict[str, Any]]:

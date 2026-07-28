@@ -103,10 +103,6 @@ SCORE_ENGAGEMENT_VIRAL = 5
 SCORE_ENGAGEMENT_HIGH = 3
 SCORE_ENGAGEMENT_MED = 2
 SCORE_ENGAGEMENT_LOW = 1
-SCORE_DISCUSSION_VIRAL = 5
-SCORE_DISCUSSION_HIGH = 3
-SCORE_DISCUSSION_MED = 2
-SCORE_DISCUSSION_LOW = 1
 
 CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 NON_WORD_RE = re.compile(r"[^\w\s\u3400-\u4dbf\u4e00-\u9fff]+", re.UNICODE)
@@ -235,7 +231,7 @@ def normalize_url(url: str) -> str:
 
 
 def article_primary_link(article: Dict[str, Any]) -> str:
-    return str(article.get("link") or article.get("reddit_url") or article.get("external_url") or "")
+    return str(article.get("link") or article.get("external_url") or "")
 
 
 def article_display_title(article: Dict[str, Any]) -> str:
@@ -368,7 +364,7 @@ def build_noise_signals(article: Dict[str, Any]) -> Dict[str, float]:
     title = normalize_text(article.get("title"))
     summary = normalize_text(article.get("summary") or article.get("snippet"))
     combined_text = normalize_text(" ".join(part for part in (title, summary) if part))
-    link = str(article.get("link") or article.get("external_url") or article.get("reddit_url") or "")
+    link = str(article.get("link") or article.get("external_url") or "")
     signals: Dict[str, float] = {}
     article_domain = get_domain(link)
     embedded_domains = extract_embedded_domains(combined_text)
@@ -416,7 +412,7 @@ def filter_noise_articles(articles: Iterable[Dict[str, Any]]) -> Tuple[List[Dict
                 samples.append(
                     {
                         "title": normalize_text(article.get("title"))[:160],
-                        "link": str(article.get("link") or article.get("external_url") or article.get("reddit_url") or ""),
+                        "link": str(article.get("link") or article.get("external_url") or ""),
                         "signals": build_noise_signals(article),
                     }
                 )
@@ -630,71 +626,7 @@ def calculate_local_extra_details(article: Dict[str, Any], source_type: str) -> 
             "matched_on": {"likes": likes, "retweets": retweets, "replies": replies},
         }
 
-    if source_type == "reddit":
-        score = int(article.get("score", 0) or 0)
-        comments = int(article.get("num_comments", 0) or 0)
-        if score >= 1000 or comments >= 300:
-            return {
-                "score": float(SCORE_DISCUSSION_VIRAL),
-                "rule": "reddit_discussion",
-                "tier": "viral",
-                "matched_on": {"score": score, "comments": comments},
-            }
-        if score >= 500 or comments >= 150:
-            return {
-                "score": float(SCORE_DISCUSSION_HIGH),
-                "rule": "reddit_discussion",
-                "tier": "high",
-                "matched_on": {"score": score, "comments": comments},
-            }
-        if score >= 200 or comments >= 80:
-            return {
-                "score": float(SCORE_DISCUSSION_MED),
-                "rule": "reddit_discussion",
-                "tier": "medium",
-                "matched_on": {"score": score, "comments": comments},
-            }
-        if score >= 100 or comments >= 30:
-            return {
-                "score": float(SCORE_DISCUSSION_LOW),
-                "rule": "reddit_discussion",
-                "tier": "low",
-                "matched_on": {"score": score, "comments": comments},
-            }
-        return {
-            "score": 0.0,
-            "rule": "reddit_discussion",
-            "tier": "none",
-            "matched_on": {"score": score, "comments": comments},
-        }
-
-    if source_type == "v2ex":
-        replies = article.get("replies", 0)
-        score = float(calculate_v2ex_replies_score(replies))
-        return {
-            "score": score,
-            "rule": "v2ex_replies",
-            "tier": "none" if score == 0 else "matched",
-            "matched_on": {"replies": replies},
-        }
-
     return {"score": 0.0, "rule": "unsupported", "tier": "none", "matched_on": {}}
-
-
-def calculate_v2ex_replies_score(replies: Any) -> int:
-    try:
-        replies_int = int(replies)
-    except (TypeError, ValueError):
-        return 0
-    if replies_int >= 200:
-        return SCORE_DISCUSSION_VIRAL
-    if replies_int >= 100:
-        return SCORE_DISCUSSION_HIGH
-    if replies_int >= 50:
-        return SCORE_DISCUSSION_MED
-    if replies_int >= 20:
-        return SCORE_DISCUSSION_LOW
-    return 0
 
 
 def calculate_recency_score(article: Dict[str, Any]) -> float:
@@ -1745,11 +1677,9 @@ def project_article_output(article: Dict[str, Any]) -> Dict[str, Any]:
         "replies",
         "num_comments",
         "score",
-        "reddit_url",
         "external_url",
         "google_query",
         "twitter_query",
-        "reddit_query",
         "name",
         "repo",
         "published_at",

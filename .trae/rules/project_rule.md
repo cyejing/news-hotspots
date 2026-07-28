@@ -21,7 +21,7 @@ alwaysApply: true
 
 - **路径表达**：统一使用 `<SKILL_DIR>` 与 `<WORKSPACE>` 表达路径语义，不依赖当前 shell 的相对路径
 - **并发限制**：同一台机器上不要并发运行多个热点任务；固定 debug 和归档结构会互相覆盖
-- **环境变量**：GitHub 相关环境变量只保留 `GITHUB_TOKEN`；不要重新引入 `GH_APP_ID`、`GH_APP_INSTALL_ID`、`GH_APP_KEY_FILE`
+- **环境变量**：无运行时环境变量；不要重新引入 `GITHUB_TOKEN`、`GH_APP_ID`、`GH_APP_INSTALL_ID`、`GH_APP_KEY_FILE`。RSS 抓取遵循标准 `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` 环境变量（含 `socks5h://`）
 
 ---
 
@@ -155,9 +155,9 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
 
 **细分主题**（优先级高到低）：
 
-1. `github` - 开源项目、代码仓库、开发者生态与技术趋势
+1. `ai-frontier` - 模型、智能体、AI 应用、AI 实验室动态与前沿技术突破
 2. `ai-infra` - 芯片、算力、数据中心、机器人、智能驾驶与太空科技
-3. `ai-frontier` - 模型、智能体、AI 应用、AI 实验室动态与前沿技术突破
+3. `twitter` - Twitter 关注账号推文聚合桶（账号来源 topic 固定归此；twitter 搜索查询则按内容归入下方各主题）
 
 **广义主题**（优先级高到低）：
 
@@ -169,7 +169,7 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
 
 ### 分类原则
 
-- **先细分类，后大分类**：能准确命中 `ai-frontier`、`ai-infra`、`github` 时，不再回落到一级大分类
+- **先细分类，后大分类**：能准确命中 `ai-frontier`、`ai-infra` 时，不再回落到一级大分类
 - **看长期主轴**：判断 source 的 topic 时看长期主轴，而非偶发内容
 - **单 topic 约束**：source 配置统一使用单值 `topic`，每个 source / item 只保留 1 个主 topic
 

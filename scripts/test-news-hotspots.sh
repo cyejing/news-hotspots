@@ -12,12 +12,8 @@ DEFAULT_ARCHIVE_ROOT_DIR="$ROOT_DIR/workspace/archive/news-hotspots"
 
 MERGED_JSON="$DEBUG_DIR/merge-sources.json"
 RSS_JSON="$DEBUG_DIR/rss.json"
-GITHUB_JSON="$DEBUG_DIR/github.json"
-GITHUB_TRENDING_JSON="$DEBUG_DIR/github_trending.json"
 API_JSON="$DEBUG_DIR/api.json"
 TWITTER_JSON="$DEBUG_DIR/twitter.json"
-REDDIT_JSON="$DEBUG_DIR/reddit.json"
-V2EX_JSON="$DEBUG_DIR/v2ex.json"
 ZHIHU_JSON="$DEBUG_DIR/zhihu.json"
 WEIBO_JSON="$DEBUG_DIR/weibo.json"
 TOUTIAO_JSON="$DEBUG_DIR/toutiao.json"
@@ -35,12 +31,8 @@ APPENDED_FETCH_ARGS=()
 fetch_step_script() {
   case "$1" in
     rss) echo "$SCRIPT_DIR/fetch-rss.py" ;;
-    github) echo "$SCRIPT_DIR/fetch-github.py" ;;
-    github_trending) echo "$SCRIPT_DIR/fetch-github-trending.py" ;;
     api) echo "$SCRIPT_DIR/fetch-api.py" ;;
     twitter) echo "$SCRIPT_DIR/fetch-twitter.py" ;;
-    reddit) echo "$SCRIPT_DIR/fetch-reddit.py" ;;
-    v2ex) echo "$SCRIPT_DIR/fetch-v2ex.py" ;;
     zhihu) echo "$SCRIPT_DIR/fetch-zhihu.py" ;;
     weibo) echo "$SCRIPT_DIR/fetch-weibo.py" ;;
     toutiao) echo "$SCRIPT_DIR/fetch-toutiao.py" ;;
@@ -52,12 +44,8 @@ fetch_step_script() {
 step_output_path() {
   case "$1" in
     rss) echo "$RSS_JSON" ;;
-    github) echo "$GITHUB_JSON" ;;
-    github_trending) echo "$GITHUB_TRENDING_JSON" ;;
     api) echo "$API_JSON" ;;
     twitter) echo "$TWITTER_JSON" ;;
-    reddit) echo "$REDDIT_JSON" ;;
-    v2ex) echo "$V2EX_JSON" ;;
     zhihu) echo "$ZHIHU_JSON" ;;
     weibo) echo "$WEIBO_JSON" ;;
     toutiao) echo "$TOUTIAO_JSON" ;;
@@ -74,7 +62,7 @@ Unified maintainer test entrypoint for news-hotspots.
 
 USAGE:
   ./scripts/test-news-hotspots.sh full [--hours N] [--config DIR] [--verbose] [--force] [--skip a,b]
-  ./scripts/test-news-hotspots.sh step <rss|github|github_trending|api|twitter|reddit|v2ex|zhihu|weibo|toutiao|google|merge|hotspots|validate> [--hours N] [--config DIR] [--verbose] [--force]
+  ./scripts/test-news-hotspots.sh step <rss|api|twitter|zhihu|weibo|toutiao|google|merge|hotspots|validate> [--hours N] [--config DIR] [--verbose] [--force]
   ./scripts/test-news-hotspots.sh health [--verbose]
   ./scripts/test-news-hotspots.sh unit [tests.test_hotspots tests.test_merge ...]
 
@@ -84,39 +72,27 @@ OUTPUTS:
     /tmp/news-hotspots/debug/rss.meta.json
     /tmp/news-hotspots/debug/twitter.meta.json
     /tmp/news-hotspots/debug/google.meta.json
-    /tmp/news-hotspots/debug/github.meta.json
-    /tmp/news-hotspots/debug/github_trending.meta.json
     /tmp/news-hotspots/debug/api.meta.json
-    /tmp/news-hotspots/debug/v2ex.meta.json
     /tmp/news-hotspots/debug/zhihu.meta.json
     /tmp/news-hotspots/debug/weibo.meta.json
     /tmp/news-hotspots/debug/toutiao.meta.json
-    /tmp/news-hotspots/debug/reddit.meta.json
     /tmp/news-hotspots/debug/merge-sources.meta.json
     /tmp/news-hotspots/debug/merge-hotspots.meta.json
     /tmp/news-hotspots/debug/rss.json
     /tmp/news-hotspots/debug/twitter.json
     /tmp/news-hotspots/debug/google.json
-    /tmp/news-hotspots/debug/github.json
-    /tmp/news-hotspots/debug/github_trending.json
     /tmp/news-hotspots/debug/api.json
-    /tmp/news-hotspots/debug/v2ex.json
     /tmp/news-hotspots/debug/zhihu.json
     /tmp/news-hotspots/debug/weibo.json
     /tmp/news-hotspots/debug/toutiao.json
-    /tmp/news-hotspots/debug/reddit.json
     /tmp/news-hotspots/debug/merge-sources.json
     workspace/archive/news-hotspots/<DATE>/json/daily.json
     workspace/archive/news-hotspots/<DATE>/markdown/daily.md
     workspace/archive/news-hotspots/<DATE>/meta/*.meta.json
   step:
     /tmp/news-hotspots/debug/rss.json
-    /tmp/news-hotspots/debug/github.json
-    /tmp/news-hotspots/debug/github_trending.json
     /tmp/news-hotspots/debug/api.json
     /tmp/news-hotspots/debug/twitter.json
-    /tmp/news-hotspots/debug/reddit.json
-    /tmp/news-hotspots/debug/v2ex.json
     /tmp/news-hotspots/debug/zhihu.json
     /tmp/news-hotspots/debug/weibo.json
     /tmp/news-hotspots/debug/toutiao.json
@@ -134,8 +110,6 @@ RUNTIME CONFIG:
     <CONFIG_DIR>/news-hotspots-runtime.json
   precedence:
     CLI flags > workspace runtime override > defaults runtime
-  env:
-    only GITHUB_TOKEN remains supported
 HELP
 }
 
@@ -230,7 +204,7 @@ run_fetch_step() {
   mkdir -p "$TMP_DIR" "$DEBUG_DIR"
   local cmd=(uv run "$script_path")
   case "$step" in
-    api|v2ex|zhihu|weibo|toutiao)
+    api|zhihu|weibo|toutiao)
       if [ "$VERBOSE" = true ]; then
         cmd+=(--verbose)
       fi
@@ -264,19 +238,15 @@ run_step() {
       fi
       run_cmd "${cmd[@]}"
       ;;
-    rss|github|github_trending|api|twitter|reddit|v2ex|zhihu|weibo|toutiao|google)
+    rss|api|twitter|zhihu|weibo|toutiao|google)
       run_fetch_step "$step"
       ;;
     merge)
       local cmd=(uv run "$SCRIPT_DIR/merge-sources.py" --output "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR")
       for pair in \
         "--rss:$RSS_JSON" \
-        "--github:$GITHUB_JSON" \
-        "--github-trending:$GITHUB_TRENDING_JSON" \
         "--api:$API_JSON" \
         "--twitter:$TWITTER_JSON" \
-        "--reddit:$REDDIT_JSON" \
-        "--v2ex:$V2EX_JSON" \
         "--zhihu:$ZHIHU_JSON" \
         "--weibo:$WEIBO_JSON" \
         "--toutiao:$TOUTIAO_JSON" \

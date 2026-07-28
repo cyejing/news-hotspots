@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Claude Code **skill** (`news-hotspots`) that aggregates multi-source tech/AI news (RSS, GitHub, GitHub Trending, Twitter, Reddit, Google News, V2EX, Zhihu, Weibo, Toutiao, plus API sources like WallStreetCN/Hacker News) into quality-scored, deduplicated daily/weekly hotspot reports. The skill is invoked by the assistant at runtime; `SKILL.md` is the runtime entry contract and `references/execution-guide.md` is the delivery procedure — both are authoritative for agent behavior.
+A Claude Code **skill** (`news-hotspots`) that aggregates multi-source tech/AI news (RSS, Twitter, Google News, Zhihu, Weibo, Toutiao, plus API sources like WallStreetCN/Hacker News) into quality-scored, deduplicated daily/weekly hotspot reports. The skill is invoked by the assistant at runtime; `SKILL.md` is the runtime entry contract and `references/execution-guide.md` is the delivery procedure — both are authoritative for agent behavior.
 
 Path placeholders (`<SKILL_DIR>`, `<WORKSPACE>`, `<DATE>`, `<MODE>`) are the canonical way to express paths in this project. Do **not** rely on the shell's relative cwd — scripts are invoked with absolute `--defaults` / `--config` / `--archive` args.
 
@@ -52,7 +52,7 @@ run-pipeline.py  ──parallel fetch (ThreadPoolExecutor)──▶  merge-sourc
 
 Two-layer merge: `config/defaults/*.json` (baseline, in-repo) + `<WORKSPACE>/config/news-hotspots-*.json` (user overlay, gitignored).
 
-- **Record-list configs** (`rss`/`twitter`/`github`/`reddit`/`api`/`topics`): merged by `id`. Matching `id` deep-merges, new `id` appends, `"enabled": false` disables a built-in source.
+- **Record-list configs** (`rss`/`twitter`/`api`/`topics`): merged by `id`. Matching `id` deep-merges, new `id` appends, `"enabled": false` disables a built-in source.
 - **`runtime.json`**: deep-merged as a plain dict (not id-keyed). Precedence: CLI flags > workspace runtime overlay > defaults. Holds fetch timeouts/cooldowns/retries/concurrency, pipeline timeouts, archive retention, default top N, and diagnostics thresholds.
 - Overlay filenames are fixed (`news-hotspots-rss.json`, `news-hotspots-runtime.json`, etc.); the `news-hotspots-` prefix is how the loader finds them.
 
@@ -71,8 +71,8 @@ Two-layer merge: `config/defaults/*.json` (baseline, in-repo) + `<WORKSPACE>/con
 
 - **No legacy compat layers.** Contract changes must update producer, consumer, tests, and docs in the same commit. Don't reintroduce deprecated fields/flags. Canonical step-diagnostic fields are `items`, `call_stats`, `failed_items` — not `count`. Timing is `timing_s.active`/`timing_s.total`; logs go in `logs`.
 - **Deprecated CLI flags** (do not use): `run-pipeline.py` `--archive-dir`/`--debug-dir`/`--output`; `source-health.py` `--input-dir`. Current: `--archive`, `--debug`, `--input`.
-- **Single `topic` per source/item.** Sources configure a single-value `topic`; each article carries one `primary_topic`. Subtopics (`ai-frontier`, `ai-infra`, `github`) win over broad categories (`technology`, `business`, `world`, `science`, `social`) when classification is precise.
-- **`GITHUB_TOKEN` is the only env var.** Do not reintroduce `GH_APP_ID` / `GH_APP_INSTALL_ID` / `GH_APP_KEY_FILE`. Timeouts and cooldowns live in `runtime.json`, not env vars.
+- **Single `topic` per source/item.** Sources configure a single-value `topic`; each article carries one `primary_topic`. Subtopics (`ai-frontier`, `ai-infra`) win over broad categories (`technology`, `business`, `world`, `science`, `social`) when classification is precise. Twitter follows-account sources are pinned to the `twitter` topic (an aggregation bucket), while `twitter_queries` are attributed to the concrete topic they belong to.
+- **No runtime env vars.** Do not reintroduce `GITHUB_TOKEN` / `GH_APP_ID` / `GH_APP_INSTALL_ID` / `GH_APP_KEY_FILE`. Timeouts and cooldowns live in `runtime.json`, not env vars. RSS fetching honors standard `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` (incl. `socks5h://`) when set.
 - **Fetch strategy:** same-domain requests are serial by default; rely on per-source `cooldown_s` to avoid rate limits. New fetch scripts should expose an overridable cooldown env var.
 - **When CLI params or final-product paths/names change**, sync in one pass: `SKILL.md`, `references/execution-guide.md`, `references/automation-template.md`, `README.md`/`README_CN.md`, `scripts/test-news-hotspots.sh`.
 - `merge-sources.py` is intentionally kept as one large staged file — don't split it into new modules prematurely. Same for `run-pipeline.py`'s `main()` (keep it high-level; meta assembly/payload parsing belongs in helpers).

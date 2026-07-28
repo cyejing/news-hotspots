@@ -30,8 +30,7 @@ A quality-scored, deduplicated hotspots feed built from a single pipeline entryp
 | Layer | Sources | What |
 |-------|---------|------|
 | RSS | Config-driven feeds | OpenAI, NVIDIA, TechCrunch, BBC, Fed, 36氪 |
-| GitHub | Releases + Trending | Key repos and GitHub Trending, grouped under the `github` topic |
-| Social / Search | Twitter, Reddit, Google News, V2EX | High-signal community and search-driven discovery |
+| Social / Search | Twitter, Google News | High-signal social and search-driven discovery |
 | API Sources | Multiple endpoints | Weibo Hot Search, WallStreetCN, Tencent News, Hacker News |
 
 ### Pipeline
@@ -40,13 +39,12 @@ A quality-scored, deduplicated hotspots feed built from a single pipeline entryp
        run-pipeline.py
               ↓
   RSS ────────┐
-  GitHub ─────┤── parallel fetch ──→ merge-sources.py
-  GitHub Tr. ─┤
-  API ────────┤
-  Twitter ────┤
-  Reddit ─────┤
+  Twitter ────┤── parallel fetch ──→ merge-sources.py
   Google ─────┤
-  V2EX ───────┘                          ↓
+  API ────────┤
+  Zhihu ──────┤
+  Weibo ──────┤
+  Toutiao ────┘                          ↓
               Quality Scoring → Dedup → Topic Grouping
                              ↓
           merge-hotspots.py → archived JSON + Markdown
@@ -69,13 +67,13 @@ For diagnostics:
 
 ## Configuration
 
-- `config/defaults/rss.json` / `twitter.json` / `github.json` / `reddit.json` — split built-in source configs by fetch type
+- `config/defaults/rss.json` / `twitter.json` — split built-in source configs by fetch type
 - `config/defaults/api.json` — split built-in API sources config
-- `config/defaults/topics.json` — 10 topics with search queries and display settings
+- `config/defaults/topics.json` — topics with search queries and display settings
 - `config/defaults/runtime.json` — runtime defaults for fetch timeouts, cooldowns, retries, limits, diagnostics, and pipeline settings
 - User overrides in `workspace/config/` take priority
 
-Default topic set includes `ai-frontier`, `ai-infra`, `github`, `technology`, `business`, `world`, `science`, and `social`.
+Default topic set includes `ai-frontier`, `ai-infra`, `twitter`, `technology`, `business`, `world`, `science`, and `social`.
 
 RSS defaults are intentionally conservative: obvious personal blogs stay in `rss.json` as candidate entries at the end of the list with `"enabled": false`.
 
@@ -90,8 +88,6 @@ Priority guideline:
 ```bash
 cp config/defaults/rss.json workspace/config/news-hotspots-rss.json
 cp config/defaults/twitter.json workspace/config/news-hotspots-twitter.json
-cp config/defaults/github.json workspace/config/news-hotspots-github.json
-cp config/defaults/reddit.json workspace/config/news-hotspots-reddit.json
 cp config/defaults/topics.json workspace/config/news-hotspots-topics.json
 ```
 
@@ -113,20 +109,16 @@ Use runtime config for:
 - pipeline step timeout, merge timeout, hotspots timeout, archive retention, and default top N
 - diagnostics thresholds used by `source-health.py` and `step_contract.py`
 
-## Environment Variables
+## Runtime Configuration
 
-```bash
-export GITHUB_TOKEN="..."
-```
-
-`GITHUB_TOKEN` is the only remaining runtime environment variable. Timeout and cooldown settings are configured through `runtime.json`.
+Timeout and cooldown settings are configured through `runtime.json` (see `config/defaults/runtime.json`); there are no required runtime environment variables. RSS fetching honors the standard `ALL_PROXY` / `HTTPS_PROXY` / `HTTP_PROXY` environment variables (including `socks5h://`) when set.
 
 ## Dependencies
 
 Python 3.8+ with:
 
 ```bash
-pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>=4.12.0 rapidfuzz>=3.0.0
+pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 pysocks>=1.7.1 beautifulsoup4>=4.12.0 rapidfuzz>=3.0.0
 ```
 
 ## Output

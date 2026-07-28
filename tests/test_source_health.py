@@ -34,12 +34,8 @@ class TestSourceHealth(unittest.TestCase):
                         },
                         "fetch": {
                             "rss": {"request_timeout_s": 30, "max_workers": 10, "max_articles_per_feed": 20, "retry_count": 1, "retry_delay_s": 2.0, "cache_ttl_hours": 24},
-                            "github": {"request_timeout_s": 25, "cooldown_s": 2.0, "releases_per_repo": 20, "retry_count": 2, "retry_delay_s": 2.0, "cache_ttl_hours": 24},
-                            "github_trending": {"request_timeout_s": 60, "cooldown_s": 2.0, "min_stars": 50, "per_topic": 15},
                             "google": {"request_timeout_s": 180, "cooldown_s": 12.0, "results_per_query": 10},
                             "twitter": {"request_timeout_s": 180, "cooldown_s": 7.0, "count": 20, "results_per_query": 10},
-                            "reddit": {"request_timeout_s": 180, "cooldown_s": 6.0, "results_per_query": 10},
-                            "v2ex": {"request_timeout_s": 60, "cooldown_s": 5.0},
                             "zhihu": {"request_timeout_s": 120, "cooldown_s": 6.0, "limit": 20},
                             "weibo": {"request_timeout_s": 120, "cooldown_s": 6.0, "limit": 30},
                             "toutiao": {"request_timeout_s": 120, "cooldown_s": 6.0, "limit": 20},
@@ -54,7 +50,6 @@ class TestSourceHealth(unittest.TestCase):
                         },
                         "cache": {
                             "rss_cache_path": "/tmp/rss.json",
-                            "github_cache_path": "/tmp/github.json",
                         },
                     }
                 ),
@@ -519,21 +514,21 @@ class TestSourceHealth(unittest.TestCase):
         diagnostics = [
             source_health.DiagnosticRecord(
                 run_label="2026-03-28-2",
-                step_key="reddit",
-                name="Reddit",
+                step_key="zhihu",
+                name="Zhihu",
                 state="error",
                 status="error",
                 elapsed_s=377.0,
                 items=310,
                 call_stats={"kind": "queries", "total_calls": 9, "ok_calls": 8, "failed_calls": 1},
-                failed_items=[{"source_id": "r/foo", "error": "HTTP 429", "elapsed_s": 45.6}],
+                failed_items=[{"source_id": "z/foo", "error": "HTTP 429", "elapsed_s": 45.6}],
                 details={},
                 observed_ts=0,
             )
         ]
 
         output = "\n".join(source_health.render_run_details(diagnostics))
-        self.assertIn("r/foo: HTTP 429 | elapsed:45.6s", output)
+        self.assertIn("z/foo: HTTP 429 | elapsed:45.6s", output)
 
 
 if __name__ == "__main__":

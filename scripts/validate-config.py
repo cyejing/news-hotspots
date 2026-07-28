@@ -8,7 +8,7 @@
 - 在运行前尽早暴露配置错误
 
 执行逻辑：
-1. 分别加载 rss / twitter / github / reddit / api / topics / runtime 配置
+1. 分别加载 rss / twitter / api / topics / runtime 配置
 2. 对各配置执行结构校验与字段校验
 3. 输出校验结果并在错误时返回非零退出码
 
@@ -29,8 +29,6 @@ from typing import Any, Dict, Iterable, List, Optional
 try:
     from config_loader import (
         load_merged_api_sources,
-        load_merged_github_sources,
-        load_merged_reddit_sources,
         load_merged_rss_sources,
         load_merged_runtime_config,
         load_merged_topics,
@@ -40,8 +38,6 @@ except ImportError:
     sys.path.append(str(Path(__file__).parent))
     from config_loader import (
         load_merged_api_sources,
-        load_merged_github_sources,
-        load_merged_reddit_sources,
         load_merged_rss_sources,
         load_merged_runtime_config,
         load_merged_topics,
@@ -58,8 +54,6 @@ except ImportError:
 SOURCE_FILES = {
     "rss": ("rss.json", "news-hotspots-rss.json", "url"),
     "twitter": ("twitter.json", "news-hotspots-twitter.json", "handle"),
-    "github": ("github.json", "news-hotspots-github.json", "repo"),
-    "reddit": ("reddit.json", "news-hotspots-reddit.json", "subreddit"),
 }
 
 
@@ -141,7 +135,7 @@ def validate_topics(data: Dict[str, Any]) -> List[str]:
         if not isinstance(search, dict):
             errors.append(f"topics.json: topic '{topic_id}' missing search object")
         else:
-            for field in ("google_queries", "twitter_queries", "reddit_queries", "github_queries", "exclude"):
+            for field in ("google_queries", "twitter_queries", "exclude"):
                 if field in search and not isinstance(search.get(field), list):
                     errors.append(f"topics.json: topic '{topic_id}' search.{field} must be a list")
         display = topic.get("display")
@@ -187,12 +181,8 @@ def validate_runtime(data: Dict[str, Any]) -> List[str]:
     errors: List[str] = []
     required_fetch = {
         "rss": {"request_timeout_s", "max_workers", "max_articles_per_feed", "retry_count", "retry_delay_s", "cache_ttl_hours"},
-        "github": {"request_timeout_s", "cooldown_s", "releases_per_repo", "retry_count", "retry_delay_s", "cache_ttl_hours"},
-        "github_trending": {"request_timeout_s", "cooldown_s", "min_stars", "per_topic"},
         "google": {"request_timeout_s", "cooldown_s", "results_per_query"},
         "twitter": {"request_timeout_s", "cooldown_s", "count", "results_per_query"},
-        "reddit": {"request_timeout_s", "cooldown_s", "results_per_query"},
-        "v2ex": {"request_timeout_s", "cooldown_s"},
         "zhihu": {"request_timeout_s", "cooldown_s", "limit"},
         "weibo": {"request_timeout_s", "cooldown_s", "limit"},
         "toutiao": {"request_timeout_s", "cooldown_s", "limit"},
@@ -234,9 +224,8 @@ def validate_runtime(data: Dict[str, Any]) -> List[str]:
     if not isinstance(cache, dict):
         errors.append("runtime.json: missing cache object")
     else:
-        for field in ("rss_cache_path", "github_cache_path"):
-            if not str(cache.get(field) or "").strip():
-                errors.append(f"runtime.json: cache.{field} is required")
+        if not str(cache.get("rss_cache_path") or "").strip():
+            errors.append("runtime.json: cache.rss_cache_path is required")
     return errors
 
 
@@ -255,8 +244,8 @@ def main() -> int:
     errors.extend(validate_topics(topics_data))
     topic_ids = [topic["id"] for topic in topics_data.get("topics", []) if isinstance(topic, dict) and topic.get("id")]
 
-    # 只校验 step_registry 中启用步骤对应的 source config；已从 registry 移除的源
-    # （如 github/reddit/v2ex）的 config 保留在仓库里但不再参与流水线，跳过校验。
+    # 只校验 step_registry 中启用步骤对应的 source config，避免对已下线源的
+    # 残留配置（如有）误报或漏报。
     active_source_types = {step.step_key for step in iter_fetch_steps()}
 
     for source_type, (defaults_name, _, required_field) in SOURCE_FILES.items():
@@ -275,8 +264,6 @@ def main() -> int:
         overlay_checks = {
             "news-hotspots-rss.json": lambda path: validate_source_file(load_json_file(path), "rss", "url", topic_ids),
             "news-hotspots-twitter.json": lambda path: validate_source_file(load_json_file(path), "twitter", "handle", topic_ids),
-            "news-hotspots-github.json": lambda path: validate_source_file(load_json_file(path), "github", "repo", topic_ids),
-            "news-hotspots-reddit.json": lambda path: validate_source_file(load_json_file(path), "reddit", "subreddit", topic_ids),
             "news-hotspots-topics.json": lambda path: validate_topics(load_json_file(path)),
             "news-hotspots-api.json": lambda path: validate_api_sources(load_json_file(path), topic_ids),
             "news-hotspots-runtime.json": lambda path: validate_runtime(load_json_file(path)),
@@ -290,10 +277,6 @@ def main() -> int:
     try:
         load_merged_rss_sources(args.defaults, config_dir)
         load_merged_twitter_sources(args.defaults, config_dir)
-        if "github" in active_source_types:
-            load_merged_github_sources(args.defaults, config_dir)
-        if "reddit" in active_source_types:
-            load_merged_reddit_sources(args.defaults, config_dir)
         load_merged_topics(args.defaults, config_dir)
         load_merged_api_sources(args.defaults, config_dir)
         load_merged_runtime_config(args.defaults, config_dir)
