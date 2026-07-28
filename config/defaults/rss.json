@@ -104,16 +104,6 @@
       "topic": "science"
     },
     {
-      "id": "venturebeat-ai-rss",
-      "type": "rss",
-      "name": "VentureBeat AI",
-      "url": "https://venturebeat.com/ai/feed/",
-      "enabled": false,
-      "priority": 3,
-      "note": "【已禁用】RSS源返回404，网站可能已迁移或关闭",
-      "topic": "ai-frontier"
-    },
-    {
       "id": "producthunt-rss",
       "type": "rss",
       "name": "Product Hunt",
@@ -674,16 +664,6 @@
       "topic": "technology"
     },
     {
-      "id": "github-blog-rss",
-      "type": "rss",
-      "name": "GitHub Blog",
-      "url": "https://github.blog/feed/",
-      "enabled": true,
-      "priority": 4,
-      "note": "GitHub 官方博客，开源与开发资讯（github 分类已移除，归入 technology）",
-      "topic": "technology"
-    },
-    {
       "id": "arxiv-ai-rss",
       "type": "rss",
       "name": "arXiv AI",
@@ -719,7 +699,7 @@
       "name": "MarketWatch",
       "url": "https://www.marketwatch.com/rss/topstories",
       "enabled": true,
-      "priority": 3,
+      "priority": 4,
       "note": "美股、全球投资市场资讯",
       "topic": "business"
     },
@@ -869,7 +849,7 @@
       "name": "Federal Reserve Monetary Policy",
       "url": "https://www.federalreserve.gov/feeds/press_monetary.xml",
       "enabled": true,
-      "priority": 4,
+      "priority": 5,
       "note": "美联储货币政策公告",
       "topic": "business"
     },
@@ -879,7 +859,7 @@
       "name": "Federal Reserve Press Releases",
       "url": "https://www.federalreserve.gov/feeds/press_all.xml",
       "enabled": true,
-      "priority": 4,
+      "priority": 5,
       "note": "美联储新闻稿",
       "topic": "business"
     },
@@ -899,7 +879,7 @@
       "name": "ECB Press Releases",
       "url": "https://www.ecb.europa.eu/rss/press.html",
       "enabled": true,
-      "priority": 3,
+      "priority": 4,
       "note": "欧洲央行新闻与讲话",
       "topic": "business"
     },
@@ -929,7 +909,7 @@
       "name": "BIS Press Releases",
       "url": "https://www.bis.org/doclist/all_pressrels.rss",
       "enabled": true,
-      "priority": 3,
+      "priority": 5,
       "note": "国际清算银行新闻稿",
       "topic": "business"
     },
