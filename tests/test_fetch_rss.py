@@ -163,11 +163,16 @@ class TestFeedParsing(unittest.TestCase):
         class FakeResponse:
             def __init__(self, content: str):
                 self._content = content
+                self.status_code = 200
                 self.headers = {}
                 self.url = "https://example.com/feed.xml"
 
-            def read(self):
-                return self._content.encode("utf-8")
+            @property
+            def text(self):
+                return self._content
+
+            def raise_for_status(self):
+                return None
 
             def __enter__(self):
                 return self
@@ -175,7 +180,7 @@ class TestFeedParsing(unittest.TestCase):
             def __exit__(self, exc_type, exc, tb):
                 return False
 
-        with patch.object(fetch_rss, "fetch_with_redirects", return_value=FakeResponse(rss_content)):
+        with patch.object(fetch_rss, "fetch_feed", return_value=FakeResponse(rss_content)):
             with patch.object(fetch_rss, "_rss_cache", {}):
                 result = fetch_rss.fetch_feed_with_retry(source, self.cutoff)
 
@@ -201,11 +206,16 @@ class TestFeedParsing(unittest.TestCase):
         class FakeResponse:
             def __init__(self, content: str):
                 self._content = content
+                self.status_code = 200
                 self.headers = {}
                 self.url = "https://example.com/feed.xml"
 
-            def read(self):
-                return self._content.encode("utf-8")
+            @property
+            def text(self):
+                return self._content
+
+            def raise_for_status(self):
+                return None
 
             def __enter__(self):
                 return self
@@ -217,7 +227,7 @@ class TestFeedParsing(unittest.TestCase):
         def fake_monotonic():
             return next(monotonic_values)
 
-        with patch.object(fetch_rss, "fetch_with_redirects", side_effect=[Exception("boom"), FakeResponse(rss_content)]):
+        with patch.object(fetch_rss, "fetch_feed", side_effect=[Exception("boom"), FakeResponse(rss_content)]):
             with patch.object(fetch_rss, "is_retryable_rss_error", return_value=True):
                 with patch.object(fetch_rss.time, "sleep", return_value=None):
                     with patch.object(fetch_rss.time, "monotonic", side_effect=fake_monotonic):

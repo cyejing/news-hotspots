@@ -32,7 +32,6 @@ import tempfile
 from html import unescape
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.error import URLError, HTTPError
 from urllib.parse import urljoin, urlparse
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -41,6 +40,7 @@ from xml.etree import ElementTree as ET
 from email.utils import parsedate_to_datetime
 
 import requests
+from requests.exceptions import HTTPError as RequestsHTTPError, Timeout, ConnectionError
 
 try:
     from config_loader import load_merged_runtime_config
@@ -112,13 +112,14 @@ def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) 
 
 
 
-def fetch_with_redirects(url, headers, timeout=None):
-    """Fetch URL via requests.
+def fetch_feed(url: str, headers: Dict[str, str], timeout: Optional[int] = None) -> requests.Response:
+    """发起一次 RSS 抓取请求，返回 requests.Response。
 
-    代理完全由执行环境决定：requests 默认 trust_env=True，自动读取
-    ALL_PROXY / HTTPS_PROXY / HTTP_PROXY 环境变量（含 socks5h）。设置即生效，
-    不设则直连——本函数不包含任何代理逻辑。返回对象对齐 urllib 风格接口
-    （headers.get / url / read()），供调用方零改动复用。
+    - 代理由执行环境决定：requests 默认 trust_env=True，自动读取
+      ALL_PROXY / HTTPS_PROXY / HTTP_PROXY（含 socks5h://），设置即生效，不设则直连。
+    - 4xx/5xx 通过 raise_for_status() 抛 requests.HTTPError，交由调用方重试逻辑处理。
+    - 304 Not Modified 不视为错误，原样返回，调用方按 status_code 判断是否跳过。
+    - 返回值是原生 requests.Response，作为上下文管理器使用时会在退出时自动释放连接。
     """
     effective_timeout = int(timeout if timeout is not None else TIMEOUT)
     response = requests.get(
@@ -127,46 +128,17 @@ def fetch_with_redirects(url, headers, timeout=None):
         timeout=effective_timeout,
         allow_redirects=True,
     )
-    if response.status_code == 304:
-        # 对齐 urllib 行为：抛 URLError(code=304) 让调用方走 not_modified 分支
-        err = URLError("Not Modified")
-        err.code = 304  # type: ignore[attr-defined]
-        raise err
-    if response.status_code >= 400:
-        raise HTTPError(url, response.status_code, response.reason, dict(response.headers), None)  # type: ignore[arg-type]
-    return _ResponseWrapper(response)
-
-
-class _ResponseWrapper:
-    """把 requests.Response 适配成 urllib 风格的上下文管理器
-    （headers.get / url / read()），供 fetch_with_redirects 调用方零改动复用。"""
-
-    def __init__(self, response: Any) -> None:
-        self._response = response
-        self.headers = response.headers
-        self.url = response.url
-        self.status = response.status_code
-
-    def read(self) -> bytes:
-        return self._response.content
-
-    def __enter__(self) -> "_ResponseWrapper":
-        return self
-
-    def __exit__(self, *exc: Any) -> None:
-        return None
+    response.raise_for_status()
+    return response
 
 
 def is_retryable_rss_error(exc: Exception) -> bool:
     """Retry only transient RSS failures; fail fast on stable bad feeds."""
-    if isinstance(exc, HTTPError):
-        return exc.code in {408, 425, 429, 500, 502, 503, 504}
-    if isinstance(exc, TimeoutError):
+    if isinstance(exc, RequestsHTTPError):
+        status = exc.response.status_code if exc.response is not None else None
+        return status in {408, 425, 429, 500, 502, 503, 504}
+    if isinstance(exc, (Timeout, ConnectionError, TimeoutError)):
         return True
-    if isinstance(exc, URLError):
-        reason = str(getattr(exc, "reason", exc)).lower()
-        transient_markers = ("timed out", "timeout", "tempor", "connection reset", "connection aborted")
-        return any(marker in reason for marker in transient_markers)
     message = str(exc).lower()
     transient_markers = ("timed out", "timeout", "tempor", "connection reset", "connection aborted")
     return any(marker in message for marker in transient_markers)
@@ -543,22 +515,8 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                 if cache_entry.get("last_modified"):
                     req_headers["If-Modified-Since"] = cache_entry["last_modified"]
 
-            try:
-                with fetch_with_redirects(url, req_headers, TIMEOUT) as resp:
-                    # Update cache with response headers (thread-safe)
-                    etag = resp.headers.get("ETag")
-                    last_mod = resp.headers.get("Last-Modified")
-                    if etag or last_mod:
-                        with _rss_cache_lock:
-                            if _rss_cache is None:
-                                _rss_cache = {}
-                            _rss_cache[url] = {"etag": etag, "last_modified": last_mod, "ts": now}
-                            _rss_cache_dirty = True
-                    
-                    final_url = resp.url if hasattr(resp, 'url') else url
-                    content = resp.read().decode("utf-8", errors="replace")
-            except URLError as e:
-                if hasattr(e, 'code') and e.code == 304:
+            with fetch_feed(url, req_headers, TIMEOUT) as resp:
+                if resp.status_code == 304:
                     logging.info(f"⏭ {name}: not modified (304)")
                     attempt_elapsed = round(time.monotonic() - request_started_at, 3)
                     total_elapsed = round(time.monotonic() - started_at, 3)
@@ -572,7 +530,7 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                             source_type="rss",
                             method="GET",
                             attempt=attempt + 1,
-                            backend="urllib",
+                            backend="requests",
                             adapter="rss/feed",
                             result="not_modified",
                             elapsed_total_s=total_elapsed,
@@ -596,7 +554,19 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                         "request_traces": request_log,
                         "failed_items": [],
                     }
-                raise
+
+                # Update cache with response headers (thread-safe)
+                etag = resp.headers.get("ETag")
+                last_mod = resp.headers.get("Last-Modified")
+                if etag or last_mod:
+                    with _rss_cache_lock:
+                        if _rss_cache is None:
+                            _rss_cache = {}
+                        _rss_cache[url] = {"etag": etag, "last_modified": last_mod, "ts": now}
+                        _rss_cache_dirty = True
+
+                final_url = resp.url
+                content = resp.text
             attempt_elapsed = round(time.monotonic() - request_started_at, 3)
             total_elapsed = round(time.monotonic() - started_at, 3)
             active_elapsed_s += attempt_elapsed
@@ -609,7 +579,7 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                     source_type="rss",
                     method="GET",
                     attempt=attempt + 1,
-                    backend="urllib",
+                    backend="requests",
                     adapter="rss/feed",
                     elapsed_total_s=total_elapsed,
                 )
@@ -666,7 +636,7 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                         source_type="rss",
                         method="GET",
                         attempt=attempt + 1,
-                        backend="urllib",
+                        backend="requests",
                         adapter="rss/feed",
                         error=error_msg,
                         elapsed_total_s=total_elapsed,
