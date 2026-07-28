@@ -11,7 +11,7 @@
       "enabled": true,
       "priority": 3,
       "note": "OpenAI 首席执行官",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "openai-twitter",
@@ -21,7 +21,7 @@
       "enabled": true,
       "priority": 4,
       "note": "OpenAI 官方账号",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "anthropic-twitter",
@@ -31,7 +31,7 @@
       "enabled": true,
       "priority": 4,
       "note": "Anthropic 官方账号",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "mistral-twitter",
@@ -41,7 +41,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Mistral AI 官方账号",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "googleai-twitter",
@@ -51,7 +51,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Google AI 官方账号",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "xai-twitter",
@@ -61,7 +61,7 @@
       "enabled": true,
       "priority": 3,
       "note": "xAI 官方账号",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "karpathy-twitter",
@@ -71,7 +71,7 @@
       "enabled": true,
       "priority": 2,
       "note": "AI 研究者，偏长期思考与知识帖，作为前沿补充源",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "andrewng-twitter",
@@ -81,7 +81,7 @@
       "enabled": true,
       "priority": 3,
       "note": "AI 教育者",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "jimfan-twitter",
@@ -91,7 +91,7 @@
       "enabled": true,
       "priority": 4,
       "note": "NVIDIA AI 研究员",
-      "topic": "ai-infra"
+      "topic": "twitter"
     },
     {
       "id": "hf-twitter",
@@ -101,7 +101,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Hugging Face 官方账号",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "elon-twitter",
@@ -111,7 +111,7 @@
       "enabled": true,
       "priority": 5,
       "note": "马斯克x",
-      "topic": "ai-infra"
+      "topic": "twitter"
     },
     {
       "id": "sundar-twitter",
@@ -121,7 +121,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Google 首席执行官，近期以 Gemini/Gemma 与 AI 产品更新为主",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "levie-twitter",
@@ -131,7 +131,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Box 首席执行官，偏企业 AI 采用与软件行业观点",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "demis-twitter",
@@ -141,7 +141,7 @@
       "enabled": true,
       "priority": 3,
       "note": "DeepMind CEO，诺奖得主",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "dario-twitter",
@@ -151,7 +151,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Anthropic 首席执行官",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "twitter-clementdelangue",
@@ -161,7 +161,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Hugging Face 首席执行官",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     },
     {
       "id": "rusttrending-twitter",
@@ -171,7 +171,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Rust 生态与趋势信息",
-      "topic": "technology"
+      "topic": "twitter"
     },
     {
       "id": "thisweekinrust-twitter",
@@ -181,7 +181,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Rust 社区周报与生态动态",
-      "topic": "technology"
+      "topic": "twitter"
     },
     {
       "id": "supfin-twitter",
@@ -191,7 +191,7 @@
       "enabled": true,
       "priority": 3,
       "note": "市场与产业观察账号，偏宏观金融与 AI 资本叙事",
-      "topic": "business"
+      "topic": "twitter"
     },
     {
       "id": "uschinatoday-twitter",
@@ -201,7 +201,7 @@
       "enabled": true,
       "priority": 3,
       "note": "关注中美关系与国际时事",
-      "topic": "world"
+      "topic": "twitter"
     },
     {
       "id": "abcchinese-twitter",
@@ -211,7 +211,7 @@
       "enabled": true,
       "priority": 3,
       "note": "ABC 中文官方账号，关注国际与地区新闻",
-      "topic": "world"
+      "topic": "twitter"
     },
     {
       "id": "usnews-twitter",
@@ -221,7 +221,7 @@
       "enabled": true,
       "priority": 3,
       "note": "U.S. News & World Report 官方账号",
-      "topic": "world"
+      "topic": "twitter"
     },
     {
       "id": "reuters-twitter",
@@ -231,7 +231,7 @@
       "enabled": true,
       "priority": 3,
       "note": "Reuters 官方账号，关注全球突发与国际新闻",
-      "topic": "world"
+      "topic": "twitter"
     },
     {
       "id": "cnn-twitter",
@@ -241,7 +241,7 @@
       "enabled": true,
       "priority": 3,
       "note": "CNN 官方账号，关注美国与国际新闻",
-      "topic": "world"
+      "topic": "twitter"
     },
     {
       "id": "bbcbreaking-twitter",
@@ -251,7 +251,7 @@
       "enabled": true,
       "priority": 4,
       "note": "BBC 官方突发新闻账号",
-      "topic": "world"
+      "topic": "twitter"
     },
     {
       "id": "realdonaldtrump-twitter",
@@ -261,7 +261,7 @@
       "enabled": true,
       "priority": 3,
       "note": "特朗普官方账号",
-      "topic": "world"
+      "topic": "twitter"
     },
     {
       "id": "steipete-twitter",
@@ -271,7 +271,7 @@
       "enabled": true,
       "priority": 3,
       "note": "OpenClaw 创建者，偏 AI 工具链与产品使用体验",
-      "topic": "ai-frontier"
+      "topic": "twitter"
     }
   ]
 }

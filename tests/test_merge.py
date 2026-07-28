@@ -372,13 +372,13 @@ class TestMergeSources(unittest.TestCase):
         payloads = {
             "rss": {"articles": [{}]},
             "twitter": {"articles": [{}, {}]},
-            "github_trending": {"articles": [{}]},
+            "google": {"articles": [{}]},
         }
         stats = merge_sources.build_input_stats(payloads)
         self.assertEqual(list(stats["source_type_distribution"].keys()), list(merge_sources.STEP_KEYS))
         self.assertEqual(stats["source_type_distribution"]["rss"], 1)
         self.assertEqual(stats["source_type_distribution"]["twitter"], 2)
-        self.assertEqual(stats["source_type_distribution"]["github_trending"], 1)
+        self.assertEqual(stats["source_type_distribution"]["google"], 1)
 
     def test_main_merges_standardized_articles_only(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -32,7 +32,6 @@ import tempfile
 from html import unescape
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from urllib.request import urlopen, Request, build_opener, HTTPRedirectHandler
 from urllib.error import URLError, HTTPError
 from urllib.parse import urljoin, urlparse
 from pathlib import Path
@@ -40,6 +39,8 @@ from typing import Dict, List, Any, Optional
 import threading
 from xml.etree import ElementTree as ET
 from email.utils import parsedate_to_datetime
+
+import requests
 
 try:
     from config_loader import load_merged_runtime_config
@@ -110,23 +111,50 @@ def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) 
     return runtime
 
 
-class RedirectHandler308(HTTPRedirectHandler):
-    """Custom redirect handler that also handles 308 Permanent Redirect."""
-    
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if code in (301, 302, 303, 307, 308):
-            newurl = newurl.replace(' ', '%20')
-            new_headers = dict(req.headers)
-            return Request(newurl, headers=new_headers, method=req.get_method())
-        return None
-
 
 def fetch_with_redirects(url, headers, timeout=None):
-    """Fetch URL with support for 308 redirects."""
-    opener = build_opener(RedirectHandler308)
-    req = Request(url, headers=headers)
+    """Fetch URL via requests.
+
+    代理完全由执行环境决定：requests 默认 trust_env=True，自动读取
+    ALL_PROXY / HTTPS_PROXY / HTTP_PROXY 环境变量（含 socks5h）。设置即生效，
+    不设则直连——本函数不包含任何代理逻辑。返回对象对齐 urllib 风格接口
+    （headers.get / url / read()），供调用方零改动复用。
+    """
     effective_timeout = int(timeout if timeout is not None else TIMEOUT)
-    return opener.open(req, timeout=effective_timeout)
+    response = requests.get(
+        url,
+        headers=headers,
+        timeout=effective_timeout,
+        allow_redirects=True,
+    )
+    if response.status_code == 304:
+        # 对齐 urllib 行为：抛 URLError(code=304) 让调用方走 not_modified 分支
+        err = URLError("Not Modified")
+        err.code = 304  # type: ignore[attr-defined]
+        raise err
+    if response.status_code >= 400:
+        raise HTTPError(url, response.status_code, response.reason, dict(response.headers), None)  # type: ignore[arg-type]
+    return _ResponseWrapper(response)
+
+
+class _ResponseWrapper:
+    """把 requests.Response 适配成 urllib 风格的上下文管理器
+    （headers.get / url / read()），供 fetch_with_redirects 调用方零改动复用。"""
+
+    def __init__(self, response: Any) -> None:
+        self._response = response
+        self.headers = response.headers
+        self.url = response.url
+        self.status = response.status_code
+
+    def read(self) -> bytes:
+        return self._response.content
+
+    def __enter__(self) -> "_ResponseWrapper":
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        return None
 
 
 def is_retryable_rss_error(exc: Exception) -> bool:
@@ -514,8 +542,7 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                     req_headers["If-None-Match"] = cache_entry["etag"]
                 if cache_entry.get("last_modified"):
                     req_headers["If-Modified-Since"] = cache_entry["last_modified"]
-            
-            req = Request(url, headers=req_headers)
+
             try:
                 with fetch_with_redirects(url, req_headers, TIMEOUT) as resp:
                     # Update cache with response headers (thread-safe)
@@ -737,7 +764,7 @@ def main():
             logger.warning("No RSS sources found or all disabled")
             
         logger.info(f"Fetching {len(sources)} RSS feeds (window: {args.hours}h)")
-        
+
         # Check feedparser availability
         if HAS_FEEDPARSER:
             logger.debug("Using feedparser library for parsing")

@@ -30,8 +30,34 @@ class TestFetchGithubTrending(unittest.TestCase):
 
         self.assertEqual(fetch_github_trending.get_github_trending_cooldown_seconds(), 3.5)
 
+    def _github_topic_overlay_dir(self):
+        """构造一个仅含 github 主题的临时 overlay，供依赖该主题的测试使用
+       （github 主题已从默认 topics.json 移除，但 fetch-github-trending.py 脚本保留）。"""
+        tmpdir = tempfile.mkdtemp()
+        overlay_path = Path(tmpdir) / "news-hotspots-topics.json"
+        overlay_path.write_text(
+            json.dumps({
+                "topics": [{
+                    "id": "github",
+                    "search": {
+                        "github_queries": [
+                            "llm large-language-model in:topics,name,description",
+                            "ai-agent autonomous-agent in:topics,name,description",
+                            "developer tools programming in:topics,name,description",
+                            "robotics autonomous-driving in:topics,name,description",
+                            "inference serving vector database in:topics,name,description",
+                        ],
+                    },
+                }]
+            }),
+            encoding="utf-8",
+        )
+        return Path(tmpdir)
+
     def test_load_queries_only_reads_github_topic(self):
-        queries = fetch_github_trending.load_github_trending_queries(DEFAULTS_DIR)
+        queries = fetch_github_trending.load_github_trending_queries(
+            DEFAULTS_DIR, self._github_topic_overlay_dir()
+        )
         self.assertEqual(len(queries), 5)
         self.assertTrue(all(query["topic"] == "github" for query in queries))
         self.assertTrue(all(" OR " not in query["q"] for query in queries))
@@ -90,7 +116,7 @@ class TestFetchGithubTrending(unittest.TestCase):
                     hours=48,
                     github_token=None,
                     defaults_dir=DEFAULTS_DIR,
-                    config_dir=None,
+                    config_dir=self._github_topic_overlay_dir(),
                 )
 
         repos = result["repos"]

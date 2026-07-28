@@ -116,6 +116,43 @@ def last_request_elapsed(default: float = 0.0) -> float:
     return float(_last_request_elapsed_s if _last_request_elapsed_s is not None else default)
 
 
+def ensure_x_com_context(logger: logging.Logger) -> bool:
+    """确保 bb-browser 有一个已导航到 x.com 的 tab 提供 same-origin 执行上下文。
+
+    bb-browser ≥0.14 的 `site` 命令不再自动导航到 adapter 的目标 domain，
+    而是复用已打开 tab 的 JS 上下文。twitter/* adapter 直接读 document.cookie
+    取 ct0，若没有同域 tab 打开，会在 about:blank 等非同源上下文里抛
+    SecurityError（"Failed to read the 'cookie' property from 'Document'"）。
+    抓取开始前 open 一次 x.com 并探测到 ct0 即可让整批 site 调用同源执行。
+    """
+    probe_js = "(document.cookie.match(/ct0=/)||[]).length"
+    for attempt in range(3):
+        try:
+            subprocess.run(
+                ["bb-browser", "open", "https://x.com"],
+                capture_output=True, text=True, timeout=30, env=os.environ,
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ bb-browser open x.com timed out (attempt %d)", attempt + 1)
+            continue
+        # 给页面一点时间让登录态 cookie 就绪（实测 open 后立即可读，但保留探测更稳）
+        time.sleep(2.0)
+        try:
+            result = subprocess.run(
+                ["bb-browser", "eval", probe_js, "--domain", "x.com"],
+                capture_output=True, text=True, timeout=20, env=os.environ,
+            )
+            output = (result.stdout or "").strip()
+            if result.returncode == 0 and output.endswith("1"):
+                logger.info("✅ x.com same-origin context ready (ct0 cookie present)")
+                return True
+            logger.warning("⚠️ x.com cookie probe attempt %d: rc=%d out=%s", attempt + 1, result.returncode, output[:80])
+        except subprocess.TimeoutExpired:
+            logger.warning("⚠️ bb-browser eval cookie probe timed out (attempt %d)", attempt + 1)
+    logger.error("❌ Could not establish x.com same-origin context; twitter site calls will likely fail with SecurityError")
+    return False
+
+
 def run_bb_browser_site(args: Sequence[str], timeout: Optional[int] = None) -> Dict[str, Any]:
     global _last_success_at, _last_request_elapsed_s
     throttle_after_success()
@@ -466,6 +503,8 @@ def main() -> int:
         step_started_at = time.monotonic()
         logger.info("Fetching %d Twitter sources and %d topic query groups sequentially", len(sources), len(topics))
         logger.info("Twitter bb-browser cooldown: %.1fs", COOLDOWN_SECONDS)
+
+        ensure_x_com_context(logger)
 
         source_results = [fetch_source(source, cutoff) for source in sources]
         for result in source_results:

@@ -48,6 +48,12 @@ except ImportError:
         load_merged_twitter_sources,
     )
 
+try:
+    from step_registry import iter_fetch_steps
+except ImportError:
+    sys.path.append(str(Path(__file__).parent))
+    from step_registry import iter_fetch_steps
+
 
 SOURCE_FILES = {
     "rss": ("rss.json", "news-hotspots-rss.json", "url"),
@@ -249,7 +255,13 @@ def main() -> int:
     errors.extend(validate_topics(topics_data))
     topic_ids = [topic["id"] for topic in topics_data.get("topics", []) if isinstance(topic, dict) and topic.get("id")]
 
+    # 只校验 step_registry 中启用步骤对应的 source config；已从 registry 移除的源
+    # （如 github/reddit/v2ex）的 config 保留在仓库里但不再参与流水线，跳过校验。
+    active_source_types = {step.step_key for step in iter_fetch_steps()}
+
     for source_type, (defaults_name, _, required_field) in SOURCE_FILES.items():
+        if source_type not in active_source_types:
+            continue
         defaults_data = load_json_file(args.defaults / defaults_name)
         errors.extend(validate_source_file(defaults_data, source_type, required_field, topic_ids))
 
@@ -278,8 +290,10 @@ def main() -> int:
     try:
         load_merged_rss_sources(args.defaults, config_dir)
         load_merged_twitter_sources(args.defaults, config_dir)
-        load_merged_github_sources(args.defaults, config_dir)
-        load_merged_reddit_sources(args.defaults, config_dir)
+        if "github" in active_source_types:
+            load_merged_github_sources(args.defaults, config_dir)
+        if "reddit" in active_source_types:
+            load_merged_reddit_sources(args.defaults, config_dir)
         load_merged_topics(args.defaults, config_dir)
         load_merged_api_sources(args.defaults, config_dir)
         load_merged_runtime_config(args.defaults, config_dir)

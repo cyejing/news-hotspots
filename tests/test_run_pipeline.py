@@ -145,7 +145,7 @@ class TestRunPipeline(unittest.TestCase):
             runtime=runtime,
         )
         self.assertEqual(specs[0].step_key, "rss")
-        self.assertEqual(specs[4].step_key, "github_trending")
+        self.assertEqual(specs[4].step_key, "zhihu")
         self.assertTrue(str(specs[0].output_path).endswith("rss.json"))
         self.assertEqual(specs[0].timeout_s, 99)
 
