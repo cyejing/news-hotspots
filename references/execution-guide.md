@@ -49,42 +49,41 @@ cat <WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>.md
 
 `<DATE>` 以脚本实际产出的目录名为准。不确定时用 `ls <WORKSPACE>/archive/news-hotspots/` 找最新日期目录。
 
-### 第 3 步：翻译输出
+读取归档 Markdown 后，**不要逐条翻译输出正文**。Markdown 仅作为总结的数据源，归档到磁盘供需要时查阅。
 
-将归档 Markdown 翻译为 `<LANGUAGE>`，**直接输出文本内容**。
+### 第 3 步：输出抓取概要 + 浓缩总结
 
-翻译规则：
-1. **顶部 Summary**：将 `summary` 字段转为自然语言（数据来源、总量、时间）
-2. **翻译标题和摘要**：每个 item 的 `<title> - <summary>` 翻译为 `<LANGUAGE>`
-3. **保持结构**：Markdown 结构、标题层级、链接格式不变
-4. **保留原字段**：`⭐分数`、`| source_name |`、`| metrics |` 不翻译
-5. **完整保留**：不删减任何 topic 和 item
+最终汇报只输出两部分，不输出 markdown 正文：
 
-示例：
+**1. 抓取概要句** —— 从归档 Markdown 顶部 `summary` frontmatter 字段转写为自然语言。
+
+`summary` 字段形如：
 ```
-原始：
----
-summary: mode:daily | total_articles:15 | rss:8 | twitter:4 | google:3 | generated_at:2026-04-02T10:00:00+00:00
----
-# 2026-04-02 daily 全球科技与 AI 热点
-## AI Frontier
-1. ⭐9.4 | OpenAI releases GPT-5 with breakthrough reasoning - The new model shows significant improvements in multi-step reasoning tasks | OpenAI Blog | likes=120
-
-翻译后（中文）：
----
-本次热点汇总：今日共抓取 15 篇文章，主要来源包括 RSS（8 篇）、Twitter（4 篇）和 Google（3 篇），生成时间 2026-04-02 10:00。
----
-# 2026-04-02 daily 全球科技与 AI 热点
-## AI Frontier
-1. ⭐9.4 | OpenAI 发布具备突破性推理能力的 GPT-5 - 新模型在多步推理任务中表现出显著提升 | OpenAI Blog | likes=120
+summary: mode:daily | total_articles:40 | api(43→3,fail=0) | google(251→13,fail=0) | rss(766→11,fail=0) | toutiao(20→1,fail=0) | twitter(351→12,fail=0) | zhihu(20→0,fail=0) | generated_at:2026-07-29T16:43:00+08:00
 ```
 
-### 第 4 步：追加总结
+转写规则（中文示例，按 `<LANGUAGE>` 调整）：
+- `total_articles` → 今日共抓取 N 篇文章
+- 每个 `source(fetched→selected,fail=f)` → 来源名（fetched→selected 篇）
+- `generated_at` → 生成时间 YYYY-MM-DD HH:MM
+- 第二行固定输出 `<DATE> <daily|weekly> 全球科技与 AI 热点`
 
-- daily: 结尾追加 `## 本日报告总结`
-- weekly: 结尾追加 `## 本周报告总结`
+示例输出：
+```
+本次热点汇总：今日共抓取 40 篇文章，主要来源包括 API（43→3篇）、Google News（251→13篇）、RSS（766→11篇）、今日头条（20→1篇）、Twitter（351→12篇）和知乎（20→0篇），生成时间 2026-07-29 16:43。
+2026-07-29 daily 全球科技与 AI 热点
+```
 
-AI 总结基于归档 Markdown 正文，概括热点归纳、主要主题和信号变化。
+**2. AI 浓缩总结** —— 基于归档 Markdown 全文（不逐条翻译标题），概括：
+- 今日热点主题分布与主要事件
+- 跨源共振信号（哪些话题被多个来源同时报道）
+- 值得关注的趋势或异常
+
+控制在 2–4 段，面向"一眼看懂今天发生了什么"，不要复述每条标题。
+
+### 第 4 步：完成
+
+daily 与 weekly 流程一致，均输出"抓取概要 + 浓缩总结"。不再追加独立的"本日/本周报告总结"标题——浓缩总结本身就是汇报内容。
 
 ---
 
@@ -94,8 +93,8 @@ AI 总结基于归档 Markdown 正文，概括热点归纳、主要主题和信�
 
 1. ✅ pipeline 脚本运行完毕（exit code 0）
 2. ✅ 读取了归档 Markdown 文件
-3. ✅ 翻译并输出了完整报告
-4. ✅ 追加了报告总结
+3. ✅ 输出了抓取概要句（从 summary 字段转写）
+4. ✅ 输出了 AI 浓缩总结（基于全文，不逐条翻译）
 
 ---
 

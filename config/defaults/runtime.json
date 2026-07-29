@@ -3,7 +3,7 @@
     "fetch_step_timeout_s": 2000,
     "merge_timeout_s": 300,
     "hotspots_timeout_s": 120,
-    "default_hotspots_top_n": 5,
+    "default_hotspots_top_n": 10,
     "archive_retention_days": 30
   },
   "fetch": {
@@ -61,7 +61,18 @@
     "slow_request_thresholds_s": [
       3.0,
       5.0
-    ]
+    ],
+    "title_filter": {
+      "min_cjk_chars": 6,
+      "min_word_tokens": 4
+    },
+    "log_pattern_keywords": {
+      "timeout": ["timed out", "timeout", "超时"],
+      "rate_limited": ["429", "rate limit", "too many requests", "频次"],
+      "connection": ["connection", "refused", "reset", "unreachable", "dns", "连接"],
+      "parse": ["json", "decode", "parse", "解析"],
+      "empty": ["empty", "no results", "无结果", "no tweets", "no items"]
+    }
   },
   "cache": {
     "rss_cache_path": "/tmp/news-hotspots-rss-cache.json"

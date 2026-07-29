@@ -104,6 +104,11 @@ SCORE_ENGAGEMENT_HIGH = 3
 SCORE_ENGAGEMENT_MED = 2
 SCORE_ENGAGEMENT_LOW = 1
 
+TITLE_FILTER_CONFIG = {
+    "min_cjk_chars": 6,
+    "min_word_tokens": 4,
+}
+
 CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
 NON_WORD_RE = re.compile(r"[^\w\s\u3400-\u4dbf\u4e00-\u9fff]+", re.UNICODE)
 SPACE_RE = re.compile(r"\s+")
@@ -384,6 +389,57 @@ def build_noise_signals(article: Dict[str, Any]) -> Dict[str, float]:
     return signals
 
 
+MENTION_RE = re.compile(r"[@＠]\S+")
+HASHTAG_RE = re.compile(r"[#＃]\S+")
+EMOJI_RE = re.compile(
+    "["
+    "\U0001F600-\U0001F64F"
+    "\U0001F300-\U0001F5FF"
+    "\U0001F680-\U0001F6FF"
+    "\U0001F700-\U0001F77F"
+    "\U0001F780-\U0001F7FF"
+    "\U0001F800-\U0001F8FF"
+    "\U0001F900-\U0001F9FF"
+    "\U0001FA00-\U0001FA6F"
+    "\U0001FA70-\U0001FAFF"
+    "\U00002600-\U000026FF"
+    "\U00002700-\U000027BF"
+    "]+",
+    flags=re.UNICODE,
+)
+
+
+def strip_low_signal_fragments(text: str) -> str:
+    """剥离 URL、@mention、#hashtag、emoji、计数单位等低信号片段，返回纯标题文本。"""
+    cleaned = RAW_URL_RE.sub(" ", text or "")
+    cleaned = MENTION_RE.sub(" ", cleaned)
+    cleaned = HASHTAG_RE.sub(" ", cleaned)
+    cleaned = EMOJI_RE.sub(" ", cleaned)
+    cleaned = COUNT_UNIT_RE.sub(" ", cleaned)
+    return SPACE_RE.sub(" ", cleaned).strip()
+
+
+def count_cjk_chars(text: str) -> int:
+    return sum(1 for ch in (text or "") if CJK_RE.search(ch))
+
+
+def is_low_information_title(article: Dict[str, Any]) -> bool:
+    """硬过滤：标题过短、无实质信息（如 Twitter 短文、纯 @mention、单词）。
+
+    规则：剥离 URL/mention/hashtag/emoji 后，CJK 有效字数 < 阈值 且 英文有效 token < 阈值。
+    二者需同时不达标，避免误杀纯英文长标题或纯中文短标题。
+    """
+    raw_title = normalize_text(article.get("title"))
+    stripped = strip_low_signal_fragments(raw_title)
+    if not stripped:
+        return True
+    cjk_count = count_cjk_chars(stripped)
+    word_tokens = informative_token_count(stripped)
+    min_cjk = int(TITLE_FILTER_CONFIG.get("min_cjk_chars", 6))
+    min_tokens = int(TITLE_FILTER_CONFIG.get("min_word_tokens", 4))
+    return cjk_count < min_cjk and word_tokens < min_tokens
+
+
 def is_likely_promotional_noise(article: Dict[str, Any]) -> bool:
     signals = build_noise_signals(article)
     score = sum(signals.values())
@@ -401,16 +457,29 @@ def is_likely_promotional_noise(article: Dict[str, Any]) -> bool:
 
 def filter_noise_articles(articles: Iterable[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     kept: List[Dict[str, Any]] = []
-    removed = 0
+    removed_noise = 0
+    removed_low_info = 0
     samples: List[Dict[str, Any]] = []
     for article in articles:
         if not isinstance(article, dict):
             continue
-        if is_likely_promotional_noise(article):
-            removed += 1
+        if is_low_information_title(article):
+            removed_low_info += 1
             if len(samples) < 5:
                 samples.append(
                     {
+                        "reason": "low_information_title",
+                        "title": normalize_text(article.get("title"))[:160],
+                        "link": str(article.get("link") or article.get("external_url") or ""),
+                    }
+                )
+            continue
+        if is_likely_promotional_noise(article):
+            removed_noise += 1
+            if len(samples) < 5:
+                samples.append(
+                    {
+                        "reason": "promotional_noise",
                         "title": normalize_text(article.get("title"))[:160],
                         "link": str(article.get("link") or article.get("external_url") or ""),
                         "signals": build_noise_signals(article),
@@ -418,8 +487,11 @@ def filter_noise_articles(articles: Iterable[Dict[str, Any]]) -> Tuple[List[Dict
                 )
             continue
         kept.append(article)
+    removed_total = removed_noise + removed_low_info
     return kept, {
-        "filtered_noise_articles": removed,
+        "filtered_noise_articles": removed_total,
+        "filtered_low_information_titles": removed_low_info,
+        "filtered_promotional_noise": removed_noise,
         "noise_filter_samples": samples,
     }
 
@@ -1751,7 +1823,12 @@ def main() -> int:
         collected_articles = collect_articles(payloads)
         filtered_articles, noise_report = filter_noise_articles(collected_articles)
         if noise_report.get("filtered_noise_articles", 0):
-            logger.info("Noise filter removed %d low-signal promotional articles", noise_report["filtered_noise_articles"])
+            logger.info(
+                "Title filter removed %d low-info (%d) + promotional (%d) articles",
+                noise_report["filtered_noise_articles"],
+                noise_report.get("filtered_low_information_titles", 0),
+                noise_report.get("filtered_promotional_noise", 0),
+            )
         deduplicated_articles = deduplicate_articles(filtered_articles, previous_hotspots)
         source_groups = group_by_source_types(deduplicated_articles)
         output = build_merged_output(payloads, source_groups, previous_hotspots, total_collected, noise_report=noise_report)

@@ -265,7 +265,7 @@ run_step() {
       ;;
     hotspots)
       [ -f "$MERGED_JSON" ] || { echo "Missing input: $MERGED_JSON" >&2; exit 1; }
-      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --defaults "$DEFAULTS_DIR" --input "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR" --top 15 --mode daily)
+      local cmd=(uv run "$SCRIPT_DIR/merge-hotspots.py" --defaults "$DEFAULTS_DIR" --input "$MERGED_JSON" --archive "$DEFAULT_ARCHIVE_ROOT_DIR" --mode daily)
       if [ -n "$CONFIG_DIR" ]; then
         cmd+=(--config "$CONFIG_DIR")
       elif [ -d "$DEFAULT_CONFIG_DIR" ]; then

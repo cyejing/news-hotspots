@@ -275,6 +275,55 @@ class TestMergeSources(unittest.TestCase):
 
         self.assertFalse(merge_sources.is_likely_promotional_noise(article))
 
+    def test_low_information_title_drops_short_twitter_junk(self):
+        cases = [
+            {"title": "RT @simon", "link": "https://x.com/simon/status/1"},
+            {"title": "@openai nice", "link": "https://x.com/openai/status/2"},
+            {"title": "wow 🔥 https://t.co/abc", "link": "https://x.com/u/status/3"},
+            {"title": "是的", "link": "https://x.com/u/status/4"},
+            {"title": "GPT-5", "link": "https://x.com/u/status/5"},
+        ]
+        for article in cases:
+            self.assertTrue(
+                merge_sources.is_low_information_title(article),
+                msg=f"expected low-info for {article['title']!r}",
+            )
+
+    def test_low_information_title_keeps_substantive_titles(self):
+        cases = [
+            {"title": "OpenAI 发布具备突破性推理能力的 GPT-5 模型", "link": "https://x.com/openai/status/1"},
+            {"title": "NVIDIA announces new Blackwell GPU with major performance gains", "link": "https://x.com/nvidia/status/2"},
+            {"title": "Anthropic 推出 Claude Opus 4.8，推理与编码能力显著提升", "link": "https://x.com/anthropic/status/3"},
+        ]
+        for article in cases:
+            self.assertFalse(
+                merge_sources.is_low_information_title(article),
+                msg=f"expected substantive for {article['title']!r}",
+            )
+
+    def test_filter_noise_articles_partitions_low_info_and_promotional(self):
+        articles = [
+            {"title": "RT @simon", "link": "https://x.com/simon/status/1", "source_type": "twitter", "topic": "twitter"},
+            {"title": "OpenAI 发布 GPT-5 模型，推理能力显著提升", "link": "https://example.com/a", "source_type": "rss", "topic": "ai-frontier"},
+            {
+                "title": "限时促销邀请大家快来开通会员啦 - https://m.tb.cn/h.ioWIQD6?tk=Dnp35UdOaHE MF168",
+                "summary": "好友喊你开通会员啦 2 个帖子 - 2 位参与者 阅读完整话题",
+                "link": "https://linux.do/t/topic/123?utm_source=x",
+                "source_type": "rss",
+                "topic": "technology",
+            },
+        ]
+        kept, report = merge_sources.filter_noise_articles(articles)
+
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(kept[0]["title"], "OpenAI 发布 GPT-5 模型，推理能力显著提升")
+        self.assertEqual(report["filtered_noise_articles"], 2)
+        self.assertEqual(report["filtered_low_information_titles"], 1)
+        self.assertEqual(report["filtered_promotional_noise"], 1)
+        reasons = {sample.get("reason") for sample in report["noise_filter_samples"]}
+        self.assertIn("low_information_title", reasons)
+        self.assertIn("promotional_noise", reasons)
+
     def test_build_candidate_pairs_can_cross_topics(self):
         articles = [
             {"title": "OpenAI releases GPT-5", "link": "https://a.com/1", "topic": "ai-frontier"},
@@ -396,7 +445,7 @@ class TestMergeSources(unittest.TestCase):
                         "source_type": "rss",
                         "articles": [
                             {
-                                "title": "Article 1",
+                                "title": "OpenAI releases GPT-5 with improved reasoning benchmarks",
                                 "link": "https://example.com/1",
                                 "date": "2026-04-02T00:00:00+00:00",
                                 "topic": "ai-frontier",
@@ -417,7 +466,7 @@ class TestMergeSources(unittest.TestCase):
                         "source_type": "twitter",
                         "articles": [
                             {
-                                "title": "Article 2",
+                                "title": "NVIDIA unveils Blackwell GPU architecture details",
                                 "link": "https://x.com/a/status/1",
                                 "date": "2026-04-02T00:00:00+00:00",
                                 "topic": "ai-infra",

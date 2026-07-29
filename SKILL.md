@@ -1,7 +1,7 @@
 ---
 name: news-hotspots
-description: 聚合 RSS、Twitter、Google News 等多源科技与 AI 新闻，生成每日/每周热点报告，支持查看新闻热点、换一批新闻热点、创建定时任务与健康诊断。
-version: "4.0.2"
+description: 聚合 RSS、Twitter、Google News 等多源科技与 AI 新闻，生成每日/每周热点报告。支持生成今日新闻热点、创建每日定时任务、换一批新闻热点（重新抓取）、查看抓取健康诊断。
+version: "5.0.0"
 homepage: https://github.com/cyejing/news-hotspots
 source: https://github.com/cyejing/news-hotspots
 metadata:
@@ -25,44 +25,60 @@ files:
 
 # News Hotspots
 
-聚合多源新闻，生成每日/每周热点报告。
+聚合多源新闻，生成每日/每周热点报告。最终汇报只输出**抓取概要 + AI 浓缩总结**，不逐条翻译标题；完整 Markdown 归档到磁盘供需要时查阅。
 
-## 用户意图识别
+## 用户指令
 
-**原则：除非用户明确要求查看归档/历史，否则默认重新抓取。已看过的归档再读一遍没有意义。**
+本技能响应四类用户指令。识别后按对应流程执行。
 
-| 优先级 | 触发条件 | 执行操作 |
-|--------|----------|----------|
-| 1 | "查看归档"、"历史热点"、"昨天的热点" | 读取归档 markdown 并翻译输出 |
-| 2 | "换一批"、"再看一批"、"还有别的吗" | 见下方"当天换一批新闻" |
-| 3 | 其他情况（默认） | 阅读 `references/execution-guide.md` 重新抓取最新内容 |
+### 指令 1：生成今日新闻热点
 
----
+**触发**："生成今日热点"、"今天有什么新闻"、"看今天的科技热点" 等。
 
-## 操作命令
-
-### 当天换一批新闻
-
-从当天已有数据生成新热点，不重新抓取。
-
-**执行流程**：
-1. 运行 `merge-hotspots.py` 生成新的热点文件
-2. 从脚本输出中获取新生成的 markdown 路径，或读取 `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/` 下最新修改的 `daily*.md` 文件
-3. 按照 `references/execution-guide.md` 的"主会话输出约束"完整翻译输出
-4. 在末尾追加 `## 本日报告总结`
-
-**完成定义**：仅运行脚本不算完成；只有完成归档 Markdown 的翻译与总结输出，才算任务完成。
+**执行**：阅读 `references/execution-guide.md`，同步执行全流程（pipeline → 读取归档 → 输出抓取概要 + 浓缩总结）。
 
 ```bash
-uv run <SKILL_DIR>/scripts/merge-hotspots.py \
+uv run <SKILL_DIR>/scripts/run-pipeline.py \
   --defaults <SKILL_DIR>/config/defaults \
   --config <WORKSPACE>/config \
-  --input <WORKSPACE>/archive/news-hotspots/<DATE>/json/merge-sources.json \
   --archive <WORKSPACE>/archive/news-hotspots \
-  --mode daily
+  --mode daily --hours 48 --verbose --force
 ```
 
-### 健康诊断
+- timeout ≥ 1800 秒，脚本耗时 15–30 分钟。
+- 同一机器不要并发运行多个热点任务。
+- 完成定义：pipeline 成功 + 读取归档 + 输出概要句 + 输出浓缩总结，缺一不可。
+
+### 指令 2：生成每日定时任务
+
+**触发**："每天早上 9 点发热点"、"设置每日定时任务"、"每周生成一次报告" 等。
+
+**执行**：参考 `references/automation-template.md`，组装 cron payload。payload 指向 `execution-guide.md`，在当前 session 同步完成全流程并输出抓取概要 + 浓缩总结。
+
+- daily 用 `--hours 48`，weekly 用 `--hours 168`。
+- `sessionTarget: isolated`、`delivery.mode: announce`、`payload.timeoutSeconds: 3600`。
+
+### 指令 3：换一批新闻热点（重新抓取）
+
+**触发**："换一批"、"再看一批"、"刷新一下热点"、"还有别的吗" 等。
+
+**执行**：重新跑 pipeline 抓取最新内容（与指令 1 相同），输出新的抓取概要 + 浓缩总结。已看过的归档再读没有意义——换一批意味着重新抓取，不是读旧归档。
+
+```bash
+uv run <SKILL_DIR>/scripts/run-pipeline.py \
+  --defaults <SKILL_DIR>/config/defaults \
+  --config <WORKSPACE>/config \
+  --archive <WORKSPACE>/archive/news-hotspots \
+  --mode daily --hours 48 --verbose --force
+```
+
+> 注：若只想基于当天已抓取数据生成新热点而不重新抓取，可直接运行 `merge-hotspots.py`（见 `references/execution-guide.md` 失败处理段的"部分失败"修复命令），但默认"换一批"指重新抓取。
+
+### 指令 4：查看抓取健康情况
+
+**触发**："抓取情况怎么样"、"源健康吗"、"诊断一下"、"为什么没有 Twitter" 等。
+
+**执行**：运行 `source-health.py`，读取诊断报告并向用户解读：哪些源失败/降级、最近连续失败天数、慢请求占比、日志错误模式（超时/限流/连接/解析/空结果）。
 
 ```bash
 # 当天诊断
@@ -79,6 +95,9 @@ uv run <SKILL_DIR>/scripts/source-health.py \
   --input <WORKSPACE>/archive/news-hotspots \
   --verbose
 ```
+
+- `--input` 指向某天 `meta/` → 当次运行报告；指向 archive 根 → 自动聚合最近 `diagnostics.history_days`（默认 7）天。
+- 报告符号：✅ 健康 / ⚠️ 降级 / ⏭️ 跳过 / ⏱️ 超时 / 🚦 限流 / 🔌 连接 / 🐛 解析 / 📭 空结果 / 🔁 连续降级。
 
 ---
 
