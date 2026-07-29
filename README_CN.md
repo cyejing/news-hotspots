@@ -1,6 +1,6 @@
 # News Hotspots
 
-> 自动化全球科技与 AI 热点汇总，采用单入口管道与脚本生成最终热点产物的流程输出 Markdown 热点报告。
+> 自动化全球科技与 AI 热点汇总，采用单入口管道与脚本生成最终热点产物。最终汇报只输出抓取概要 + 分主题结构化总结，完整 Markdown 归档到磁盘供需要时查阅。
 
 [English](README.md) | **中文**
 
@@ -11,11 +11,14 @@
 
 ## 一句话安装
 
-跟你的 [OpenClaw](https://openclaw.ai) AI 助手说：
+跟你的 [OpenClaw](https://openclaw.ai) AI 助手说任意一句：
 
-> **"安装 news-hotspots，每天早上 9 点生成一份 Markdown 全球科技与 AI 热点报告"**
+> **"生成今日新闻热点"** — 运行管道，立即输出一份总结。
+> **"设置每天早上 9 点的每日热点任务"** — 创建定时任务。
+> **"换一批新闻热点"** — 重新抓取，输出一份新的总结。
+> **"今天抓取健康情况怎么样"** — 运行诊断并解读报告。
 
-Bot 会自动安装、配置、定时并生成归档。
+Bot 会自动安装、配置、定时、抓取并交付。
 
 或通过 CLI 安装：
 
@@ -50,12 +53,12 @@ clawhub install news-hotspots
            merge-hotspots.py → 归档 JSON + Markdown
 ```
 
-**质量评分**：采用分层评分。`source priority` 只作为轻量基础信号，再叠加 fetch 内部排序、有限封顶的跨源热点加分、少量时效性加分，并对与历史内容高度相似的条目做强惩罚。主题输出阶段还会做一次来源多样性重排，避免单一抓取链路占满前排。
+**质量评分**：采用分层评分。`source priority` 只作为轻量基础信号，再叠加 fetch 内部排序、有限封顶的跨源热点加分、少量时效性加分，并对与历史内容高度相似的条目做强惩罚。主题输出阶段还会做一次来源多样性重排，避免单一抓取链路占满前排。每个主题默认输出最多 **10** 条（`pipeline.default_hotspots_top_n`）。过短或无信息标题（如纯 `@mention`、单词推文）在评分前会被硬过滤。
 
 推荐流程是：
 - 只执行一次 `scripts/run-pipeline.py`
 - 由 `merge-hotspots.py` 生成并归档最终热点 JSON 和 Markdown
-- 对外输出时读取归档 Markdown 原文
+- 对外交付**抓取概要 + 分主题结构化总结**（归档 Markdown 不再逐条回显）
 
 归档文件：
 - `merge-hotspots.py` 生成最终 JSON 和 Markdown
@@ -73,7 +76,7 @@ clawhub install news-hotspots
 - `config/defaults/runtime.json` — 抓取超时、cooldown、重试、并发、limit、诊断阈值和 pipeline 默认值
 - 用户配置放在 `workspace/config/`，优先级更高
 
-当前默认主题包括 `ai-frontier`、`ai-infra`、`twitter`、`technology`、`business`、`world`、`science`、`social`。
+当前默认主题包括 `ai-frontier`、`ai-infra`、`twitter`、`technology`、`business`、`value-investing`、`world`、`science`、`social`。
 
 RSS 默认源池现在更保守：明显的个人博客仍保留在 `rss.json` 中，但会放到列表尾部并以 `"enabled": false` 作为候选源处理。
 
@@ -124,15 +127,21 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 ## 输出
 
 - `merge-hotspots.py` 会生成并归档最终热点 JSON 和 Markdown。
-- 最终对用户输出的是 Markdown 热点报告。
-- 最终用户可见 Markdown 包含正文和结尾 AI 总结，日报和周报都适用。
+- 最终对用户交付的是**抓取概要 + 分主题结构化总结**（来源数量、总量、生成时间，再加按主题分块的事件簇 bullet——每主题将 10+ 条原始条目归纳合并为 2–3 个簇，合并同类、滤掉杂项，末尾附跨源共振块）。归档 Markdown 留在磁盘供需要时查阅，不再逐条回显。
 - JSON 热点归档到 `workspace/archive/news-hotspots/<DATE>/json/`。
-- 用户 Markdown 归档到 `workspace/archive/news-hotspots/<DATE>/markdown/`。
+- Markdown 归档到 `workspace/archive/news-hotspots/<DATE>/markdown/`。
 - 归档文件名按 `mode` 命名，例如 `daily.json`、`daily.md`、`weekly.json`、`weekly1.md`。
 - 步骤诊断元数据归档到 `workspace/archive/news-hotspots/<DATE>/meta/`。
 - 如需同步到其他系统，请由外部自动化消费生成的 Markdown 归档。
 
 ## 健康诊断
+
+`source-health.py` 只读取 `meta/*.meta.json`（不回读 fetch 结果 JSON），并分析：
+
+- 各源状态、调用统计与失败项
+- **日志错误模式分类**：基于 `logs.tail` 与 `failed_items[].error`，归类为 超时 / 限流 / 连接 / 解析 / 空结果
+- **慢请求占比**：来自 `slow_requests` 相对总调用数
+- **items 趋势**（近 N 次中位数）与**连续降级天数**
 
 查看当前运行：
 
@@ -140,7 +149,7 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 uv run scripts/source-health.py --defaults config/defaults --config workspace/config --input workspace/archive/news-hotspots/<DATE>/meta --verbose
 ```
 
-查看最近 7 天历史：
+查看最近 7 天历史（自动聚合最近 `diagnostics.history_days` 天，默认 7）：
 
 ```bash
 uv run scripts/source-health.py --defaults config/defaults --config workspace/config --input workspace/archive/news-hotspots --verbose

@@ -34,7 +34,7 @@ except ImportError:
     sys.path.append(str(Path(__file__).parent))
     from config_loader import load_merged_runtime_config, load_merged_topics
 
-DEFAULT_TOP_N = 5
+DEFAULT_TOP_N = 10
 SCORE_FORMULA = "base_priority_score + fetch_local_rank_score + history_score + cross_source_hot_score + recency_score"
 SCORE_FORMULA_ZH = "基础优先级分 + 源内排序分 + 历史重复修正分 + 跨源共振分 + 时效性分"
 SCORE_COMPONENTS_ZH = {

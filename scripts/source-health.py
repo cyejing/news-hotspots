@@ -5,12 +5,13 @@
 职责：
 - 发现 archive 下的 `meta/*.meta.json`
 - 归一化不同 step 的诊断字段
+- 分析日志模式、慢请求占比、items 趋势与连续失败
 - 输出当前运行与最近历史的健康报告
 
 执行逻辑：
 1. 接收某天的 `meta/` 目录或 archive 根目录
 2. 自动收集最近若干天的 `*.meta.json`
-3. 聚合失败项、耗时和慢请求统计
+3. 聚合失败项、耗时、慢请求、日志错误模式与趋势
 4. 以文本方式输出 History report 与 Run details
 
 输入文件职责：
@@ -19,6 +20,8 @@
 
 说明：
 - 本脚本不回读 fetch 结果 JSON，也不读取 `merge-sources.json` / `daily.json`
+- 日志模式分析读取 meta 中已有的 `logs.tail`（stdout/stderr 末尾行）与 `failed_items[].error`
+- 不引入新的运行日志文件，全部基于 step meta 已承载的结构化字段
 """
 
 import argparse
@@ -27,10 +30,11 @@ import re
 import statistics
 import sys
 import time
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 try:
     from config_loader import load_merged_runtime_config
@@ -47,6 +51,25 @@ ERROR_TEXT_LIMIT = 180
 META_FILE_RE = re.compile(r".*(?:\.meta\d*|\d+\.meta|\.meta)\.json$")
 META_SUFFIX_RE = re.compile(r"(?:(?:\.meta(\d*))|(?:(\d+)\.meta))\.json$")
 
+# 日志错误模式默认关键词表（可被 runtime.diagnostics.log_pattern_keywords 覆盖）
+DEFAULT_LOG_PATTERN_KEYWORDS: Dict[str, List[str]] = {
+    "timeout": ["timed out", "timeout", "超时"],
+    "rate_limited": ["429", "rate limit", "too many requests", "频次"],
+    "connection": ["connection", "refused", "reset", "unreachable", "dns", "连接"],
+    "parse": ["json", "decode", "parse", "解析"],
+    "empty": ["empty", "no results", "无结果", "no tweets", "no items"],
+}
+LOG_PATTERN_ORDER = ["timeout", "rate_limited", "connection", "parse", "empty"]
+LOG_PATTERN_ICONS = {
+    "timeout": "⏱️",
+    "rate_limited": "🚦",
+    "connection": "🔌",
+    "parse": "🐛",
+    "empty": "📭",
+}
+CONSECUTIVE_FAIL_DAYS_THRESHOLD = 2
+ITEMS_DECLINE_RATIO = 0.5  # 相比 7 天中位数下降超过一半视为趋势告警
+
 
 def resolve_config_dir(config_dir: Optional[Path]) -> Optional[Path]:
     if config_dir is None:
@@ -55,9 +78,10 @@ def resolve_config_dir(config_dir: Optional[Path]) -> Optional[Path]:
 
 
 def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path]) -> Dict[str, Any]:
+    """从 runtime 配置加载诊断阈值；保留全局变量以兼容现有测试契约。"""
     global HISTORY_DAYS, DEGRADED_THRESHOLD, REPORT_LIMIT, ERROR_TEXT_LIMIT
     runtime = load_merged_runtime_config(defaults_dir, resolve_config_dir(config_dir))
-    diagnostics = runtime.get("diagnostics", {})
+    diagnostics = runtime.get("diagnostics", {}) if isinstance(runtime.get("diagnostics"), dict) else {}
     HISTORY_DAYS = int(diagnostics.get("history_days", HISTORY_DAYS) or HISTORY_DAYS)
     DEGRADED_THRESHOLD = float(diagnostics.get("degraded_threshold", DEGRADED_THRESHOLD) or DEGRADED_THRESHOLD)
     REPORT_LIMIT = int(diagnostics.get("report_limit", REPORT_LIMIT) or REPORT_LIMIT)
@@ -78,6 +102,8 @@ class DiagnosticRecord:
     details: Dict[str, Any]
     observed_ts: float
     run_label: Optional[str] = None
+    log_patterns: Dict[str, int] = field(default_factory=dict)
+    slow_request_rate: float = 0.0
 
 
 @dataclass
@@ -94,6 +120,10 @@ class HistoryRow:
     latest_issue_ts: Optional[float]
     latest_issue_summary: str
     check_details: List[Dict[str, Any]]
+    median_items: float = 0.0
+    consecutive_fail_days: int = 0
+    dominant_log_pattern: str = ""
+    slow_request_rate: float = 0.0
 
 
 def setup_logging(verbose: bool) -> logging.Logger:
@@ -251,8 +281,82 @@ def normalize_call_stats(call_stats: Any, *, kind: str, total_calls: int, ok_cal
     return payload
 
 
-def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = None) -> DiagnosticRecord:
+# ---------------------------------------------------------------------------
+# 日志模式分析
+# ---------------------------------------------------------------------------
+
+def collect_log_texts(meta: Dict[str, Any]) -> List[str]:
+    """从 meta 收集所有可用于错误模式匹配的文本片段。"""
+    texts: List[str] = []
+    logs = meta.get("logs") if isinstance(meta.get("logs"), dict) else None
+    if logs:
+        tail = logs.get("tail") if isinstance(logs.get("tail"), list) else []
+        for line in tail:
+            stripped = str(line or "").strip()
+            # 去掉 stdout/stderr 前缀后保留有效内容
+            if stripped.startswith("[stdout] ") or stripped.startswith("[stderr] "):
+                stripped = stripped.split("] ", 1)[1] if "] " in stripped else stripped
+            if stripped:
+                texts.append(stripped)
+    for item in (meta.get("failed_items") or []):
+        if isinstance(item, dict):
+            error = item.get("error")
+            if error:
+                texts.append(str(error))
+    return texts
+
+
+def classify_log_patterns(texts: Sequence[str], keywords: Dict[str, List[str]]) -> Dict[str, int]:
+    """按关键词表把日志文本分类到错误模式，返回每个模式命中次数。"""
+    counts: Dict[str, int] = Counter()
+    for text in texts:
+        lowered = text.lower()
+        for pattern, words in keywords.items():
+            if any(word.lower() in lowered for word in words):
+                counts[pattern] += 1
+                break  # 一条文本只归入最先命中的模式
+    return dict(counts)
+
+
+def compute_slow_request_rate(meta: Dict[str, Any]) -> float:
+    slow = meta.get("slow_requests") if isinstance(meta.get("slow_requests"), dict) else None
+    if not slow:
+        return 0.0
+    total_count = int(slow.get("total_count", 0) or 0)
+    requests_total = 0
+    request_timing = meta.get("request_timing_summary") if isinstance(meta.get("request_timing_summary"), dict) else None
+    if request_timing:
+        requests_total = int(request_timing.get("requests_total", 0) or 0)
+    if requests_total <= 0:
+        # 退回 call_stats.total_calls
+        call_stats = meta.get("call_stats") if isinstance(meta.get("call_stats"), dict) else {}
+        requests_total = int(call_stats.get("total_calls", 0) or 0)
+    if requests_total <= 0:
+        return 0.0
+    return round(total_count / requests_total, 3)
+
+
+def resolve_log_pattern_keywords(runtime: Optional[Dict[str, Any]]) -> Dict[str, List[str]]:
+    if not runtime:
+        return dict(DEFAULT_LOG_PATTERN_KEYWORDS)
+    diagnostics = runtime.get("diagnostics") if isinstance(runtime.get("diagnostics"), dict) else {}
+    configured = diagnostics.get("log_pattern_keywords") if isinstance(diagnostics.get("log_pattern_keywords"), dict) else None
+    if not configured:
+        return dict(DEFAULT_LOG_PATTERN_KEYWORDS)
+    merged = dict(DEFAULT_LOG_PATTERN_KEYWORDS)
+    for pattern, words in configured.items():
+        if isinstance(words, list):
+            merged[str(pattern)] = [str(word) for word in words]
+    return merged
+
+
+# ---------------------------------------------------------------------------
+# State computation
+# ---------------------------------------------------------------------------
+
+def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = None, runtime: Optional[Dict[str, Any]] = None) -> DiagnosticRecord:
     observed_ts = observed_ts or time.time()
+    keywords = resolve_log_pattern_keywords(runtime)
     if "step_summaries" in meta and isinstance(meta.get("step_summaries"), dict):
         step_summaries = meta.get("step_summaries", {})
         steps = [
@@ -305,6 +409,7 @@ def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = 
         state = "warn"
     else:
         state = "ok"
+    log_patterns = classify_log_patterns(collect_log_texts(meta), keywords)
     return DiagnosticRecord(
         step_key="pipeline",
         name="Pipeline",
@@ -332,13 +437,16 @@ def compute_pipeline_state(meta: Dict[str, Any], observed_ts: Optional[float] = 
             }
         },
         observed_ts=observed_ts,
+        log_patterns=log_patterns,
+        slow_request_rate=compute_slow_request_rate(meta),
     )
 
 
-def compute_step_state(meta: Dict[str, Any], observed_ts: Optional[float] = None) -> DiagnosticRecord:
+def compute_step_state(meta: Dict[str, Any], observed_ts: Optional[float] = None, runtime: Optional[Dict[str, Any]] = None) -> DiagnosticRecord:
     observed_ts = observed_ts or time.time()
+    keywords = resolve_log_pattern_keywords(runtime)
     if "pipeline_version" in meta:
-        return compute_pipeline_state(meta, observed_ts)
+        return compute_pipeline_state(meta, observed_ts, runtime)
 
     status = meta.get("status", "error")
     details = meta.get("details", {}) if isinstance(meta.get("details"), dict) else {}
@@ -374,6 +482,11 @@ def compute_step_state(meta: Dict[str, Any], observed_ts: Optional[float] = None
     if processing.get("scoring_version"):
         warning_reasons.append(f"scoring v{processing['scoring_version']}")
 
+    log_patterns = classify_log_patterns(collect_log_texts(meta), keywords)
+    slow_rate = compute_slow_request_rate(meta)
+    if slow_rate > 0 and state == "ok":
+        # 慢请求占比高不直接降级，但记入 reasons 供观察
+        warning_reasons.append(f"slow {slow_rate:.0%}")
     return DiagnosticRecord(
         step_key=meta.get("step_key", "unknown"),
         name=meta.get("name", meta.get("step_key", "unknown")),
@@ -392,7 +505,50 @@ def compute_step_state(meta: Dict[str, Any], observed_ts: Optional[float] = None
         failed_items=build_failed_items(meta.get("failed_items", [])),
         details={**details, "reasons": warning_reasons},
         observed_ts=observed_ts,
+        log_patterns=log_patterns,
+        slow_request_rate=slow_rate,
     )
+
+
+# ---------------------------------------------------------------------------
+# History aggregation
+# ---------------------------------------------------------------------------
+
+def _day_bucket(observed_ts: float) -> str:
+    return from_timestamp_local(observed_ts).strftime("%Y-%m-%d")
+
+
+def compute_consecutive_fail_days(checks: List[Dict[str, Any]]) -> int:
+    """按天聚合，统计最近连续多少天有 error/warn。"""
+    if not checks:
+        return 0
+    by_day: Dict[str, str] = {}
+    for check in checks:
+        day = _day_bucket(check["ts"])
+        prev = by_day.get(day)
+        if prev == "error" or check["state"] == "error":
+            by_day[day] = "error"
+        elif check["state"] in {"warn"} and prev != "error":
+            by_day[day] = "warn"
+        elif prev is None:
+            by_day[day] = check["state"]
+    days_sorted = sorted(by_day.keys(), reverse=True)
+    consecutive = 0
+    today = _day_bucket(time.time())
+    cursor = today
+    for day in days_sorted:
+        if day != cursor:
+            break
+        if by_day[day] in {"error", "warn"}:
+            consecutive += 1
+            # 往前一天
+            try:
+                cursor = (datetime.strptime(day, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+            except ValueError:
+                break
+        else:
+            break
+    return consecutive
 
 
 def build_history_rows(diagnostics: List[DiagnosticRecord], now: float) -> List[HistoryRow]:
@@ -416,6 +572,8 @@ def build_history_rows(diagnostics: List[DiagnosticRecord], now: float) -> List[
                 "call_stats": diagnostic.call_stats,
                 "failed_records": diagnostic.call_stats.get("failed_calls", 0),
                 "error_summary": str(diagnostic.failed_items[0]["error"]).strip() if diagnostic.failed_items else "",
+                "log_patterns": dict(diagnostic.log_patterns),
+                "slow_request_rate": float(diagnostic.slow_request_rate or 0.0),
                 "failed_items": [
                     dict(
                         {
@@ -448,6 +606,16 @@ def build_history_rows(diagnostics: List[DiagnosticRecord], now: float) -> List[
         degraded_checks = [check for check in checks if check["state"] in {"warn", "error"}]
         latest_issue = max(degraded_checks, key=lambda check: check["ts"], default=None)
         checks_sorted = sorted(checks, key=lambda check: check["ts"], reverse=True)
+        median_items = statistics.median([check["items"] for check in checks]) if checks else 0.0
+        pattern_counter: Counter = Counter()
+        slow_rates: List[float] = []
+        for check in checks:
+            for pattern, count in (check.get("log_patterns") or {}).items():
+                pattern_counter[pattern] += count
+            slow_rates.append(float(check.get("slow_request_rate") or 0.0))
+        dominant_pattern = pattern_counter.most_common(1)[0][0] if pattern_counter else ""
+        median_slow = statistics.median(slow_rates) if slow_rates else 0.0
+        consecutive_fail_days = compute_consecutive_fail_days(checks)
         rows.append(
             HistoryRow(
                 step_key=step_key,
@@ -462,10 +630,22 @@ def build_history_rows(diagnostics: List[DiagnosticRecord], now: float) -> List[
                 latest_issue_ts=latest_issue["ts"] if latest_issue else None,
                 latest_issue_summary=latest_issue.get("error_summary", "") if latest_issue else "",
                 check_details=checks_sorted,
+                median_items=round(float(median_items), 1),
+                consecutive_fail_days=consecutive_fail_days,
+                dominant_log_pattern=dominant_pattern,
+                slow_request_rate=round(float(median_slow), 3),
             )
         )
     rows.sort(key=lambda row: (-row.degraded_rate, -row.error, row.name))
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+def _pattern_icon(pattern: str) -> str:
+    return LOG_PATTERN_ICONS.get(pattern, "⚠️")
 
 
 def render_history_report(history_rows: List[HistoryRow]) -> List[str]:
@@ -477,8 +657,17 @@ def render_history_report(history_rows: List[HistoryRow]) -> List[str]:
             icon = "⚠️"
         else:
             icon = "✅"
+        pattern_tag = ""
+        if row.dominant_log_pattern:
+            pattern_tag = f" | {_pattern_icon(row.dominant_log_pattern)} {row.dominant_log_pattern}"
+        consecutive_tag = ""
+        if row.consecutive_fail_days >= CONSECUTIVE_FAIL_DAYS_THRESHOLD:
+            consecutive_tag = f" | 🔁 {row.consecutive_fail_days}d degrade"
+        items_tag = f" | items~{row.median_items:.0f}"
+        slow_tag = f" | slow {row.slow_request_rate:.0%}" if row.slow_request_rate > 0 else ""
         lines.append(
             f"{icon} {row.name:<{name_width}} - ok:{row.ok} warn:{row.warn} error:{row.error} ({row.degraded_rate:.0%} degraded)"
+            f"{items_tag}{slow_tag}{pattern_tag}{consecutive_tag}"
         )
     return lines
 
@@ -527,13 +716,19 @@ def render_run_details(diagnostics: List[DiagnosticRecord]) -> List[str]:
             call_summary = f"calls:{ok_calls}/{failed_calls}/{total_calls}"
             if partial_calls > 0:
                 call_summary += f" | partial:{partial_calls}"
-            lines.append(f"{icon} {item.name:<{name_width}} - {call_summary} | items:{item.items} | elapsed:{float(item.elapsed_s or 0):.1f}s")
+            slow_tag = f" | slow:{item.slow_request_rate:.0%}" if item.slow_request_rate > 0 else ""
+            lines.append(f"{icon} {item.name:<{name_width}} - {call_summary} | items:{item.items} | elapsed:{float(item.elapsed_s or 0):.1f}s{slow_tag}")
             for failed_item in item.failed_items:
                 failed_elapsed = failed_item.get("elapsed_s", item.elapsed_s)
                 lines.append(
                     f"   - {failed_item.get('source_id', 'item')}: {trim_error_text(failed_item.get('error'))}"
                     f"{format_elapsed_suffix(failed_elapsed)}"
                 )
+            if item.log_patterns:
+                pattern_summary = ", ".join(
+                    f"{_pattern_icon(p)}{p}:{n}" for p, n in sorted(item.log_patterns.items(), key=lambda kv: -kv[1])
+                )
+                lines.append(f"   log patterns: {pattern_summary}")
     return lines
 
 
@@ -553,7 +748,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    apply_runtime_config(args.defaults, args.config)
+    runtime = apply_runtime_config(args.defaults, args.config)
     logger = setup_logging(args.verbose)
     now = time.time()
     current_diagnostics: List[DiagnosticRecord] = []
@@ -565,7 +760,7 @@ def main() -> int:
             logger.debug(f"skip invalid meta file: {path}")
             continue
         observed_ts = parse_archive_observed_ts(path) if "meta" in {parent.name for parent in path.parents} else now
-        diagnostic = compute_step_state(payload, observed_ts)
+        diagnostic = compute_step_state(payload, observed_ts, runtime)
         if "meta" in {parent.name for parent in path.parents}:
             diagnostic.run_label = parse_archive_run_label(path)
         else:

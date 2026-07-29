@@ -28,6 +28,7 @@ ALL_SOURCE_STEPS: Tuple[StepRegistration, ...] = (
     StepRegistration("zhihu", "zhihu", "Zhihu", "fetch-zhihu.py", "--zhihu"),
     StepRegistration("weibo", "weibo", "Weibo", "fetch-weibo.py", "--weibo"),
     StepRegistration("toutiao", "toutiao", "Toutiao", "fetch-toutiao.py", "--toutiao"),
+    StepRegistration("xueqiu", "xueqiu", "Xueqiu", "fetch-xueqiu.py", "--xueqiu"),
 )
 
 STEP_KEYS: Tuple[str, ...] = tuple(step.step_key for step in ALL_SOURCE_STEPS)

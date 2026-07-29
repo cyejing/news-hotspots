@@ -530,6 +530,163 @@ class TestSourceHealth(unittest.TestCase):
         output = "\n".join(source_health.render_run_details(diagnostics))
         self.assertIn("z/foo: HTTP 429 | elapsed:45.6s", output)
 
+    def test_classify_log_patterns_matches_timeout_and_rate_limit(self):
+        texts = [
+            "[error] site twitter/search: Timed out after 180 seconds",
+            "HTTP 429 Too Many Requests",
+            "connection refused",
+            "[info] fetched 20 items",
+        ]
+        counts = source_health.classify_log_patterns(texts, source_health.DEFAULT_LOG_PATTERN_KEYWORDS)
+        self.assertEqual(counts.get("timeout"), 1)
+        self.assertEqual(counts.get("rate_limited"), 1)
+        self.assertEqual(counts.get("connection"), 1)
+        self.assertNotIn("empty", counts)
+
+    def test_compute_step_state_captures_log_patterns_and_slow_rate(self):
+        meta = {
+            "step_key": "twitter",
+            "name": "Twitter",
+            "status": "ok",
+            "timing_s": {"active": 30.0, "total": 30.0},
+            "items": 50,
+            "call_stats": {"kind": "sources", "total_calls": 5, "ok_calls": 4, "failed_calls": 1},
+            "failed_items": [{"source_id": "s1", "error": "Timed out after 180 seconds"}],
+            "details": {},
+            "logs": {"tail": ["[error] twitter/tweets: Timed out", "[stdout] fetched 50 items"]},
+            "slow_requests": {"total_count": 2},
+            "request_timing_summary": {"requests_total": 5},
+        }
+
+        diagnostic = source_health.compute_step_state(meta)
+        self.assertEqual(diagnostic.log_patterns.get("timeout"), 2)
+        self.assertEqual(diagnostic.slow_request_rate, 0.4)
+        self.assertEqual(diagnostic.state, "warn")
+
+    def test_compute_slow_request_rate_handles_missing_fields(self):
+        self.assertEqual(source_health.compute_slow_request_rate({}), 0.0)
+        self.assertEqual(
+            source_health.compute_slow_request_rate({
+                "slow_requests": {"total_count": 3},
+                "request_timing_summary": {"requests_total": 10},
+            }),
+            0.3,
+        )
+        self.assertEqual(
+            source_health.compute_slow_request_rate({
+                "slow_requests": {"total_count": 2},
+                "call_stats": {"total_calls": 4},
+            }),
+            0.5,
+        )
+
+    def test_build_history_rows_tracks_consecutive_fail_days_and_dominant_pattern(self):
+        now = source_health.local_now().timestamp()
+        diagnostics = [
+            source_health.DiagnosticRecord(
+                step_key="twitter",
+                name="Twitter",
+                state="error",
+                status="error",
+                elapsed_s=10.0,
+                items=0,
+                call_stats={"kind": "sources", "total_calls": 1, "ok_calls": 0, "failed_calls": 1},
+                failed_items=[{"source_id": "s1", "error": "HTTP 429 Too Many Requests"}],
+                details={},
+                observed_ts=now - 100,
+                log_patterns={"rate_limited": 1},
+                slow_request_rate=0.2,
+            ),
+            source_health.DiagnosticRecord(
+                step_key="twitter",
+                name="Twitter",
+                state="ok",
+                status="ok",
+                elapsed_s=8.0,
+                items=10,
+                call_stats={"kind": "sources", "total_calls": 1, "ok_calls": 1, "failed_calls": 0},
+                failed_items=[],
+                details={},
+                observed_ts=now - 50,
+                log_patterns={},
+                slow_request_rate=0.0,
+            ),
+        ]
+
+        rows = source_health.build_history_rows(diagnostics, now)
+        row = rows[0]
+        self.assertEqual(row.dominant_log_pattern, "rate_limited")
+        self.assertGreaterEqual(row.consecutive_fail_days, 1)
+        self.assertEqual(row.median_items, 5.0)
+        self.assertEqual(row.slow_request_rate, 0.1)
+
+    def test_render_history_report_shows_pattern_and_consecutive_tags(self):
+        now = source_health.local_now().timestamp()
+        rows = [
+            source_health.HistoryRow(
+                step_key="twitter",
+                name="Twitter",
+                checks=3,
+                ok=1,
+                warn=0,
+                error=2,
+                degraded_rate=0.67,
+                unhealthy=True,
+                median_elapsed_s=10.0,
+                latest_issue_ts=now,
+                latest_issue_summary="HTTP 429",
+                check_details=[],
+                median_items=4.0,
+                consecutive_fail_days=2,
+                dominant_log_pattern="rate_limited",
+                slow_request_rate=0.3,
+            ),
+        ]
+        output = "\n".join(source_health.render_history_report(rows))
+        self.assertIn("🚦 rate_limited", output)
+        self.assertIn("🔁 2d degrade", output)
+        self.assertIn("slow 30%", output)
+        self.assertIn("items~4", output)
+
+    def test_render_run_details_includes_log_patterns_line(self):
+        diagnostics = [
+            source_health.DiagnosticRecord(
+                run_label="2026-03-28-2",
+                step_key="twitter",
+                name="Twitter",
+                state="warn",
+                status="ok",
+                elapsed_s=60.0,
+                items=40,
+                call_stats={"kind": "sources", "total_calls": 5, "ok_calls": 4, "failed_calls": 1},
+                failed_items=[{"source_id": "s1", "error": "Timed out"}],
+                details={},
+                observed_ts=0,
+                log_patterns={"timeout": 1, "rate_limited": 1},
+                slow_request_rate=0.2,
+            )
+        ]
+        output = "\n".join(source_health.render_run_details(diagnostics))
+        self.assertIn("slow:20%", output)
+        self.assertIn("log patterns:", output)
+        self.assertIn("⏱️timeout", output)
+        self.assertIn("🚦rate_limited", output)
+
+    def test_resolve_log_pattern_keywords_merges_runtime_overlay(self):
+        runtime = {
+            "diagnostics": {
+                "log_pattern_keywords": {
+                    "timeout": ["custom timeout token"],
+                    "custom_pattern": ["my keyword"],
+                }
+            }
+        }
+        merged = source_health.resolve_log_pattern_keywords(runtime)
+        self.assertEqual(merged["timeout"], ["custom timeout token"])
+        self.assertEqual(merged["custom_pattern"], ["my keyword"])
+        # 默认键保留
+        self.assertIn("rate_limited", merged)
+
 
 if __name__ == "__main__":
     unittest.main()

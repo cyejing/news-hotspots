@@ -1,7 +1,7 @@
 {
   "_description": "Single-topic taxonomy for global tech and AI hotspots. Subtopics win over top-level categories when classification is precise.",
-  "_updated": "2026-04-13",
-  "_version": "5.4.0",
+  "_updated": "2026-08-07",
+  "_version": "5.5.0",
   "topics": [
     {
       "id": "ai-frontier",
@@ -117,6 +117,33 @@
       "display": {
         "max_items": 10,
         "style": "compact"
+      }
+    },
+    {
+      "id": "value-investing",
+      "emoji": "📈",
+      "label": "Value Investing / 价值投资",
+      "description": "巴菲特、伯克希尔、段永平、价值投资理论与实践、个股深度分析与估值。",
+      "search": {
+        "google_queries": [
+          "\"Warren Buffett\" OR \"Berkshire Hathaway\" OR \"value investing\"",
+          "段永平 OR 大道无形 OR 价值投资 OR 仓位",
+          "\"annual letter\" OR \"shareholder letter\" OR \"annual meeting\" Buffett",
+          "valuation OR \"intrinsic value\" OR \"margin of safety\" OR ROIC"
+        ],
+        "twitter_queries": [
+          "(Buffett OR Berkshire) (letter OR meeting OR portfolio OR purchase OR stake)",
+          "(段永平 OR yongpingduan) (投资 OR 股票 OR 仓位 OR business OR 估值)"
+        ],
+        "exclude": [
+          "tutorial",
+          "course",
+          "newsletter signup"
+        ]
+      },
+      "display": {
+        "max_items": 10,
+        "style": "detailed"
       }
     },
     {

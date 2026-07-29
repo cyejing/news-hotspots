@@ -18,8 +18,7 @@ cron payload 必须确保 agent 在**当前 session 同步完成全流程**（�
 阅读 {SKILL_DIR}/references/execution-guide.md，按指南执行：
 - MODE=daily, RSS_HOURS=48, LANGUAGE=Chinese
 - 同步执行 pipeline（timeout ≥ 1800秒）
-- 读取归档 Markdown，翻译输出
-- 结尾追加 "## 本日报告总结"
+- 读取归档 Markdown 后，只输出"抓取概要句 + 分主题结构化总结"，不逐条翻译标题
 
 ⚠️ 必须在当前 session 同步完成全流程，不要 spawn 后提前结束。
 ```
@@ -34,8 +33,7 @@ cron payload 必须确保 agent 在**当前 session 同步完成全流程**（�
 阅读 {SKILL_DIR}/references/execution-guide.md，按指南执行：
 - MODE=weekly, RSS_HOURS=168, LANGUAGE=Chinese
 - 同步执行 pipeline（timeout ≥ 1800秒）
-- 读取归档 Markdown，翻译输出
-- 结尾追加 "## 本周报告总结"
+- 读取归档 Markdown 后，只输出"抓取概要句 + 分主题结构化总结"，不逐条翻译标题
 
 ⚠️ 必须在当前 session 同步完成全流程，不要 spawn 后提前结束。
 ```

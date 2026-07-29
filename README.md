@@ -11,11 +11,14 @@
 
 ## Install in One Message
 
-Tell your [OpenClaw](https://openclaw.ai) assistant:
+Tell your [OpenClaw](https://openclaw.ai) assistant any of:
 
-> **"Install news-hotspots and generate a daily markdown hotspots report every morning at 9am"**
+> **"Generate today's news hotspots"** — run the pipeline and deliver a summary now.
+> **"Set up a daily hotspots task every morning at 9am"** — schedule a recurring cron task.
+> **"Give me another batch of hotspots"** — re-run the fetch and deliver a fresh summary.
+> **"How is the fetch health today?"** — run diagnostics and interpret the report.
 
-The bot handles installation, configuration, scheduling, and archive generation.
+The bot handles installation, configuration, scheduling, fetching, and delivery.
 
 Or install via CLI:
 
@@ -50,12 +53,12 @@ A quality-scored, deduplicated hotspots feed built from a single pipeline entryp
           merge-hotspots.py → archived JSON + Markdown
 ```
 
-**Quality scoring**: layered scoring with source priority as a light base signal, fetch-local ranking, capped cross-source hotness bonus, recency bonus, and a strong history-similarity penalty. Topic output is then diversity-reranked so one fetch type does not dominate the top of a section.
+**Quality scoring**: layered scoring with source priority as a light base signal, fetch-local ranking, capped cross-source hotness bonus, recency bonus, and a strong history-similarity penalty. Topic output is then diversity-reranked so one fetch type does not dominate the top of a section. Each topic surfaces up to **10** items by default (`pipeline.default_hotspots_top_n`). Short or low-information titles (e.g. bare `@mentions`, single-word tweets) are hard-filtered before scoring.
 
 The intended flow is:
 - run `scripts/run-pipeline.py` once
 - let `merge-hotspots.py` generate and archive the final hotspots JSON and Markdown
-- read the archived Markdown for delivery
+- deliver a **fetch summary + topic-structured digest** (the archived Markdown is not echoed back item-by-item)
 
 Archived files:
 - `merge-hotspots.py` generates the final JSON and Markdown outputs
@@ -73,7 +76,7 @@ For diagnostics:
 - `config/defaults/runtime.json` — runtime defaults for fetch timeouts, cooldowns, retries, limits, diagnostics, and pipeline settings
 - User overrides in `workspace/config/` take priority
 
-Default topic set includes `ai-frontier`, `ai-infra`, `twitter`, `technology`, `business`, `world`, `science`, and `social`.
+Default topic set includes `ai-frontier`, `ai-infra`, `twitter`, `technology`, `business`, `value-investing`, `world`, `science`, and `social`.
 
 RSS defaults are intentionally conservative: obvious personal blogs stay in `rss.json` as candidate entries at the end of the list with `"enabled": false`.
 
@@ -124,15 +127,21 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 pysocks>=1.7.1 
 ## Output
 
 - `merge-hotspots.py` produces the final archived hotspots JSON and Markdown outputs.
-- The final user-facing output is a Markdown hotspots report.
-- The final user-facing Markdown includes the translated body plus a closing AI summary for both daily and weekly reports.
+- The final user-facing delivery is a **fetch summary + topic-structured digest** (source counts, totals, generation time, then topic-grouped event-cluster bullets — each topic collapses its 10+ raw items into 2–3 summarized clusters that merge related items and drop noise — ending with a cross-source signals block). The archived Markdown is kept on disk for reference, not echoed back item-by-item.
 - JSON hotspots are archived in `workspace/archive/news-hotspots/<DATE>/json/`.
-- User-facing Markdown is archived in `workspace/archive/news-hotspots/<DATE>/markdown/`.
+- Markdown is archived in `workspace/archive/news-hotspots/<DATE>/markdown/`.
 - Archived filenames use the selected mode, for example `daily.json`, `daily.md`, `weekly.json`, `weekly1.md`.
 - Step diagnostics are archived in `workspace/archive/news-hotspots/<DATE>/meta/`.
 - If you want delivery to other systems, consume the generated Markdown archive externally.
 
 ## Diagnostics
+
+`source-health.py` reads only `meta/*.meta.json` (never re-reads fetch result JSON) and analyzes:
+
+- per-source status, call stats, and failure items
+- **log pattern classification** over `logs.tail` and `failed_items[].error`: timeout / rate-limited / connection / parse / empty
+- **slow request rate** from `slow_requests` over total calls
+- **items trend** (median across recent runs) and **consecutive degraded days** per source
 
 Current run:
 
@@ -140,7 +149,7 @@ Current run:
 uv run scripts/source-health.py --defaults config/defaults --config workspace/config --input workspace/archive/news-hotspots/<DATE>/meta --verbose
 ```
 
-Recent history:
+Recent history (aggregates the last `diagnostics.history_days`, default 7):
 
 ```bash
 uv run scripts/source-health.py --defaults config/defaults --config workspace/config --input workspace/archive/news-hotspots --verbose

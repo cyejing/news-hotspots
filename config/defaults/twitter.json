@@ -1,7 +1,7 @@
 {
   "_description": "Unified data sources configuration. Priority is a light ranking hint: use 3 for most sources, 4 for clearly authoritative sources, and reserve 5 for a small number of top-tier primary sources.",
-  "_updated": "2026-04-13",
-  "_version": "4.1.0",
+  "_updated": "2026-08-07",
+  "_version": "4.2.0",
   "sources": [
     {
       "id": "sama-twitter",
@@ -272,6 +272,16 @@
       "priority": 3,
       "note": "OpenClaw 创建者，偏 AI 工具链与产品使用体验",
       "topic": "twitter"
+    },
+    {
+      "id": "duan-yongping-twitter",
+      "type": "twitter",
+      "name": "段永平 (@yongpingduan)",
+      "handle": "yongpingduan",
+      "enabled": true,
+      "priority": 4,
+      "note": "步步高/OPPO/vivo 创始人，价值投资者；显式归入 value-investing topic（非默认 twitter 聚合桶）",
+      "topic": "value-investing"
     }
   ]
 }
