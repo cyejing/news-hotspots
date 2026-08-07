@@ -42,8 +42,8 @@ except ImportError:
     from config_loader import load_merged_runtime_config
     from step_contract import build_request_trace, build_step_meta, configure_slow_request_thresholds, local_now, normalize_failed_item, write_result_with_meta
 
-# 段永平雪球 ID（"大道无形我有型"）
-DEFAULT_USER_ID = "6175873088"
+# 段永平雪球 ID（"大道无形我有型"，screen_name=大道无形我有型）
+DEFAULT_USER_ID = "1247347556"
 DEFAULT_USER_NAME = "段永平"
 
 SOURCE_ID = "xueqiu-duan-yongping"
