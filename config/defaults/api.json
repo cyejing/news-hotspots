@@ -1,7 +1,7 @@
 {
   "_description": "Built-in API sources for non-RSS hot lists and public APIs.",
-  "_updated": "2026-03-30",
-  "_version": "1.0.0",
+  "_updated": "2026-08-07",
+  "_version": "1.1.0",
   "sources": [
     {
       "id": "weibo-api",
@@ -27,9 +27,10 @@
     {
       "id": "hacker-news-api",
       "name": "Hacker News API",
-      "enabled": true,
+      "enabled": false,
       "topic": "technology",
-      "priority": 3
+      "priority": 3,
+      "note": "与 rss.json 的 hn-rss 抓取源重叠（均抓 Hacker News），保留 RSS 版（hn-rss 抓 frontpage 20 条）禁用 API 版（beststories 15 条），避免重复抓取"
     }
   ]
 }

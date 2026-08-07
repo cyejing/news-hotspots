@@ -127,7 +127,7 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 pysocks>=1.7.1 
 ## Output
 
 - `merge-hotspots.py` produces the final archived hotspots JSON and Markdown outputs.
-- The final user-facing delivery is a **fetch summary + topic-structured digest** (source counts, totals, generation time, then topic-grouped event-cluster bullets — each topic collapses its 10+ raw items into 2–3 summarized clusters that merge related items and drop noise — ending with a cross-source signals block). The archived Markdown is kept on disk for reference, not echoed back item-by-item.
+- The final user-facing delivery is a **fetch summary + topic-structured digest** (source counts, totals, generation time, then topic-grouped bullets of the form `- <summary>:<content>` — each topic merges similar items, drops noise, and keeps all remaining items with no count cap, ending with a cross-source signals block). The archived Markdown is kept on disk for reference, not echoed back item-by-item.
 - JSON hotspots are archived in `workspace/archive/news-hotspots/<DATE>/json/`.
 - Markdown is archived in `workspace/archive/news-hotspots/<DATE>/markdown/`.
 - Archived filenames use the selected mode, for example `daily.json`, `daily.md`, `weekly.json`, `weekly1.md`.

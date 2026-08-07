@@ -1,7 +1,7 @@
 {
   "_description": "Single-topic taxonomy for global tech and AI hotspots. Subtopics win over top-level categories when classification is precise.",
   "_updated": "2026-08-07",
-  "_version": "5.5.0",
+  "_version": "5.6.0",
   "topics": [
     {
       "id": "ai-frontier",
@@ -12,7 +12,6 @@
         "google_queries": [
           "\"AI model\" OR OpenAI OR Anthropic OR Gemini OR Claude",
           "\"AI agent\" OR \"agentic AI\" OR assistant OR copilot OR automation",
-          "大模型 OR 智能体 OR 模型发布 OR 推理能力",
           "multimodal OR reasoning OR benchmark OR \"AI application\""
         ],
         "twitter_queries": [
@@ -40,7 +39,6 @@
         "google_queries": [
           "NVIDIA OR AMD OR TSMC OR semiconductor OR GPU",
           "\"data center\" OR datacenter OR compute OR power OR cooling",
-          "芯片 OR 算力 OR 数据中心 OR 机器人",
           "robotics OR humanoid OR self-driving OR space technology"
         ],
         "twitter_queries": [
@@ -80,7 +78,6 @@
         "google_queries": [
           "\"consumer tech\" OR smartphone OR laptop OR wearable OR gadget",
           "\"internet service\" OR app OR \"digital product\" OR social media OR \"open source\"",
-          "消费电子 OR 数码产品 OR 互联网服务 OR 科技产品",
           "telecom OR broadband OR handset OR electronics OR device launch"
         ],
         "twitter_queries": [
@@ -104,7 +101,6 @@
         "google_queries": [
           "earnings OR revenue OR guidance OR results",
           "funding OR acquisition OR merger OR IPO OR valuation",
-          "财报 OR 融资 OR 并购 OR 产业政策",
           "antitrust OR regulation OR investigation OR competition"
         ],
         "twitter_queries": [
@@ -155,7 +151,6 @@
         "google_queries": [
           "war OR conflict OR diplomacy OR sanctions",
           "\"foreign policy\" OR geopolitics OR \"global trade\" OR tariffs",
-          "国际关系 OR 地缘政治 OR 制裁 OR 关税",
           "\"supply chain\" OR \"export controls\" OR ceasefire OR trade route"
         ],
         "twitter_queries": [
@@ -179,7 +174,6 @@
         "google_queries": [
           "\"research paper\" OR preprint OR study OR paper",
           "breakthrough OR discovery OR laboratory OR experiment",
-          "科研 OR 论文 OR 实验室 OR 科学发现",
           "benchmark OR dataset OR replication OR \"peer review\""
         ],
         "twitter_queries": [
@@ -203,7 +197,6 @@
         "google_queries": [
           "\"public opinion\" OR viral OR trending OR backlash",
           "\"social issue\" OR society OR privacy OR misinformation",
-          "社会事件 OR 舆论热点 OR 公共议题 OR 社会现象",
           "\"social media\" OR moderation OR harassment OR \"online culture\""
         ],
         "twitter_queries": [

@@ -1,7 +1,7 @@
 {
   "_description": "Unified data sources configuration. Priority is a light ranking hint: use 3 for most sources, 4 for clearly authoritative sources, and reserve 5 for a small number of top-tier primary sources.",
   "_updated": "2026-08-07",
-  "_version": "4.2.0",
+  "_version": "4.3.0",
   "sources": [
     {
       "id": "sama-twitter",
@@ -198,9 +198,9 @@
       "type": "twitter",
       "name": "US China Today",
       "handle": "USChinaToday",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "关注中美关系与国际时事",
+      "note": "中美关系通讯社账号，与 RSS 国际媒体源（BBC/NYT/Guardian 等）覆盖重叠，禁用以降噪",
       "topic": "twitter"
     },
     {
@@ -208,9 +208,9 @@
       "type": "twitter",
       "name": "ABC Chinese",
       "handle": "ABCChinese",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "ABC 中文官方账号，关注国际与地区新闻",
+      "note": "ABC 中文官方账号，与 RSS 国际媒体源覆盖重叠，禁用以降噪",
       "topic": "twitter"
     },
     {
@@ -218,9 +218,9 @@
       "type": "twitter",
       "name": "U.S. News",
       "handle": "USNews",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "U.S. News & World Report 官方账号",
+      "note": "U.S. News & World Report 通讯社账号，与 RSS 国际媒体源覆盖重叠，禁用以降噪",
       "topic": "twitter"
     },
     {
@@ -228,9 +228,9 @@
       "type": "twitter",
       "name": "Reuters",
       "handle": "Reuters",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "Reuters 官方账号，关注全球突发与国际新闻",
+      "note": "Reuters 通讯社账号，与 RSS 国际媒体源（NYT/Guardian/Al Jazeera 等）覆盖重叠，禁用以降噪",
       "topic": "twitter"
     },
     {
@@ -238,9 +238,9 @@
       "type": "twitter",
       "name": "CNN",
       "handle": "CNN",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "CNN 官方账号，关注美国与国际新闻",
+      "note": "CNN 通讯社账号，与 RSS 国际媒体源覆盖重叠，禁用以降噪",
       "topic": "twitter"
     },
     {
@@ -248,9 +248,9 @@
       "type": "twitter",
       "name": "BBC Breaking News",
       "handle": "BBCBreaking",
-      "enabled": true,
+      "enabled": false,
       "priority": 4,
-      "note": "BBC 官方突发新闻账号",
+      "note": "BBC 突发新闻账号，与 RSS 的 bbc-world/bbc-home 频道覆盖重叠，禁用以降噪（RSS 版已提供结构化 BBC 文章）",
       "topic": "twitter"
     },
     {
