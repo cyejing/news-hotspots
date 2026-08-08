@@ -1,33 +1,36 @@
 # 热点生成执行指南
 
-## 占位符
+## 占位符说明
 
 | 占位符 | 说明 |
 |--------|------|
 | `<SKILL_DIR>` | skill 仓库根目录 |
 | `<WORKSPACE>` | 工作区根目录 |
 | `<DATE>` | 归档日期 `YYYY-MM-DD`，以脚本实际产出为准 |
-| `<MODE>` | `daily` 或 `weekly` |
-| `<RSS_HOURS>` | daily 为 48，weekly 为 168 |
+| `<MODE>` | 运行模式，`daily` 或 `weekly` |
+| `<RSS_HOURS>` | RSS 抓取时间窗口，daily 为 48，weekly 为 168 |
 | `<LANGUAGE>` | 用户使用的语言 |
 
 ---
 
-## 核心原则
+## 执行分工
 
-**谁启动 pipeline，谁负责到底。**
+**Subagent 子任务职责**：运行脚本并等待归档文件生成，不负责读取或翻译。
 
-执行 agent 必须在**当前 session 同步完成**全流程：运行 → 等待 → 读取 → 翻译 → 输出。
+完成条件：
+- `<WORKSPACE>/archive/news-hotspots/<DATE>/json/<mode>*.json`
+- `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>*.md`
+- `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
 
-**禁止**：spawn 子任务后提前结束当前 session。
+**主会话职责**：将归档 Markdown 翻译为 `<LANGUAGE>` 并输出，结尾追加 AI 总结。
 
 ---
 
-## 执行流程
+## 脚本执行
 
-### 第 1 步：运行 pipeline
+**长耗时任务（15-30 分钟），必须使用 subagent 子任务执行，超时设置 30 分钟以上。**
 
-**同步执行**，设置 timeout ≥ 1800 秒（脚本耗时 15-30 分钟）：
+约束：同一机器不要并发运行多个热点任务。
 
 ```bash
 uv run <SKILL_DIR>/scripts/run-pipeline.py \
@@ -39,19 +42,27 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
   --verbose --force
 ```
 
-约束：同一机器不要并发运行多个热点任务。
+参数：
+- `<MODE>`: `daily` 或 `weekly`
+- `<RSS_HOURS>`: daily 为 `48`，weekly 为 `168`
 
-### 第 2 步：读取归档
+---
 
-```bash
-cat <WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>.md
-```
+## 归档路径
 
-`<DATE>` 以脚本实际产出的目录名为准。不确定时用 `ls <WORKSPACE>/archive/news-hotspots/` 找最新日期目录。
+- JSON: `<WORKSPACE>/archive/news-hotspots/<DATE>/json/<mode>.json`
+- Markdown: `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>.md`
+- Meta: `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
 
-读取归档 Markdown 后，**不要逐条翻译输出正文**。Markdown 仅作为总结的数据源，归档到磁盘供需要时查阅。
+`<DATE>` 格式为 `YYYY-MM-DD`，以脚本实际产出为准。
 
-### 第 3 步：输出抓取概要 + 分主题结构化总结
+---
+
+## 主会话输出约束
+
+**适用场景**：无论是 `run-pipeline.py` 还是 `merge-hotspots.py` 生成的归档 Markdown，主会话都必须遵循以下约束。
+
+### 必须遵守
 
 最终汇报只输出两部分，不输出 markdown 正文：
 
@@ -105,27 +116,19 @@ summary: mode:daily | total_articles:40 | api(43→3,fail=0) | google(251→13,f
 - AI 视频降本、机器人世界杯 — 具身智能与内容生成中英文圈同步
 ```
 
-### 第 4 步：完成
+### 完成定义
 
-daily 与 weekly 流程一致，均输出"抓取概要 + 分主题结构化总结"。不再追加独立的"本日/本周报告总结"标题——结构化总结本身就是汇报内容。
-
----
-
-## 完成定义
-
-**仅运行 pipeline 不算完成。** 必须完成全部 4 步：
-
+**仅运行 pipeline 不算完成。** 必须完成：
 1. ✅ pipeline 脚本运行完毕（exit code 0）
 2. ✅ 读取了归档 Markdown 文件
 3. ✅ 输出了抓取概要句（从 summary 字段转写）
-4. ✅ 输出了分主题结构化总结（每主题每条 `- <总结>:<内容>` 形式，合并近似、去噪、剩余全保留，含跨源共振块）
+4. ✅ 输出了分主题结构化总结（含跨源共振块）
 
 ---
 
 ## 失败处理
 
 先查看诊断：
-
 ```bash
 uv run <SKILL_DIR>/scripts/source-health.py \
   --defaults <SKILL_DIR>/config/defaults \
@@ -134,9 +137,9 @@ uv run <SKILL_DIR>/scripts/source-health.py \
   --verbose
 ```
 
-失败类型：
+### 失败类型
 
-1. **完全失败**：没有 `merge-sources.json` → 重新运行 `run-pipeline.py`
+1. **完全失败**：没有 `merge-sources.json` → 用 subagent 重跑 `run-pipeline.py`
 
 2. **部分失败**：有 `merge-sources.json` 但没有 markdown → 运行：
    ```bash
