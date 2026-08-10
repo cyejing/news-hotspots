@@ -15,22 +15,28 @@
 
 ## 执行分工
 
-**Subagent 子任务职责**：运行脚本并等待归档文件生成，不负责读取或翻译。
+pipeline 是 15–30 分钟的长任务，用 **subagent 后台执行**，主会话不被阻塞、不退出，等 subagent 完成通知后再读取归档并输出。
 
-完成条件：
+**Subagent 职责**：运行 `run-pipeline.py` 到完成（exit code 0 或 1），归档 JSON/Markdown/meta 全部落盘，向主会话报告完成状态与归档路径。不负责读取或翻译。
+
+完成条件（归档文件已生成）：
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/json/<mode>*.json`
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>*.md`
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
 
-**主会话职责**：将归档 Markdown 翻译为 `<LANGUAGE>` 并输出，结尾追加 AI 总结。
+归档路径从 pipeline stdout 的 `✅ Done → <path>` 或 `pipeline.meta.json` 的 `outputs.markdown_output` 读取，不用 `ls` 猜目录。
+
+**主会话职责**：启动 subagent 后**不退出**，等 subagent 完成通知，读归档 Markdown，翻译为 `<LANGUAGE>` 输出抓取概要 + 分主题结构化总结。
+
+> ⚠️ 主会话启动 subagent 后必须等其完成通知再收尾，不能 spawn 后提前结束当前 session——否则归档无人读取、报告丢失。
+
+约束：同一机器不要并发运行多个热点任务（固定 debug/archive 路径会互相覆盖）。
 
 ---
 
 ## 脚本执行
 
-**长耗时任务（15-30 分钟），必须使用 subagent 子任务执行，超时设置 30 分钟以上。**
-
-约束：同一机器不要并发运行多个热点任务。
+subagent 运行以下命令：
 
 ```bash
 uv run <SKILL_DIR>/scripts/run-pipeline.py \
@@ -46,6 +52,17 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
 - `<MODE>`: `daily` 或 `weekly`
 - `<RSS_HOURS>`: daily 为 `48`，weekly 为 `168`
 
+### 长任务稳定性保证
+
+- pipeline 在 subagent 后台运行，主会话不阻塞，不受单次工具调用 timeout 限制。
+- 每个 step 的超时由 `runtime.json` 控制：`fetch_step_timeout_s=2000` / `merge_timeout_s=300` / `hotspots_timeout_s=120`。单 step 超时会被杀并记为 `timeout` 状态，不影响其他 step。
+- 归档 JSON/Markdown/meta 全部落盘到 `<WORKSPACE>/archive/news-hotspots/<DATE>/`，部分 step 失败仍可从已有归档恢复（见失败处理）。
+
+### 成败判定
+
+- **exit 0**（`status=ok` 或 `partial`）：pipeline 成功或部分成功（部分源挂了但产出了 `merge-sources.json` 与归档）→ 主会话读归档输出。
+- **exit 1**（完全失败，无 `merge-sources.json`）→ 走失败处理。
+
 ---
 
 ## 归档路径
@@ -54,7 +71,7 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
 - Markdown: `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>.md`
 - Meta: `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
 
-`<DATE>` 格式为 `YYYY-MM-DD`，以脚本实际产出为准。
+`<DATE>` 格式为 `YYYY-MM-DD`，以脚本实际产出的目录名为准（从 subagent 报告的归档路径中解析）。
 
 ---
 
@@ -128,7 +145,7 @@ summary: mode:daily | total_articles:40 | api(43→3,fail=0) | google(251→13,f
 
 ## 失败处理
 
-先查看诊断：
+pipeline exit 1 或归档缺失时，先查看诊断：
 ```bash
 uv run <SKILL_DIR>/scripts/source-health.py \
   --defaults <SKILL_DIR>/config/defaults \

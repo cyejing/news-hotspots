@@ -1,7 +1,7 @@
 ---
 name: news-hotspots
 description: 聚合 RSS、Twitter、Google News 等多源科技与 AI 新闻，生成每日/每周热点报告。支持生成今日新闻热点、创建每日定时任务、换一批新闻热点（重新抓取）、查看抓取健康诊断。
-version: "5.0.0"
+version: "5.1.0"
 homepage: https://github.com/cyejing/news-hotspots
 source: https://github.com/cyejing/news-hotspots
 metadata:
@@ -29,13 +29,13 @@ files:
 
 ## 用户指令
 
-本技能响应四类用户指令。识别后按对应流程执行。
+本技能响应四类用户指令。识别后按对应流程执行，详细步骤见 `references/execution-guide.md`。
 
 ### 指令 1：生成今日新闻热点
 
 **触发**："生成今日热点"、"今天有什么新闻"、"看今天的科技热点" 等。
 
-**执行**：阅读 `references/execution-guide.md`，同步执行全流程（pipeline → 读取归档 → 输出抓取概要 + 分主题结构化总结）。
+**执行**：阅读 `references/execution-guide.md`，按其执行分工用 subagent 后台跑 pipeline，主会话等通知后读归档并输出抓取概要 + 分主题结构化总结。
 
 ```bash
 uv run <SKILL_DIR>/scripts/run-pipeline.py \
@@ -45,15 +45,15 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
   --mode daily --hours 48 --verbose --force
 ```
 
-- timeout ≥ 1800 秒，脚本耗时 15–30 分钟。
+- pipeline 耗时 15–30 分钟，由 subagent 后台执行，主会话不阻塞、不退出，等完成通知后读归档输出。
 - 同一机器不要并发运行多个热点任务。
-- 完成定义：pipeline 成功 + 读取归档 + 输出概要句 + 输出结构化总结，缺一不可。
+- 完成定义：pipeline exit 0 + 读取归档 + 输出概要句 + 输出结构化总结，缺一不可。
 
 ### 指令 2：生成每日定时任务
 
 **触发**："每天早上 9 点发热点"、"设置每日定时任务"、"每周生成一次报告" 等。
 
-**执行**：参考 `references/automation-template.md`，组装 cron payload。payload 指向 `execution-guide.md`，在当前 session 同步完成全流程并输出抓取概要 + 分主题结构化总结。
+**执行**：参考 `references/automation-template.md`，组装 cron payload。payload 指向 `execution-guide.md`，在当前 session 同步完成全流程（subagent 跑 pipeline → 主会话读归档输出）。
 
 - daily 用 `--hours 48`，weekly 用 `--hours 168`。
 - `sessionTarget: isolated`、`delivery.mode: announce`、`payload.timeoutSeconds: 3600`。
