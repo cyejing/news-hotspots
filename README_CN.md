@@ -1,6 +1,6 @@
 # News Hotspots
 
-> 自动化全球科技与 AI 热点汇总，采用单入口管道与脚本生成最终热点产物。最终汇报只输出抓取概要 + 分主题结构化总结，完整 Markdown 归档到磁盘供需要时查阅。
+> 自动化全球科技与 AI 热点汇总，采用单入口管道与脚本生成最终热点产物。最终汇报输出抓取概要 + 分主题结构化总结 + 热点总结，完整 Markdown 归档到磁盘供需要时查阅。
 
 [English](README.md) | **中文**
 
@@ -58,7 +58,7 @@ clawhub install news-hotspots
 推荐流程是：
 - 只执行一次 `scripts/run-pipeline.py`
 - 由 `merge-hotspots.py` 生成并归档最终热点 JSON 和 Markdown
-- 对外交付**抓取概要 + 分主题结构化总结**（归档 Markdown 不再逐条回显）
+- 对外交付**抓取概要 + 分主题结构化总结 + 热点总结**（归档 Markdown 不再逐条回显）
 
 归档文件：
 - `merge-hotspots.py` 生成最终 JSON 和 Markdown
@@ -127,7 +127,7 @@ pip install feedparser>=6.0.0 jsonschema>=4.0.0 requests>=2.28.0 beautifulsoup4>
 ## 输出
 
 - `merge-hotspots.py` 会生成并归档最终热点 JSON 和 Markdown。
-- 最终对用户交付的是**抓取概要 + 分主题结构化总结**（来源数量、总量、生成时间，再加按主题分块、形如 `- <总结>:<内容>` 的 bullet——每主题合并近似项、去除噪音、剩余条目全部保留且不设条数限制，末尾附跨源共振块）。归档 Markdown 留在磁盘供需要时查阅，不再逐条回显。
+- 最终对用户交付的是**抓取概要 + 分主题结构化总结 + 热点总结**（来源数量、总量、生成时间，再加按主题分块、形如 `- <总结>:<内容>` 的 bullet——每主题合并近似项、去除噪音、剩余条目全部保留且不设条数限制；跨源共振条目就地 `🔥` 加亮而非单列共振块；全部主题输出后追加一段热点总结，从主线概括/热点走势/共振异常维度收束）。归档 Markdown 留在磁盘供需要时查阅，不再逐条回显。
 - JSON 热点归档到 `workspace/archive/news-hotspots/<DATE>/json/`。
 - Markdown 归档到 `workspace/archive/news-hotspots/<DATE>/markdown/`。
 - 归档文件名按 `mode` 命名，例如 `daily.json`、`daily.md`、`weekly.json`、`weekly1.md`。
