@@ -17,16 +17,25 @@
 
 pipeline 是 15–30 分钟的长任务，用 **subagent 后台执行**，主会话不被阻塞、不退出，等 subagent 完成通知后再读取归档并输出。
 
-**Subagent 职责**：运行 `run-pipeline.py` 到完成（exit code 0 或 1），归档 JSON/Markdown/meta 全部落盘，向主会话报告完成状态与归档路径。**不负责读取或翻译，但输出总结时必须严格遵循以下格式规范（见下方"分主题结构化总结"节），不得自创格式。**
+**Subagent 职责**：运行 `run-pipeline.py` 到完成（exit code 0 或 1），确保归档 JSON/Markdown/meta 全部落盘，然后**只回给主会话一句极简完成句**，不输出任何其他内容：
 
-完成条件（归档文件已生成）：
-- `<WORKSPACE>/archive/news-hotspots/<DATE>/json/<mode>*.json`
-- `<WORKSPACE>/archive/news-hotspots/<DATE>/markdown/<mode>*.md`
-- `<WORKSPACE>/archive/news-hotspots/<DATE>/meta/*.meta.json`
+- 成功（exit 0，归档已落盘）：
+  ```
+  ✅ pipeline 完成，归档：<归档 markdown 绝对路径>
+  ```
+  例如 `✅ pipeline 完成，归档：<WORKSPACE>/archive/news-hotspots/2026-08-11/markdown/daily.md`
+- 失败（exit 1，无归档）：
+  ```
+  ❌ pipeline 失败：<exit code>，诊断见 <WORKSPACE>/archive/news-hotspots/<DATE>/meta/
+  ```
+
+**Subagent 严禁输出**：exit code 数字、抓取文章数、各源 fetched→selected 明细、各源耗时、源成败/降级/卡顿说明、Twitter/bb-browser 过程描述——这些都是**过程信息**，全部留在 `meta/*.meta.json` 诊断里，需要时由指令 4「健康诊断」专门读取，绝不混入热点交付流。Subagent 也不读取、不翻译、不总结归档内容。
+
+> ⚠️ Subagent 若输出超过极简完成句的任何过程汇报，会被上层框架落盘成带时间戳的额外报告文件（如 `news-hotspots-pipeline_*.md`），这正是要杜绝的——subagent 的输出必须止于那一行完成句。
 
 归档路径从 pipeline stdout 的 `✅ Done → <path>` 或 `pipeline.meta.json` 的 `outputs.markdown_output` 读取，不用 `ls` 猜目录。
 
-**主会话职责**：启动 subagent 后**不退出**，等 subagent 完成通知，读归档 Markdown，翻译为 `<LANGUAGE>` 输出抓取概要 + 分主题结构化总结 + 热点总结。
+**主会话职责**：启动 subagent 后**不退出**，等 subagent 回报的极简完成句，从中取出归档 markdown 路径，读取该 `daily*.md`（或 `weekly*.md`），翻译为 `<LANGUAGE>` 输出抓取概要 + 分主题结构化总结 + 热点总结。**主会话同样不向用户转述 subagent 的过程信息**（exit code、文章数、各源耗时等）——这些不属于交付内容。
 
 > ⚠️ 主会话启动 subagent 后必须等其完成通知再收尾，不能 spawn 后提前结束当前 session——否则归档无人读取、报告丢失。
 
@@ -79,7 +88,7 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
 
 **适用场景**：无论是 `run-pipeline.py` 还是 `merge-hotspots.py` 生成的归档 Markdown，主会话都必须遵循以下约束。
 
-### 必须遵守
+**前提**：主会话从 subagent 回报的极简完成句中取出归档 markdown 路径并读取该文件，然后按下述约束输出。**过程信息（exit code、抓取文章数、各源耗时、源成败明细）一律不输出**——这些留在 `meta/` 诊断里，需要时走指令 4「健康诊断」专门查看，不混入热点交付。
 
 最终汇报输出三部分，不输出 markdown 正文：
 
@@ -145,9 +154,9 @@ summary: mode:daily | total_articles:40 | api(43→3,fail=0) | google(251→13,f
 ### 完成定义
 
 **仅运行 pipeline 不算完成。** 必须完成：
-1. ✅ pipeline 脚本运行完毕（exit code 0）
-2. ✅ 读取了归档 Markdown 文件
-3. ✅ 输出了抓取概要句（从 summary 字段转写）
+1. ✅ pipeline 脚本运行完毕（exit code 0）——仅由 subagent 确认并回极简完成句，**主会话不向用户转述 exit code 等过程信息**
+2. ✅ 主会话从极简完成句取出归档 markdown 路径并读取了该 Markdown 文件
+3. ✅ 输出了抓取概要句（从归档 `summary` 字段转写）
 4. ✅ 输出了分主题结构化总结（跨源共振条目就地 `🔥` 加亮）
 5. ✅ 输出了热点总结块（`## 📌 热点总结`）
 

@@ -35,7 +35,7 @@ files:
 
 **触发**："生成今日热点"、"今天有什么新闻"、"看今天的科技热点" 等。
 
-**执行**：阅读 `references/execution-guide.md`，按其执行分工用 subagent 后台跑 pipeline，主会话等通知后读归档并输出抓取概要 + 分主题结构化总结 + 热点总结。
+**执行**：阅读 `references/execution-guide.md`，按其执行分工用 subagent 后台跑 pipeline，主会话等 subagent 回报的极简完成句后，从中取出归档 markdown 路径读 `daily.md`，输出抓取概要 + 分主题结构化总结 + 热点总结。
 
 ```bash
 uv run <SKILL_DIR>/scripts/run-pipeline.py \
@@ -45,24 +45,26 @@ uv run <SKILL_DIR>/scripts/run-pipeline.py \
   --mode daily --hours 48 --verbose --force
 ```
 
-- pipeline 耗时 15–30 分钟，由 subagent 后台执行，主会话不阻塞、不退出，等完成通知后读归档输出。
+- pipeline 耗时 15–30 分钟，由 subagent 后台执行，主会话不阻塞、不退出，等 subagent 回报极简完成句后读归档输出。
+- **subagent 完成后只回极简完成句**（`✅ pipeline 完成，归档：<markdown 绝对路径>`），不报 exit code、不报抓取文章数、不报各源耗时与源成败——这些过程信息留在 `meta/` 诊断里，需要时用指令 4 查看，不混入热点交付。详见 `references/execution-guide.md`「执行分工」。
 - 同一机器不要并发运行多个热点任务。
-- 完成定义：pipeline exit 0 + 读取归档 + 输出概要句 + 输出结构化总结（跨源条目就地 `🔥` 加亮）+ 输出热点总结，缺一不可。
+- 完成定义：pipeline exit 0（仅 subagent 确认，主会话不转述）+ 主会话读归档 + 输出概要句 + 输出结构化总结（跨源条目就地 `🔥` 加亮）+ 输出热点总结，缺一不可。
 
 ### 指令 2：生成每日定时任务
 
 **触发**："每天早上 9 点发热点"、"设置每日定时任务"、"每周生成一次报告" 等。
 
-**执行**：参考 `references/automation-template.md`，组装 cron payload。payload 指向 `execution-guide.md`，在当前 session 同步完成全流程（subagent 跑 pipeline → 主会话读归档输出）。
+**执行**：参考 `references/automation-template.md`，组装 cron payload。payload 指向 `execution-guide.md`，在当前 session 同步完成全流程（subagent 跑 pipeline 回极简完成句 → 主会话读归档输出）。
 
 - daily 用 `--hours 48`，weekly 用 `--hours 168`。
+- subagent 跑完后只回极简完成句（含归档 markdown 路径），主会话据此读归档输出三部分总结，**不输出抓取过程报告**（exit code/文章数/各源耗时/源成败）。
 - `sessionTarget: isolated`、`delivery.mode: announce`、`payload.timeoutSeconds: 3600`。
 
 ### 指令 3：换一批新闻热点（重新抓取）
 
 **触发**："换一批"、"再看一批"、"刷新一下热点"、"还有别的吗" 等。
 
-**执行**：重新跑 pipeline 抓取最新内容（与指令 1 相同），输出新的抓取概要 + 分主题结构化总结 + 热点总结。已看过的归档再读没有意义——换一批意味着重新抓取，不是读旧归档。
+**执行**：重新跑 pipeline 抓取最新内容（与指令 1 相同，subagent 跑完回极简完成句，主会话读归档输出）。输出新的抓取概要 + 分主题结构化总结 + 热点总结。已看过的归档再读没有意义——换一批意味着重新抓取，不是读旧归档。同样不输出抓取过程报告。
 
 ```bash
 uv run <SKILL_DIR>/scripts/run-pipeline.py \
