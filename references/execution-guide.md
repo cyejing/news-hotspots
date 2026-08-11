@@ -17,7 +17,7 @@
 
 pipeline 是 15–30 分钟的长任务，用 **subagent 后台执行**，主会话不被阻塞、不退出，等 subagent 完成通知后再读取归档并输出。
 
-**Subagent 职责**：运行 `run-pipeline.py` 到完成（exit code 0 或 1），归档 JSON/Markdown/meta 全部落盘，向主会话报告完成状态与归档路径。不负责读取或翻译。
+**Subagent 职责**：运行 `run-pipeline.py` 到完成（exit code 0 或 1），归档 JSON/Markdown/meta 全部落盘，向主会话报告完成状态与归档路径。**不负责读取或翻译，但输出总结时必须严格遵循以下格式规范（见下方"分主题结构化总结"节），不得自创格式。**
 
 完成条件（归档文件已生成）：
 - `<WORKSPACE>/archive/news-hotspots/<DATE>/json/<mode>*.json`
