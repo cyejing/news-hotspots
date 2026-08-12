@@ -1,53 +1,63 @@
 # 定时任务模板
 
-本文档提供每日/每周热点任务的 cron payload 模板。执行细节与占位符说明见 `execution-guide.md`。
-
----
-
 ## 设计原则
 
-cron payload 必须确保 agent 在**当前 session 同步完成全流程**（启动 subagent → 等待完成 → 读取归档 → 输出），不能 spawn 后提前结束当前 session。
+定时任务触发时，OpenClaw 会启动一个独立 session，**该 session 走与指令相同的统一执行流程**（SKILL.md「统一执行流程」），即：
 
-pipeline 是 15–30 分钟长任务，由 subagent 后台执行，主会话等通知后读归档输出——既不阻塞 session，又保证报告必然交付。
-
----
-
-## 每日热点
-
-```text
-📰 每日全球科技与AI热点报告
-
-阅读 <SKILL_DIR>/references/execution-guide.md 并严格按其「执行分工」与「输出约束」生成报告（不要自行定义输出格式）。
-
-参数：MODE=daily，RSS_HOURS=48，LANGUAGE=Chinese
-
-约束：
-1. 当前 session 同步完成全流程，不要 spawn 后提前结束——subagent 跑完 pipeline 后主会话必须读取归档并输出，不能提前结束。
-2. subagent 跑完后只回极简完成句（`✅ pipeline 完成，归档：<markdown 绝对路径>`），不报 exit code、不报抓取文章数、不报各源耗时与源成败——过程信息留在 meta/ 诊断里，需要时用指令 4 健康诊断查看。主会话从完成句取路径读归档，输出抓取概要 + 分主题结构化总结 + 热点总结，不输出抓取过程报告。
+```
+session 启动 → spawn subagent 跑 pipeline
+            → subagent 返回报告 → 直接发给用户
 ```
 
----
-
-## 每周热点
-
-```text
-📰 每周全球科技与AI热点报告
-
-阅读 <SKILL_DIR>/references/execution-guide.md 并严格按其「执行分工」与「输出约束」生成报告（不要自行定义输出格式）。
-
-参数：MODE=weekly，RSS_HOURS=168，LANGUAGE=Chinese
-
-约束：
-1. 当前 session 同步完成全流程，不要 spawn 后提前结束——subagent 跑完 pipeline 后主会话必须读取归档并输出，不能提前结束。
-2. subagent 跑完后只回极简完成句（`✅ pipeline 完成，归档：<markdown 绝对路径>`），不报 exit code、不报抓取文章数、不报各源耗时与源成败——过程信息留在 meta/ 诊断里，需要时用指令 4 健康诊断查看。主会话从完成句取路径读归档，输出抓取概要 + 分主题结构化总结 + 热点总结，不输出抓取过程报告。
-```
-
----
+定时任务的 payload 只需描述这个流程的关键参数，不需要重复描述机制。
 
 ## Cron 配置
 
 | 字段 | 建议值 | 说明 |
 |------|--------|------|
-| sessionTarget | `isolated` | 每次定时触发独立 session |
-| delivery.mode | `announce` | 完成后推送报告 |
-| payload.timeoutSeconds | `3600` | session 级超时，覆盖 15–30 分钟 pipeline + 输出 |
+| `sessionTarget` | `isolated` | 每次定时触发独立 session |
+| `delivery.mode` | `announce` | 完成后推送报告到飞书 |
+| `payload.timeoutSeconds` | `3600` | 覆盖 pipeline（15-30分钟）+ 输出全流程 |
+
+## Payload 模板
+
+### 每日热点（每天 9:00 触发）
+
+```
+📰 每日全球科技与AI热点报告
+
+阅读 <SKILL_DIR>/references/execution-guide.md 并严格按其「输出约束」生成报告。
+
+模式参数：
+- MODE=daily
+- RSS_HOURS=48
+- LANGUAGE=Chinese
+
+执行：
+1. spawn subagent 跑 pipeline（参数见 SKILL.md）
+2. subagent 返回的报告直接发给用户
+
+约束：subagent 只输出报告正文，不输出任何过程信息（exit code / 抓取条数 / 源耗时）
+```
+
+### 每周热点（每周一 9:00 触发）
+
+```
+📰 每周全球科技与AI热点报告
+
+阅读 <SKILL_DIR>/references/execution-guide.md 并严格按其「输出约束」生成报告。
+
+模式参数：
+- MODE=weekly
+- RSS_HOURS=168
+- LANGUAGE=Chinese
+
+执行：同上，MODE=weekly，HOURS=168
+```
+
+## 示例 cron 条目
+
+```
+0 9 * * *  openclaw cron trigger daily-news --sessionTarget=isolated --delivery.mode=announce --payload.timeoutSeconds=3600
+0 9 * * 1  openclaw cron trigger weekly-news --sessionTarget=isolated --delivery.mode=announce --payload.timeoutSeconds=3600
+```

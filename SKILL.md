@@ -1,7 +1,7 @@
 ---
 name: news-hotspots
 description: 聚合 RSS、Twitter、Google News 等多源科技与 AI 新闻，生成每日/每周热点报告。支持生成今日新闻热点、创建每日定时任务、换一批新闻热点（重新抓取）、查看抓取健康诊断。
-version: "5.1.0"
+version: "5.2.0"
 homepage: https://github.com/cyejing/news-hotspots
 source: https://github.com/cyejing/news-hotspots
 metadata:
@@ -17,7 +17,6 @@ files:
     - <WORKSPACE>/config/: 工作区覆盖配置
     - <WORKSPACE>/archive/news-hotspots/: 历史热点归档
   write:
-    - /tmp/: 临时 debug 目录
     - <WORKSPACE>/archive/news-hotspots/<DATE>/json/: 热点 JSON 归档
     - <WORKSPACE>/archive/news-hotspots/<DATE>/markdown/: Markdown 归档
     - <WORKSPACE>/archive/news-hotspots/<DATE>/meta/: 运行诊断元数据
@@ -27,85 +26,78 @@ files:
 
 聚合多源新闻，生成每日/每周热点报告。最终汇报只输出**抓取概要 + 分主题结构化总结 + 热点总结**，不逐条翻译标题；跨源共振条目就地 `🔥` 加亮，完整 Markdown 归档到磁盘供需要时查阅。
 
-## 用户指令
+## 统一执行流程（指令 / 定时任务 共用）
 
-本技能响应四类用户指令。识别后按对应流程执行，详细步骤见 `references/execution-guide.md`。
+无论是「生成今日热点」「换一批」「定时任务触发」，都用**同一条路径**完成：
 
-### 指令 1：生成今日新闻热点
-
-**触发**："生成今日热点"、"今天有什么新闻"、"看今天的科技热点" 等。
-
-**执行**：阅读 `references/execution-guide.md`，按其执行分工用 subagent 后台跑 pipeline，主会话等 subagent 回报的极简完成句后，从中取出归档 markdown 路径读 `daily.md`，输出抓取概要 + 分主题结构化总结 + 热点总结。
-
-```bash
-uv run <SKILL_DIR>/scripts/run-pipeline.py \
-  --defaults <SKILL_DIR>/config/defaults \
-  --config <WORKSPACE>/config \
-  --archive <WORKSPACE>/archive/news-hotspots \
-  --mode daily --hours 48 --verbose --force
+```
+主会话 → spawn subagent 跑 pipeline（15-30分钟）
+       → subagent 返回格式化的报告文本
+       → 主会话直接发给用户
 ```
 
-- pipeline 耗时 15–30 分钟，由 subagent 后台执行，主会话不阻塞、不退出，等 subagent 回报极简完成句后读归档输出。
-- **subagent 完成后只回极简完成句**（`✅ pipeline 完成，归档：<markdown 绝对路径>`），不报 exit code、不报抓取文章数、不报各源耗时与源成败——这些过程信息留在 `meta/` 诊断里，需要时用指令 4 查看，不混入热点交付。详见 `references/execution-guide.md`「执行分工」。
-- 同一机器不要并发运行多个热点任务。
-- 完成定义：pipeline exit 0（仅 subagent 确认，主会话不转述）+ 主会话读归档 + 输出概要句 + 输出结构化总结（跨源条目就地 `🔥` 加亮）+ 输出热点总结，缺一不可。
+### 主会话职责
 
-### 指令 2：生成每日定时任务
+1. **spawn subagent**（见下方 Subagent 职责），传参：模式（daily/weekly）、hours
+2. **用 `sessions_yield` 结束当前回合**，等 subagent 完成事件
+3. subagent 返回的报告文本直接发给用户
 
-**触发**："每天早上 9 点发热点"、"设置每日定时任务"、"每周生成一次报告" 等。
+### Subagent 职责
 
-**执行**：参考 `references/automation-template.md`，组装 cron payload。payload 指向 `execution-guide.md`，在当前 session 同步完成全流程（subagent 跑 pipeline 回极简完成句 → 主会话读归档输出）。
+1. 运行 pipeline（daily 用 `--hours 48`，weekly 用 `--hours 168`）：
+   ```bash
+   uv run <SKILL_DIR>/scripts/run-pipeline.py \
+     --defaults <SKILL_DIR>/config/defaults \
+     --config <WORKSPACE>/config \
+     --archive <WORKSPACE>/archive/news-hotspots \
+     --mode <MODE> --hours <HOURS> --verbose --force
+   ```
+2. 从 pipeline stdout 的 `✅ Done → <path>` 或 `pipeline.meta.json` 的 `outputs.markdown_output` 取 markdown 路径
+3. **读 daily.md，按 `references/execution-guide.md` 的输出约束生成完整中文报告**
+4. 把报告作为 subagent 的最终文本返回给主会话
 
-- daily 用 `--hours 48`，weekly 用 `--hours 168`。
-- subagent 跑完后只回极简完成句（含归档 markdown 路径），主会话据此读归档输出三部分总结，**不输出抓取过程报告**（exit code/文章数/各源耗时/源成败）。
-- `sessionTarget: isolated`、`delivery.mode: announce`、`payload.timeoutSeconds: 3600`。
+**Subagent 严禁输出过程信息**：exit code、抓取文章数、各源耗时、源成败明细——这些留在 `meta/*.meta.json` 诊断里，需要时由指令 4「健康诊断」专门读取。
 
-### 指令 3：换一批新闻热点（重新抓取）
+### 指令路由
 
-**触发**："换一批"、"再看一批"、"刷新一下热点"、"还有别的吗" 等。
-
-**执行**：重新跑 pipeline 抓取最新内容（与指令 1 相同，subagent 跑完回极简完成句，主会话读归档输出）。输出新的抓取概要 + 分主题结构化总结 + 热点总结。已看过的归档再读没有意义——换一批意味着重新抓取，不是读旧归档。同样不输出抓取过程报告。
-
-```bash
-uv run <SKILL_DIR>/scripts/run-pipeline.py \
-  --defaults <SKILL_DIR>/config/defaults \
-  --config <WORKSPACE>/config \
-  --archive <WORKSPACE>/archive/news-hotspots \
-  --mode daily --hours 48 --verbose --force
-```
-
-> 注：若只想基于当天已抓取数据生成新热点而不重新抓取，可直接运行 `merge-hotspots.py`（见 `references/execution-guide.md` 失败处理段的"部分失败"修复命令），但默认"换一批"指重新抓取。
+| 用户意图 | 动作 |
+|----------|------|
+| "生成今日热点" / "今天有什么新闻" / "看今天的科技热点" | 按统一流程跑 daily |
+| "换一批" / "再看一批" / "刷新一下热点" | 重新跑 pipeline（同 daily 命令，`--force` 已保证重新抓取） |
+| "设置每日定时任务" / "每周生成一次报告" | 参考 `references/automation-template.md` 组装 cron，payload 指向本流程 |
+| "抓取情况怎么样" / "源健康吗" / "为什么没有 Twitter" | 运行 `source-health.py`（见指令 4） |
 
 ### 指令 4：查看抓取健康情况
 
-**触发**："抓取情况怎么样"、"源健康吗"、"诊断一下"、"为什么没有 Twitter" 等。
-
-**执行**：运行 `source-health.py`，读取诊断报告并向用户解读：哪些源失败/降级、最近连续失败天数、慢请求占比、日志错误模式（超时/限流/连接/解析/空结果）。
-
 ```bash
-# 当天诊断
 uv run <SKILL_DIR>/scripts/source-health.py \
   --defaults <SKILL_DIR>/config/defaults \
   --config <WORKSPACE>/config \
-  --input <WORKSPACE>/archive/news-hotspots/<DATE>/meta \
-  --verbose
+  --input <WORKSPACE>/archive/news-hotspots/<DATE>/meta --verbose
 
 # 最近 7 天历史诊断
 uv run <SKILL_DIR>/scripts/source-health.py \
   --defaults <SKILL_DIR>/config/defaults \
   --config <WORKSPACE>/config \
-  --input <WORKSPACE>/archive/news-hotspots \
-  --verbose
+  --input <WORKSPACE>/archive/news-hotspots --verbose
 ```
 
-- `--input` 指向某天 `meta/` → 当次运行报告；指向 archive 根 → 自动聚合最近 `diagnostics.history_days`（默认 7）天。
-- 报告符号：✅ 健康 / ⚠️ 降级 / ⏭️ 跳过 / ⏱️ 超时 / 🚦 限流 / 🔌 连接 / 🐛 解析 / 📭 空结果 / 🔁 连续降级。
+报告符号：✅ 健康 / ⚠️ 降级 / ⏭️ 跳过 / ⏱️ 超时 / 🚦 限流 / 🔌 连接 / 🐛 解析 / 📭 空结果 / 🔁 连续降级。
 
----
+## 输出约束（详见 references/execution-guide.md）
+
+主会话最终发给用户的报告必须包含三部分：
+1. **抓取概要句**（从归档 `summary` frontmatter 转写）
+2. **分主题结构化总结**（标题 + bullet，跨源共振就地 `🔥` 加亮，去除噪音）
+3. **热点总结块**（`## 📌 热点总结`，唯一允许的叙述段落）
 
 ## 路径占位符
 
 - `<SKILL_DIR>`: skill 仓库根目录
 - `<WORKSPACE>`: 工作区根目录
 - `<DATE>`: 归档日期 `YYYY-MM-DD`，以脚本实际产出为准
-- `<LANGUAGE>`: 用户使用的语言
+
+## 注意事项
+
+- 同一机器不要并发运行多个热点任务（固定 debug/archive 路径会互相覆盖）
+- pipeline 部分源失败仍会产出 daily.md（status=partial），报告照常输出；源健康细节走指令 4
