@@ -72,8 +72,9 @@ HOTSPOTS_STEP_KEY = "merge-hotspots"
 PROCESS_LOG_TAIL_LINES = 100
 META_ARCHIVE_NAME_RE = re.compile(r"^(?P<base>.+?)(?P<index>\d*)\.meta\.json$")
 
-
-@dataclass(frozen=True)
+# 依赖 bb-browser（Chrome）的源
+BB_BROWSER_STEPS = {"twitter", "google", "zhihu", "weibo", "toutiao", "xueqiu"}
+@dataclass
 class StepSpec:
     step_key: str
     name: str
@@ -674,6 +675,59 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def ensure_bb_browser_ready(skipped: set[str], logger: logging.Logger) -> bool:
+    """
+    前置检查：如果 pipeline 需要 bb-browser 源（Twitter/Google/Zhihu/Weibo/Toutiao/Xueqiu），
+    且这些源没被 --skip，则检查 Chrome 是否就绪；不在则尝试自动启动。
+    返回 True 表示 Chrome 可用（或不需要），False 表示不可用但 pipeline 仍继续。
+    """
+    needed = BB_BROWSER_STEPS - skipped
+    if not needed:
+        return True  # 没有 bb-browser 源，跳过检查
+
+    # 检查 Chrome 进程
+    try:
+        result = subprocess.run(
+            ["pgrep", "-f", "/opt/google/chrome/chrome"],
+            capture_output=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            logger.info("✅ Chrome 已运行，bb-browser 源可用")
+            return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Chrome 进程检查异常: %s", exc)
+
+    # Chrome 不在，尝试自动启动
+    logger.info("🔧 Chrome 未运行，正在启动浏览器...")
+    restart_script = Path.home() / ".openclaw/workspace/skills/browser-restart/scripts/restart_browser.py"
+    if not restart_script.exists():
+        logger.warning("❌ browser-restart 脚本不存在，跳过启动")
+        return False
+
+    try:
+        result = subprocess.run(
+            ["python3", str(restart_script)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            logger.info("✅ 浏览器启动成功")
+            return True
+        logger.warning(
+            "❌ 浏览器启动失败: %s",
+            (result.stderr or result.stdout or "")[:200],
+        )
+        return False
+    except subprocess.TimeoutExpired:
+        logger.warning("❌ 浏览器启动超时（60s）")
+        return False
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("❌ 浏览器启动异常: %s", exc)
+        return False
+
+
 def main() -> int:
     args = parse_args()
     logger = setup_logging(args.verbose)
@@ -687,6 +741,13 @@ def main() -> int:
     archive_root.mkdir(parents=True, exist_ok=True)
     started_at = time.monotonic()
     skipped = {item.strip() for item in args.skip.split(",") if item.strip()}
+
+    # Chrome 前置检查：bb-browser 源需要 Chrome，不在则自动启动
+    browser_ok = ensure_bb_browser_ready(skipped, logger)
+    if not browser_ok:
+        logger.warning(
+            "⚠️ Chrome 未就绪，bb-browser 源（Twitter/Google/Zhihu/Weibo/Toutiao/Xueqiu）可能失败"
+        )
 
     logger.info("📁 Debug directory: %s", debug_dir)
     logger.info("🗄️ Archive directory: %s", archive_root)
