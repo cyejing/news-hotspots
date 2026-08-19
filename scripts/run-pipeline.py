@@ -678,53 +678,64 @@ def parse_args() -> argparse.Namespace:
 def ensure_bb_browser_ready(skipped: set[str], logger: logging.Logger) -> bool:
     """
     前置检查：如果 pipeline 需要 bb-browser 源（Twitter/Google/Zhihu/Weibo/Toutiao/Xueqiu），
-    且这些源没被 --skip，则检查 Chrome 是否就绪；不在则尝试自动启动。
-    返回 True 表示 Chrome 可用（或不需要），False 表示不可用但 pipeline 仍继续。
+    且这些源没被 --skip，则执行 bb-browser 可用性探测（check_bb_browser.py）。
+    探测失败会自动调用 browser-restart 重启浏览器后再测。
+    返回 True 表示 bb-browser 可用（或不需要），False 表示不可用但 pipeline 仍继续。
     """
     needed = BB_BROWSER_STEPS - skipped
     if not needed:
         return True  # 没有 bb-browser 源，跳过检查
 
-    # 检查 Chrome 进程
-    try:
-        result = subprocess.run(
-            ["pgrep", "-f", "/opt/google/chrome/chrome"],
-            capture_output=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            logger.info("✅ Chrome 已运行，bb-browser 源可用")
-            return True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Chrome 进程检查异常: %s", exc)
-
-    # Chrome 不在，尝试自动启动
-    logger.info("🔧 Chrome 未运行，正在启动浏览器...")
-    restart_script = Path.home() / ".openclaw/workspace/skills/browser-restart/scripts/restart_browser.py"
-    if not restart_script.exists():
-        logger.warning("❌ browser-restart 脚本不存在，跳过启动")
+    check_script = SCRIPTS_DIR / "check_bb_browser.py"
+    if not check_script.exists():
+        # 兜底：只检查 Chrome 进程
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "/opt/google/chrome/chrome"],
+                capture_output=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                logger.info("✅ Chrome 进程存在，bb-browser 源可用（未找到探测脚本，仅做进程检查）")
+                return True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Chrome 进程检查异常: %s", exc)
         return False
 
+    logger.info("🔍 开始 bb-browser 可用性探测（含失败自动重启）...")
     try:
         result = subprocess.run(
-            ["python3", str(restart_script)],
+            [sys.executable, str(check_script)],
             capture_output=True,
             text=True,
-            timeout=60,
+            # 超时留足：探测 ~105s + 重启 ~95s，合计需 >300s；
+            # 原 180s 会在重启中途被 SIGTERM 掐断（方案 B 修复）
+            timeout=600,
         )
-        if result.returncode == 0:
-            logger.info("✅ 浏览器启动成功")
+        try:
+            report = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            report = {"final_ok": False, "message": result.stdout[:200]}
+
+        probe_results = report.get("probe_results", {})
+        ok_names = [n for n, r in probe_results.items() if r.get("ok")]
+        if report.get("final_ok"):
+            if report.get("restart_attempted"):
+                logger.info(
+                    "✅ 浏览器已重启，bb-browser 源恢复（重启后由后续 fetch 步骤自行验证）"
+                )
+            else:
+                logger.info("✅ bb-browser 可用，%d/%d 探测成功: %s", len(ok_names), len(probe_results), ok_names)
             return True
-        logger.warning(
-            "❌ 浏览器启动失败: %s",
-            (result.stderr or result.stdout or "")[:200],
-        )
+
+        logger.warning("⚠️ bb-browser 不可用，%d 条探测全部失败: %s", len(probe_results), report.get("message", ""))
         return False
+
     except subprocess.TimeoutExpired:
-        logger.warning("❌ 浏览器启动超时（60s）")
+        logger.warning("⚠️ bb-browser 探测/重启超时（600s）")
         return False
     except Exception as exc:  # noqa: BLE001
-        logger.warning("❌ 浏览器启动异常: %s", exc)
+        logger.warning("⚠️ bb-browser 探测异常: %s", exc)
         return False
 
 

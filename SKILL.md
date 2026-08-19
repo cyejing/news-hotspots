@@ -42,6 +42,28 @@ files:
 2. **用 `sessions_yield` 结束当前回合**，等 subagent 完成事件
 3. subagent 返回的报告文本直接发给用户
 
+### bb-browser 前置检查（主流程启动前自动执行）
+
+pipeline 启动时（`run-pipeline.py`）会自动执行 **bb-browser 可用性探测**：
+
+1. **探测命令**（从各 fetch 脚本实际调用中抽取，均无需登录态、轻量超时）：
+   - `bb-browser site zhihu/hot`（知乎热榜）
+   - `bb-browser site google/news "OpenAI"`（Google News）
+   - `bb-browser site twitter/search "AI"`（Twitter 搜索）
+   - `bb-browser site weibo/hot`（微博热榜）
+   - `bb-browser site toutiao/hot`（头条热榜）
+   - 只要**任意一条成功**（返回条目数 > 0）即判定 bb-browser 可用
+2. **全部失败 → 自动恢复**：参考 `browser-restart` 技能，调用其 `restart_browser.py` 重启 Chrome + 重建 bb-browser daemon
+3. **重启后再次探测**：仍失败则继续主流程，但日志明确警告 bb-browser 源可能失败
+
+探测逻辑与重启触发由 `scripts/check_bb_browser.py` 实现，可在 pipeline 外单独运行验证：
+
+```bash
+python3 <SKILL_DIR>/scripts/check_bb_browser.py
+```
+
+单独运行可查看完整探测日志与最终可用性判定。
+
 ### Subagent 职责
 
 1. 运行 pipeline（daily 用 `--hours 48`，weekly 用 `--hours 168`）：
