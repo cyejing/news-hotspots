@@ -63,6 +63,12 @@ COOLDOWN_SECONDS = 7.0
 DEFAULT_TIMEOUT = 180
 DEFAULT_COUNT = 20
 RESULTS_PER_QUERY = 10
+# twitter/search 话题搜索结果的最低点赞数阈值：搜索结果中大量是 0~2 赞的
+# 随机账号/机器人内容（实测 2026-10-30 归档中混入 Larpcheckbot 传销帖、
+# 1 赞随机推文），低互动条目直接丢弃；timeline 关注账号不受此限制
+# （内容本身就是老板选定的）。模块默认 0 = 不启用，生产值由
+# config/defaults/runtime.json 的 fetch.twitter.min_likes_search 提供。
+MIN_LIKES_SEARCH = 0
 TWITTER_DATE_FORMAT = "%a %b %d %H:%M:%S %z %Y"
 _last_success_at: Optional[float] = None
 _last_request_elapsed_s: Optional[float] = None
@@ -95,7 +101,7 @@ def throttle_after_success() -> None:
 
 
 def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
-    global COOLDOWN_SECONDS, DEFAULT_TIMEOUT, DEFAULT_COUNT, RESULTS_PER_QUERY
+    global COOLDOWN_SECONDS, DEFAULT_TIMEOUT, DEFAULT_COUNT, RESULTS_PER_QUERY, MIN_LIKES_SEARCH
     runtime = load_merged_runtime_config(defaults_dir, config_dir)
     fetch_config = runtime.get("fetch", {}).get("twitter", {})
     diagnostics_config = runtime.get("diagnostics", {})
@@ -103,6 +109,7 @@ def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) 
     DEFAULT_TIMEOUT = int(fetch_config.get("request_timeout_s", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT)
     DEFAULT_COUNT = int(fetch_config.get("count", DEFAULT_COUNT) or DEFAULT_COUNT)
     RESULTS_PER_QUERY = int(fetch_config.get("results_per_query", RESULTS_PER_QUERY) or RESULTS_PER_QUERY)
+    MIN_LIKES_SEARCH = int(fetch_config.get("min_likes_search", MIN_LIKES_SEARCH) or 0)
     configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
     return runtime
 
@@ -364,6 +371,7 @@ def fetch_topic(topic: Dict[str, Any], cutoff: datetime, logger: logging.Logger)
     request_traces: List[Dict[str, Any]] = []
     total_request_elapsed_s = 0.0
     ok_queries = 0
+    dropped_low_likes = 0
 
     for query in queries:
         compiled_query = build_twitter_query(query, [])
@@ -376,6 +384,9 @@ def fetch_topic(topic: Dict[str, Any], cutoff: datetime, logger: logging.Logger)
             for item in tweets:
                 article = parse_tweet(item, topic.get("id"), cutoff, compiled_query)
                 if not article:
+                    continue
+                if MIN_LIKES_SEARCH > 0 and int(article.get("metrics", {}).get("like_count", 0) or 0) < MIN_LIKES_SEARCH:
+                    dropped_low_likes += 1
                     continue
                 article["source_name"] = article.get("author") or "Twitter Search"
                 dedup_by_url.setdefault(article["link"], article)
@@ -427,6 +438,7 @@ def fetch_topic(topic: Dict[str, Any], cutoff: datetime, logger: logging.Logger)
         "items": len(articles),
         "count": len(articles),
         "articles": articles,
+        "dropped_low_likes": dropped_low_likes,
     }
 
 
@@ -479,6 +491,9 @@ def main() -> int:
         ok_topics = sum(1 for result in topic_results if result["status"] == "ok")
         total_query_calls = sum(int(result.get("calls_total", 0) or 0) for result in topic_results)
         ok_query_calls = sum(int(result.get("calls_ok", 0) or 0) for result in topic_results)
+        total_dropped_low_likes = sum(int(result.get("dropped_low_likes", 0) or 0) for result in topic_results)
+        if total_dropped_low_likes:
+            logger.info("🧹 Low-likes filter (<%d) dropped %d search tweets", MIN_LIKES_SEARCH, total_dropped_low_likes)
         total_articles = sum(result.get("count", 0) for result in source_results) + sum(result.get("count", 0) for result in topic_results)
         total_calls = len(source_results) + total_query_calls
         ok_calls = ok_sources + ok_query_calls

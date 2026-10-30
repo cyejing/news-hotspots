@@ -278,9 +278,9 @@
       "type": "twitter",
       "name": "段永平 (@yongpingduan)",
       "handle": "yongpingduan",
-      "enabled": true,
+      "enabled": false,
       "priority": 4,
-      "note": "步步高/OPPO/vivo 创始人，价值投资者；显式归入 value-investing topic（非默认 twitter 聚合桶）",
+      "note": "已禁用（2026-10-30 实跑 User not found，账号疑似更名/停用）；段永平内容由 xueqiu 源（雪球 ID 1247347556）覆盖",
       "topic": "value-investing"
     }
   ]

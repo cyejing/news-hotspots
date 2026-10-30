@@ -92,6 +92,11 @@ RETRY_COUNT = 1
 RETRY_DELAY = 2.0  # seconds
 RSS_CACHE_PATH = "/tmp/news-hotspots-rss-cache.json"
 RSS_CACHE_TTL_HOURS = 24
+# 403 兜底：部分站点（fs.blog、mishtalk.com，2026-10-30 实测）对 requests 的
+# TLS 指纹有 Cloudflare 防护，UA 伪装无效。改走 r.jina.ai 代理回源
+# （x-return-format: html 可拿到原始 RSS XML），仅在直连 401/403 时触发。
+JINA_FALLBACK_PREFIX = "https://r.jina.ai/"
+JINA_STATUS_TRIGGER = {401, 403}
 
 
 def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
@@ -642,6 +647,64 @@ def fetch_feed_with_retry(source: Dict[str, Any], cutoff: datetime, no_cache: bo
                         elapsed_total_s=total_elapsed,
                     )
                 )
+
+                # 401/403 兜底：直连被拒时改走 r.jina.ai 代理回源拿原始 RSS XML
+                if isinstance(e, RequestsHTTPError) and getattr(e.response, "status_code", None) in JINA_STATUS_TRIGGER:
+                    jina_status = getattr(e.response, "status_code", None)
+                    jina_started = time.monotonic()
+                    try:
+                        jina_resp = requests.get(
+                            JINA_FALLBACK_PREFIX + url,
+                            headers={"x-return-format": "html"},
+                            timeout=TIMEOUT,
+                        )
+                        jina_resp.raise_for_status()
+                        jina_content = jina_resp.text
+                        jina_elapsed = round(time.monotonic() - jina_started, 3)
+                        jina_articles_raw = parse_feed(jina_content, cutoff, url)
+                        jina_validated = []
+                        for article in jina_articles_raw:
+                            article["topic"] = topic
+                            article["source_name"] = name
+                            if validate_article_domain(article.get("link", ""), source):
+                                jina_validated.append(article)
+                        request_log.append(
+                            build_request_trace(
+                                source_id,
+                                url,
+                                jina_elapsed,
+                                status="ok",
+                                source_type="rss",
+                                method="GET",
+                                attempt=1,
+                                backend="jina",
+                                adapter="rss/feed",
+                                result="fallback_ok",
+                                elapsed_total_s=round(time.monotonic() - started_at, 3),
+                            )
+                        )
+                        logging.info(f"♻️ {name}: direct fetch blocked ({jina_status}), recovered {len(jina_validated)} articles via r.jina.ai")
+                        return {
+                            "source_id": source_id,
+                            "source_type": "rss",
+                            "name": name,
+                            "url": url,
+                            "priority": priority,
+                            "topic": topic,
+                            "status": "ok",
+                            "attempts": attempt + 2,
+                            "elapsed_s": round(active_elapsed_s + jina_elapsed, 3),
+                            "total_elapsed_s": round(time.monotonic() - started_at, 3),
+                            "items": len(jina_validated),
+                            "count": len(jina_validated),
+                            "articles": jina_validated,
+                            "request_traces": request_log,
+                            "failed_items": [],
+                            "fallback": "jina",
+                        }
+                    except Exception as jina_exc:
+                        logging.debug(f"Jina fallback failed for {name}: {str(jina_exc)[:100]}")
+
                 return {
                     "source_id": source_id,
                     "source_type": "rss",

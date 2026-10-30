@@ -46,6 +46,7 @@ class TestFetchTwitter(unittest.TestCase):
                     "text": "assistant launch",
                     "url": "https://x.com/test/status/1",
                     "created_at": self.recent_created_at(),
+                    "likes": 100,
                 }
             ]
         }
@@ -61,6 +62,7 @@ class TestFetchTwitter(unittest.TestCase):
         original_count = fetch_twitter.DEFAULT_COUNT
         original_results = fetch_twitter.RESULTS_PER_QUERY
         original_cooldown = fetch_twitter.COOLDOWN_SECONDS
+        original_min_likes = fetch_twitter.MIN_LIKES_SEARCH
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 config_dir = Path(tmpdir)
@@ -78,6 +80,7 @@ class TestFetchTwitter(unittest.TestCase):
             fetch_twitter.DEFAULT_COUNT = original_count
             fetch_twitter.RESULTS_PER_QUERY = original_results
             fetch_twitter.COOLDOWN_SECONDS = original_cooldown
+            fetch_twitter.MIN_LIKES_SEARCH = original_min_likes
 
     def test_load_sources_uses_split_twitter_config(self):
         sources = fetch_twitter.load_sources(ROOT / "config" / "defaults", None)

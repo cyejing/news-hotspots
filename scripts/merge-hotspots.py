@@ -402,9 +402,11 @@ def build_markdown(hotspots: Dict[str, Any], mode: str = "daily", extra_sections
     selected_source_counts = hotspots.get("source_type_counts") or {}
     candidate_source_counts = hotspots.get("candidate_source_type_counts") or {}
     failed_source_counts = hotspots.get("source_type_failed_counts") or {}
-    all_source_types = sorted(set(candidate_source_counts) | set(selected_source_counts) | set(failed_source_counts))
+    # 左侧数字优先用真实抓取数（input_stats），缺失时回退 merge 后候选数（旧口径）
+    fetched_source_counts = hotspots.get("fetched_source_type_counts") or candidate_source_counts
+    all_source_types = sorted(set(fetched_source_counts) | set(selected_source_counts) | set(failed_source_counts))
     for source_type in all_source_types:
-        fetched_count = int(candidate_source_counts.get(source_type, 0) or 0)
+        fetched_count = int(fetched_source_counts.get(source_type, 0) or 0)
         selected_count = int(selected_source_counts.get(source_type, 0) or 0)
         failed_count = int(failed_source_counts.get(source_type, 0) or 0)
         summary_parts.append(f"{source_type}({fetched_count}→{selected_count},fail={failed_count})")
@@ -505,6 +507,7 @@ def build_hotspots(
         "total_articles": displayed_total,
         "source_type_counts": selected_source_breakdown,
         "candidate_total_articles": data.get("output_stats", {}).get("total_articles", 0),
+        "fetched_source_type_counts": dict(data.get("input_stats", {}).get("source_type_distribution", {}) or {}),
         "candidate_source_type_counts": candidate_source_breakdown,
         "content_filter": {
             "applied": bool(effective_blocked_keywords),

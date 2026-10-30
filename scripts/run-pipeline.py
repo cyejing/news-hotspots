@@ -385,8 +385,22 @@ def build_hotspots_step_spec(
     )
 
 
+def resolve_step_python() -> str:
+    """确定 step 子进程使用的 Python 解释器。
+
+    优先使用 skill 仓库自带的 .venv：pipeline 若被系统 python3 直接启动
+    （例如 agent 用裸 python3 而非 uv run），sys.executable 缺 feedparser/rapidfuzz
+    等依赖，fetch/merge 会静默降级到纯 Python 兜底实现（2026-10-30 实跑出现过
+    "feedparser not installed" 警告）。.venv 不存在时保持 sys.executable 原行为。
+    """
+    venv_python = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python3"
+    if venv_python.exists():
+        return str(venv_python)
+    return sys.executable
+
+
 def run_step_process(spec: StepSpec) -> ProcessResult:
-    command = [sys.executable, str(SCRIPTS_DIR / spec.script_name), *spec.args]
+    command = [resolve_step_python(), str(SCRIPTS_DIR / spec.script_name), *spec.args]
 
     started = time.monotonic()
     try:
@@ -730,7 +744,7 @@ def ensure_bb_browser_ready(skipped: set[str], logger: logging.Logger) -> bool:
     logger.info("🔍 开始 bb-browser 可用性探测（含失败自动重启）...")
     try:
         result = subprocess.run(
-            [sys.executable, str(check_script)],
+            [resolve_step_python(), str(check_script)],
             capture_output=True,
             text=True,
             # 超时留足：探测 ~105s + 重启 ~95s，合计需 >300s；

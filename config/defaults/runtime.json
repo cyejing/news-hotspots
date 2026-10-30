@@ -1,6 +1,6 @@
 {
   "pipeline": {
-    "fetch_step_timeout_s": 2000,
+    "fetch_step_timeout_s": 900,
     "merge_timeout_s": 300,
     "hotspots_timeout_s": 120,
     "default_hotspots_top_n": 10,
@@ -17,14 +17,15 @@
     },
     "google": {
       "request_timeout_s": 20,
-      "cooldown_s": 15.0,
+      "cooldown_s": 5.0,
       "results_per_query": 10
     },
     "twitter": {
       "request_timeout_s": 20,
-      "cooldown_s": 15.0,
+      "cooldown_s": 5.0,
       "count": 20,
-      "results_per_query": 10
+      "results_per_query": 10,
+      "min_likes_search": 10
     },
     "zhihu": {
       "request_timeout_s": 30,
@@ -72,14 +73,42 @@
       "min_word_tokens": 4
     },
     "log_pattern_keywords": {
-      "timeout": ["timed out", "timeout", "超时"],
-      "rate_limited": ["429", "rate limit", "too many requests", "频次"],
-      "connection": ["connection", "refused", "reset", "unreachable", "dns", "连接"],
-      "parse": ["json", "decode", "parse", "解析"],
-      "empty": ["empty", "no results", "无结果", "no tweets", "no items"]
+      "timeout": [
+        "timed out",
+        "timeout",
+        "超时"
+      ],
+      "rate_limited": [
+        "429",
+        "rate limit",
+        "too many requests",
+        "频次"
+      ],
+      "connection": [
+        "connection",
+        "refused",
+        "reset",
+        "unreachable",
+        "dns",
+        "连接"
+      ],
+      "parse": [
+        "json",
+        "decode",
+        "parse",
+        "解析"
+      ],
+      "empty": [
+        "empty",
+        "no results",
+        "无结果",
+        "no tweets",
+        "no items"
+      ]
     }
   },
   "cache": {
     "rss_cache_path": "/tmp/news-hotspots-rss-cache.json"
-  }
+  },
+  "_updated": "2026-10-30"
 }
