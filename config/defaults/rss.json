@@ -1,7 +1,7 @@
 {
   "_description": "Unified RSS data sources configuration, grouped by media organization. Priority is a light ranking hint: 3 for most sources, 4 for clearly authoritative sources, 5 for top-tier primary sources. Set enabled=false to disable stale or noisy feeds without removing them (overlay merges by id).",
-  "_updated": "2026-08-07",
-  "_version": "4.2.0",
+  "_updated": "2026-10-31",
+  "_version": "6.0.0",
   "sources": [
     {
       "id": "openai-rss",
@@ -81,7 +81,7 @@
       "enabled": true,
       "priority": 5,
       "note": "Semiconductor Engineering，半导体工程与芯片产业深度分析，归入 ai-infra",
-      "topic": "ai-infra"
+      "topic": "ai-frontier"
     },
     {
       "id": "servethehome-rss",
@@ -91,7 +91,7 @@
       "enabled": true,
       "priority": 5,
       "note": "ServeTheHome，AI 服务器、数据中心硬件与基础设施评测，归入 ai-infra",
-      "topic": "ai-infra"
+      "topic": "ai-frontier"
     },
     {
       "id": "tomshardware-rss",
@@ -101,7 +101,7 @@
       "enabled": false,
       "priority": 4,
       "note": "Tom's Hardware，硬件评测与芯片动态（已禁用，与 semiengineering/servethehome 重叠降噪）",
-      "topic": "ai-infra"
+      "topic": "ai-frontier"
     },
     {
       "id": "hn-rss",
@@ -181,7 +181,7 @@
       "enabled": true,
       "priority": 3,
       "note": "MIT Technology Review，AI 政策与深度分析，归入 science",
-      "topic": "science"
+      "topic": "technology"
     },
     {
       "id": "ieee-spectrum-rss",
@@ -191,7 +191,7 @@
       "enabled": true,
       "priority": 3,
       "note": "IEEE Spectrum，工程与前沿科技权威媒体，归入 science",
-      "topic": "science"
+      "topic": "technology"
     },
     {
       "id": "google-research-rss",
@@ -201,7 +201,7 @@
       "enabled": true,
       "priority": 4,
       "note": "Google Research 官方博客，归入 science",
-      "topic": "science"
+      "topic": "technology"
     },
     {
       "id": "bbc-world-rss",
@@ -211,16 +211,6 @@
       "enabled": true,
       "priority": 4,
       "note": "BBC World 国际新闻频道，覆盖全球时政与突发，归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "bbc-home-rss",
-      "type": "rss",
-      "name": "BBC News",
-      "url": "https://feeds.bbci.co.uk/news/rss.xml",
-      "enabled": true,
-      "priority": 3,
-      "note": "BBC News 首页头条，归入 world",
       "topic": "world"
     },
     {
@@ -251,7 +241,7 @@
       "enabled": true,
       "priority": 3,
       "note": "BBC Science 科学与环境频道，归入 science",
-      "topic": "science"
+      "topic": "technology"
     },
     {
       "id": "bbc-health-rss",
@@ -264,26 +254,6 @@
       "topic": "social"
     },
     {
-      "id": "abcnews-top-rss",
-      "type": "rss",
-      "name": "ABC News Top Stories",
-      "url": "https://feeds.abcnews.com/abcnews/topstories",
-      "enabled": true,
-      "priority": 3,
-      "note": "ABC News Top Stories 官方头条，归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "abcnews-business-rss",
-      "type": "rss",
-      "name": "ABC News Business",
-      "url": "https://feeds.abcnews.com/abcnews/businessheadlines",
-      "enabled": true,
-      "priority": 3,
-      "note": "ABC News Business 商业频道，归入 business",
-      "topic": "business"
-    },
-    {
       "id": "abcnews-tech-rss",
       "type": "rss",
       "name": "ABC News Technology",
@@ -294,16 +264,6 @@
       "topic": "technology"
     },
     {
-      "id": "abcnews-politics-rss",
-      "type": "rss",
-      "name": "ABC News Politics",
-      "url": "https://feeds.abcnews.com/abcnews/politicsheadlines",
-      "enabled": true,
-      "priority": 3,
-      "note": "ABC News Politics 政治频道，归入 world",
-      "topic": "world"
-    },
-    {
       "id": "nbc-top-rss",
       "type": "rss",
       "name": "NBC News Top Stories",
@@ -311,26 +271,6 @@
       "enabled": true,
       "priority": 3,
       "note": "NBC News Top Stories 官方头条，归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "nbc-business-rss",
-      "type": "rss",
-      "name": "NBC News Business",
-      "url": "https://feeds.nbcnews.com/nbcnews/public/business",
-      "enabled": true,
-      "priority": 3,
-      "note": "NBC News Business 商业频道，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "nbc-politics-rss",
-      "type": "rss",
-      "name": "NBC News Politics",
-      "url": "https://feeds.nbcnews.com/nbcnews/public/politics",
-      "enabled": true,
-      "priority": 3,
-      "note": "NBC News Politics 政治频道，归入 world",
       "topic": "world"
     },
     {
@@ -344,56 +284,6 @@
       "topic": "social"
     },
     {
-      "id": "cbs-world-rss",
-      "type": "rss",
-      "name": "CBS News World",
-      "url": "https://www.cbsnews.com/latest/rss/world",
-      "enabled": true,
-      "priority": 3,
-      "note": "CBS News World 国际新闻频道，归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "cbs-main-rss",
-      "type": "rss",
-      "name": "CBS News Top Stories",
-      "url": "https://www.cbsnews.com/latest/rss/main",
-      "enabled": true,
-      "priority": 3,
-      "note": "CBS News Top Stories 官方头条，归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "cbs-us-rss",
-      "type": "rss",
-      "name": "CBS News U.S.",
-      "url": "https://www.cbsnews.com/latest/rss/us",
-      "enabled": true,
-      "priority": 3,
-      "note": "CBS News U.S. 美国新闻，归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "cbs-politics-rss",
-      "type": "rss",
-      "name": "CBS News Politics",
-      "url": "https://www.cbsnews.com/latest/rss/politics",
-      "enabled": true,
-      "priority": 3,
-      "note": "CBS News Politics 政治频道，归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "cbs-moneywatch-rss",
-      "type": "rss",
-      "name": "CBS MoneyWatch",
-      "url": "https://www.cbsnews.com/latest/rss/moneywatch",
-      "enabled": true,
-      "priority": 3,
-      "note": "CBS MoneyWatch 商业与市场频道，归入 business",
-      "topic": "business"
-    },
-    {
       "id": "cbs-science-rss",
       "type": "rss",
       "name": "CBS News Science",
@@ -401,16 +291,6 @@
       "enabled": true,
       "priority": 3,
       "note": "CBS News Science 科学频道，归入 science",
-      "topic": "science"
-    },
-    {
-      "id": "cbs-technology-rss",
-      "type": "rss",
-      "name": "CBS News Technology",
-      "url": "https://www.cbsnews.com/latest/rss/technology",
-      "enabled": true,
-      "priority": 3,
-      "note": "CBS News Technology 科技频道，归入 technology",
       "topic": "technology"
     },
     {
@@ -422,16 +302,6 @@
       "priority": 3,
       "note": "CBS News Health 健康频道（已禁用，social topic 降噪）",
       "topic": "social"
-    },
-    {
-      "id": "npr-world-rss",
-      "type": "rss",
-      "name": "NPR World",
-      "url": "https://feeds.npr.org/1004/rss.xml",
-      "enabled": true,
-      "priority": 3,
-      "note": "NPR World 国际新闻，归入 world",
-      "topic": "world"
     },
     {
       "id": "npr-news-rss",
@@ -471,7 +341,7 @@
       "enabled": true,
       "priority": 3,
       "note": "NPR Science 科学，归入 science",
-      "topic": "science"
+      "topic": "technology"
     },
     {
       "id": "nytimes-world-rss",
@@ -604,16 +474,6 @@
       "topic": "business"
     },
     {
-      "id": "dw-germany-rss",
-      "type": "rss",
-      "name": "DW Germany",
-      "url": "https://rss.dw.com/rdf/rss-en-ger",
-      "enabled": true,
-      "priority": 3,
-      "note": "DW Germany 德国新闻，归入 world",
-      "topic": "world"
-    },
-    {
       "id": "dw-tech-rss",
       "type": "rss",
       "name": "DW Technology",
@@ -631,27 +491,7 @@
       "enabled": true,
       "priority": 3,
       "note": "DW Science 科学频道，归入 science",
-      "topic": "science"
-    },
-    {
-      "id": "rfi-world-rss",
-      "type": "rss",
-      "name": "RFI Monde",
-      "url": "https://www.rfi.fr/fr/monde/rss",
-      "enabled": true,
-      "priority": 3,
-      "note": "RFI Monde 法国国际广播国际新闻（法语），归入 world",
-      "topic": "world"
-    },
-    {
-      "id": "rfi-economy-rss",
-      "type": "rss",
-      "name": "RFI Economie",
-      "url": "https://www.rfi.fr/fr/economie/rss",
-      "enabled": true,
-      "priority": 3,
-      "note": "RFI Economie 经济频道（法语），归入 business",
-      "topic": "business"
+      "topic": "technology"
     },
     {
       "id": "rfi-science-rss",
@@ -661,7 +501,7 @@
       "enabled": true,
       "priority": 3,
       "note": "RFI Sciences 科学频道（法语），归入 science",
-      "topic": "science"
+      "topic": "technology"
     },
     {
       "id": "rfi-africa-rss",
@@ -721,7 +561,7 @@
       "enabled": true,
       "priority": 3,
       "note": "VOA 美国之音科学与健康频道，归入 science",
-      "topic": "science"
+      "topic": "technology"
     },
     {
       "id": "aljazeera-rss",
@@ -732,106 +572,6 @@
       "priority": 4,
       "note": "Al Jazeera，半岛电视台全球新闻，归入 world",
       "topic": "world"
-    },
-    {
-      "id": "ted-blog-rss",
-      "type": "rss",
-      "name": "TED Blog",
-      "url": "https://blog.ted.com/feed/",
-      "enabled": true,
-      "priority": 3,
-      "note": "TED Blog 官方博客，创意/科学/社会议题，归入 social",
-      "topic": "social"
-    },
-    {
-      "id": "fed-monetary-policy-rss",
-      "type": "rss",
-      "name": "Federal Reserve Monetary Policy",
-      "url": "https://www.federalreserve.gov/feeds/press_monetary.xml",
-      "enabled": true,
-      "priority": 5,
-      "note": "美联储货币政策公告 RSS（FOMC 声明/利率决议），第一手宏观权威，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "fed-press-rss",
-      "type": "rss",
-      "name": "Federal Reserve Press Releases",
-      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
-      "enabled": true,
-      "priority": 5,
-      "note": "美联储新闻稿 RSS（全部公告），第一手宏观权威，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "bis-press-rss",
-      "type": "rss",
-      "name": "BIS Press Releases",
-      "url": "https://www.bis.org/doclist/all_pressrels.rss",
-      "enabled": true,
-      "priority": 5,
-      "note": "国际清算银行 BIS 新闻稿，全球央行协调权威，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "fed-feds-rss",
-      "type": "rss",
-      "name": "Federal Reserve FEDS",
-      "url": "https://www.federalreserve.gov/feeds/feds.xml",
-      "enabled": true,
-      "priority": 4,
-      "note": "美联储 FEDS 研究论文，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "ecb-press-rss",
-      "type": "rss",
-      "name": "ECB Press Releases",
-      "url": "https://www.ecb.europa.eu/rss/press.html",
-      "enabled": true,
-      "priority": 4,
-      "note": "欧洲央行 ECB 新闻与讲话，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "ecb-publications-rss",
-      "type": "rss",
-      "name": "ECB Publications",
-      "url": "https://www.ecb.europa.eu/rss/pub.html",
-      "enabled": true,
-      "priority": 3,
-      "note": "欧洲央行 ECB 出版物，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "ecb-blog-rss",
-      "type": "rss",
-      "name": "ECB Blog",
-      "url": "https://www.ecb.europa.eu/rss/blog.html",
-      "enabled": true,
-      "priority": 3,
-      "note": "欧洲央行 ECB 博客，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "bis-speeches-rss",
-      "type": "rss",
-      "name": "BIS Speeches",
-      "url": "https://www.bis.org/doclist/cbspeeches.rss",
-      "enabled": true,
-      "priority": 3,
-      "note": "国际清算银行 BIS 央行讲话，归入 business",
-      "topic": "business"
-    },
-    {
-      "id": "bis-research-rss",
-      "type": "rss",
-      "name": "BIS Research Hub",
-      "url": "https://www.bis.org/doclist/reshub_papers.rss",
-      "enabled": true,
-      "priority": 3,
-      "note": "国际清算银行 BIS 研究论文，归入 business",
-      "topic": "business"
     },
     {
       "id": "cnbc-buffett-watch-rss",
@@ -854,16 +594,6 @@
       "topic": "value-investing"
     },
     {
-      "id": "base-hit-investing-rss",
-      "type": "rss",
-      "name": "Base Hit Investing",
-      "url": "https://basehitinvesting.substack.com/feed",
-      "enabled": true,
-      "priority": 4,
-      "note": "Base Hit Investing Substack，ROIC/内在价值/价值陷阱分析，归入 value-investing",
-      "topic": "value-investing"
-    },
-    {
       "id": "farnam-street-rss",
       "type": "rss",
       "name": "Farnam Street",
@@ -878,9 +608,9 @@
       "type": "rss",
       "name": "The Rational Walk",
       "url": "https://newsletter.rationalwalk.com/feed",
-      "enabled": false,
+      "enabled": true,
       "priority": 5,
-      "note": "The Rational Walk 伯克希尔/巴菲特/芒格深度长文（已禁用，157 天无更新）",
+      "note": "The Rational Walk 伯克希尔/巴菲特/芒格深度长文（已禁用，157 天无更新）；2026-10-31 实测可用，复活",
       "topic": "value-investing"
     },
     {
@@ -898,9 +628,9 @@
       "type": "rss",
       "name": "25iq",
       "url": "https://25iq.com/feed/",
-      "enabled": false,
+      "enabled": true,
       "priority": 3,
-      "note": "25iq 价值投资理论存档（已禁用，674 天无更新）",
+      "note": "25iq 价值投资理论存档（已禁用，674 天无更新）；2026-10-31 实测可用，复活",
       "topic": "value-investing"
     },
     {
@@ -918,9 +648,9 @@
       "type": "rss",
       "name": "爱范儿",
       "url": "https://www.ifanr.com/feed",
-      "enabled": false,
+      "enabled": true,
       "priority": 3,
-      "note": "爱范儿中文科技产品评测（已禁用，technology 降噪）",
+      "note": "爱范儿中文科技产品评测（已禁用，technology 降噪）；2026-10-31 实测 RSS 正常，复活",
       "topic": "technology"
     },
     {
@@ -928,9 +658,9 @@
       "type": "rss",
       "name": "少数派",
       "url": "https://sspai.com/feed",
-      "enabled": false,
+      "enabled": true,
       "priority": 3,
-      "note": "少数派中文效率工具（已禁用，technology 降噪）",
+      "note": "少数派中文效率工具（已禁用，technology 降噪）；2026-10-31 实测 RSS 正常，复活",
       "topic": "technology"
     },
     {
@@ -992,6 +722,116 @@
       "priority": 3,
       "note": "Krebs on Security 网络安全（已禁用，technology 降噪）",
       "topic": "technology"
+    },
+    {
+      "id": "simonwillison-rss",
+      "type": "rss",
+      "name": "Simon Willison",
+      "url": "https://simonwillison.net/atom/everything/",
+      "enabled": true,
+      "priority": 5,
+      "note": "LLM/Agent 一线实践者博客，高信噪比（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "interconnects-rss",
+      "type": "rss",
+      "name": "Interconnects (Nathan Lambert)",
+      "url": "https://www.interconnects.ai/feed",
+      "enabled": true,
+      "priority": 4,
+      "note": "AI 训练内幕与政策分析（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "lilianweng-rss",
+      "type": "rss",
+      "name": "Lilian Weng",
+      "url": "https://lilianweng.github.io/index.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "AI 深度技术长文（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "latent-space-rss",
+      "type": "rss",
+      "name": "Latent Space",
+      "url": "https://www.latent.space/feed",
+      "enabled": true,
+      "priority": 4,
+      "note": "AI 工程通讯（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "ai-news-weekly-rss",
+      "type": "rss",
+      "name": "AI News (swyx)",
+      "url": "https://buttondown.email/ainews/rss",
+      "enabled": true,
+      "priority": 4,
+      "note": "AI 圈动态周报（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "ahead-of-ai-rss",
+      "type": "rss",
+      "name": "Ahead of AI (Raschka)",
+      "url": "https://magazine.sebastianraschka.com/feed",
+      "enabled": true,
+      "priority": 4,
+      "note": "LLM 研究解读（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "deepmind-rss",
+      "type": "rss",
+      "name": "Google DeepMind Blog",
+      "url": "https://deepmind.google/blog/rss.xml",
+      "enabled": true,
+      "priority": 5,
+      "note": "DeepMind 官方博客（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "qbitai-rss",
+      "type": "rss",
+      "name": "量子位",
+      "url": "https://www.qbitai.com/feed",
+      "enabled": true,
+      "priority": 4,
+      "note": "中文 AI 资讯（2026-10-31 实测接入）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "eugeneyan-rss",
+      "type": "rss",
+      "name": "Eugene Yan",
+      "url": "https://eugeneyan.com/rss/",
+      "enabled": true,
+      "priority": 4,
+      "note": "ML/LLM 工程实践（2026-10-31 实测接入，响应偏慢）",
+      "topic": "ai-frontier"
+    },
+    {
+      "id": "damodaran-rss",
+      "type": "rss",
+      "name": "Damodaran on Valuation",
+      "url": "https://aswathdamodaran.blogspot.com/feeds/posts/default",
+      "enabled": true,
+      "priority": 4,
+      "note": "估值教授博客（2026-10-31 实测接入）",
+      "topic": "value-investing"
+    },
+    {
+      "id": "economist-rss",
+      "type": "rss",
+      "name": "The Economist",
+      "url": "https://www.economist.com/latest/rss.xml",
+      "enabled": true,
+      "priority": 4,
+      "note": "国际时事质量标杆（2026-10-31 实测接入）",
+      "topic": "world"
     }
   ]
 }

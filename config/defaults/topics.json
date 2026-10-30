@@ -1,18 +1,20 @@
 {
-  "_description": "Single-topic taxonomy for global tech and AI hotspots. Subtopics win over top-level categories when classification is precise.",
-  "_updated": "2026-08-07",
-  "_version": "5.6.0",
+  "_description": "7-topic taxonomy: 3 interest topics (AI frontier / value investing / twitter circle) + 2 domain topics (tech / business) + 2 radar topics (world / social hot-list). Sources map to topics wholesale; hot-list sources stay in social without keyword routing.",
+  "_updated": "2026-10-31",
+  "_version": "6.0.0",
   "topics": [
     {
       "id": "ai-frontier",
-      "emoji": "🧠",
-      "label": "AI Frontier / AI 前沿",
-      "description": "模型、智能体、AI 应用、AI 实验室动态与前沿技术突破。",
+      "emoji": "🤖",
+      "label": "AI 前沿",
+      "description": "模型、智能体、AI 应用、AI 实验室、芯片/算力/半导体、机器人与前沿实践者博客。原 ai-frontier + ai-infra 合并。",
       "search": {
         "google_queries": [
           "\"AI model\" OR OpenAI OR Anthropic OR Gemini OR Claude",
           "\"AI agent\" OR \"agentic AI\" OR assistant OR copilot OR automation",
-          "multimodal OR reasoning OR benchmark OR \"AI application\""
+          "multimodal OR reasoning OR benchmark OR \"AI application\"",
+          "NVIDIA OR AMD OR TSMC OR semiconductor OR GPU",
+          "robotics OR humanoid OR \"self-driving\" OR \"space technology\""
         ],
         "twitter_queries": [
           "(OpenAI OR Anthropic OR Gemini OR Claude) (model OR release OR API OR benchmark)",
@@ -31,105 +33,18 @@
       }
     },
     {
-      "id": "ai-infra",
-      "emoji": "⚙️",
-      "label": "AI Infra / AI 基础设施",
-      "description": "芯片、内存、电力、数据中心、算力、机器人、智能驾驶、Tesla、SpaceX 与太空算力。",
-      "search": {
-        "google_queries": [
-          "NVIDIA OR AMD OR TSMC OR semiconductor OR GPU",
-          "\"data center\" OR datacenter OR compute OR power OR cooling",
-          "robotics OR humanoid OR self-driving OR space technology"
-        ],
-        "twitter_queries": [
-          "(NVIDIA OR AMD OR TSMC OR semiconductor OR GPU) (chip OR fab OR supply OR demand)",
-          "(\"data center\" OR datacenter OR power OR cooling) (AI OR cluster OR capacity OR expansion)",
-          "(robotics OR humanoid OR self-driving OR space technology) (deployment OR launch OR factory OR vehicle)"
-        ],
-        "exclude": [
-          "smartphone review",
-          "game review"
-        ]
-      },
-      "display": {
-        "max_items": 10,
-        "style": "compact"
-      }
-    },
-    {
-      "id": "twitter",
-      "emoji": "🐦",
-      "label": "Twitter / 推特动态",
-      "description": "来自 Twitter 关注账号的推文聚合。按账号来源固定归入本主题；twitter 搜索查询则按各自所属主题分类，不在此聚合。",
-      "search": {
-        "exclude": []
-      },
-      "display": {
-        "max_items": 10,
-        "style": "compact"
-      }
-    },
-    {
-      "id": "technology",
-      "emoji": "🔬",
-      "label": "Technology / 科技",
-      "description": "消费电子、计算机硬件、软件工程、互联网服务、通信技术、数字产品与科技生态。",
-      "search": {
-        "google_queries": [
-          "\"consumer tech\" OR smartphone OR laptop OR wearable OR gadget",
-          "\"internet service\" OR app OR \"digital product\" OR social media OR \"open source\"",
-          "telecom OR broadband OR handset OR electronics OR device launch"
-        ],
-        "twitter_queries": [
-          "(smartphone OR laptop OR wearable OR gadget) (launch OR review OR update OR release)",
-          "(\"internet service\" OR app OR \"digital product\" OR social media) (launch OR update OR users OR feature)",
-          "(telecom OR broadband OR handset OR electronics) (market OR launch OR service OR device)"
-        ],
-        "exclude": []
-      },
-      "display": {
-        "max_items": 10,
-        "style": "detailed"
-      }
-    },
-    {
-      "id": "business",
-      "emoji": "💼",
-      "label": "Business / 商业",
-      "description": "公司动态、市场趋势、投融资、财报、产业政策与商业竞争。",
-      "search": {
-        "google_queries": [
-          "earnings OR revenue OR guidance OR results",
-          "funding OR acquisition OR merger OR IPO OR valuation",
-          "antitrust OR regulation OR investigation OR competition"
-        ],
-        "twitter_queries": [
-          "(earnings OR revenue OR guidance OR results) (company OR market OR shares OR sector)",
-          "(funding OR acquisition OR merger OR IPO) (startup OR company OR industry OR market)",
-          "(antitrust OR regulation OR investigation OR competition) (company OR industry OR market OR policy)"
-        ],
-        "exclude": []
-      },
-      "display": {
-        "max_items": 10,
-        "style": "compact"
-      }
-    },
-    {
       "id": "value-investing",
-      "emoji": "📈",
-      "label": "Value Investing / 价值投资",
-      "description": "巴菲特、伯克希尔、段永平、价值投资理论与实践、个股深度分析与估值。",
+      "emoji": "💰",
+      "label": "价值投资",
+      "description": "巴菲特、伯克希尔、股东信、估值与价值投资实践；段永平观点由雪球源整建制覆盖。",
       "search": {
         "google_queries": [
           "\"Warren Buffett\" OR \"Berkshire Hathaway\" OR \"value investing\"",
-          "段永平 OR 大道无形 OR 价值投资 OR 仓位",
           "\"annual letter\" OR \"shareholder letter\" OR \"annual meeting\" Buffett",
           "valuation OR \"intrinsic value\" OR \"margin of safety\" OR ROIC"
         ],
         "twitter_queries": [
-          "(Buffett OR Berkshire) (letter OR meeting OR portfolio OR purchase OR stake)",
-          "(段永平 OR yongpingduan) (投资 OR 股票 OR 仓位 OR business OR 估值)"
+          "(Buffett OR Berkshire) (letter OR meeting OR portfolio OR purchase OR stake)"
         ],
         "exclude": [
           "tutorial",
@@ -143,21 +58,11 @@
       }
     },
     {
-      "id": "world",
-      "emoji": "🌍",
-      "label": "World / 国际",
-      "description": "国际事务、地缘政治、外交关系、全球贸易与供应链。",
+      "id": "twitter",
+      "emoji": "🐦",
+      "label": "推特圈",
+      "description": "Twitter 关注账号时间线聚合。按账号来源固定归入本主题；twitter 搜索结果按各自主题分类。",
       "search": {
-        "google_queries": [
-          "war OR conflict OR diplomacy OR sanctions",
-          "\"foreign policy\" OR geopolitics OR \"global trade\" OR tariffs",
-          "\"supply chain\" OR \"export controls\" OR ceasefire OR trade route"
-        ],
-        "twitter_queries": [
-          "(war OR conflict OR diplomacy OR sanctions) (country OR region OR border OR ceasefire)",
-          "(\"foreign policy\" OR geopolitics OR tariffs OR \"global trade\") (China OR US OR Europe OR Middle East)",
-          "(\"supply chain\" OR \"export controls\" OR shipping OR energy) (trade OR conflict OR route OR market)"
-        ],
         "exclude": []
       },
       "display": {
@@ -166,21 +71,53 @@
       }
     },
     {
-      "id": "science",
-      "emoji": "🧪",
-      "label": "Science / 科学",
-      "description": "基础研究、学术论文、实验室成果、科学发现与工程突破。",
+      "id": "technology",
+      "emoji": "💻",
+      "label": "科技数码",
+      "description": "消费电子、软件工程、互联网服务、开源、开发者社区与科学报道（吸收原 science 主题的优质源）。",
       "search": {
         "google_queries": [
-          "\"research paper\" OR preprint OR study OR paper",
-          "breakthrough OR discovery OR laboratory OR experiment",
-          "benchmark OR dataset OR replication OR \"peer review\""
+          "\"consumer tech\" OR smartphone OR laptop OR wearable OR gadget",
+          "\"internet service\" OR app OR \"digital product\" OR \"open source\""
         ],
-        "twitter_queries": [
-          "(\"research paper\" OR preprint OR study OR paper) (research OR experiment OR results OR journal)",
-          "(breakthrough OR discovery OR laboratory OR experiment) (research OR science OR study OR team)",
-          "(benchmark OR dataset OR replication OR \"peer review\") (paper OR results OR finding OR study)"
+        "twitter_queries": [],
+        "exclude": []
+      },
+      "display": {
+        "max_items": 10,
+        "style": "detailed"
+      }
+    },
+    {
+      "id": "business",
+      "emoji": "📈",
+      "label": "商业财经",
+      "description": "公司动态、市场趋势、投融资、财报、产业政策；含 36氪快讯、东方财富、华尔街见闻等中文财经源。",
+      "search": {
+        "google_queries": [
+          "earnings OR revenue OR guidance OR results",
+          "funding OR acquisition OR merger OR IPO OR valuation",
+          "antitrust OR regulation OR investigation OR competition"
         ],
+        "twitter_queries": [],
+        "exclude": []
+      },
+      "display": {
+        "max_items": 10,
+        "style": "compact"
+      }
+    },
+    {
+      "id": "world",
+      "emoji": "🌍",
+      "label": "国际时事",
+      "description": "国际事务、地缘政治、外交关系、全球贸易与供应链。靠优质 RSS 供给，不靠宽泛搜索词。",
+      "search": {
+        "google_queries": [
+          "\"foreign policy\" OR geopolitics OR \"global trade\" OR tariffs",
+          "\"supply chain\" OR \"export controls\" OR ceasefire OR \"trade route\""
+        ],
+        "twitter_queries": [],
         "exclude": []
       },
       "display": {
@@ -190,20 +127,10 @@
     },
     {
       "id": "social",
-      "emoji": "🫂",
-      "label": "Social / 社会",
-      "description": "社会事件、大众媒体、舆论热点、公共议题与社会现象。",
+      "emoji": "🔥",
+      "label": "社会热点",
+      "description": "纯热榜雷达：微博热搜、知乎热榜、头条热榜、B站热搜、腾讯新闻。内容是什么就是什么，不做关键词分流。",
       "search": {
-        "google_queries": [
-          "\"public opinion\" OR viral OR trending OR backlash",
-          "\"social issue\" OR society OR privacy OR misinformation",
-          "\"social media\" OR moderation OR harassment OR \"online culture\""
-        ],
-        "twitter_queries": [
-          "(\"public opinion\" OR viral OR trending OR backlash) (social media OR internet OR culture OR app)",
-          "(\"social issue\" OR privacy OR misinformation OR moderation) (platform OR society OR internet OR community)",
-          "(\"social media\" OR harassment OR boycott OR protest) (platform OR app OR culture OR users)"
-        ],
         "exclude": []
       },
       "display": {
