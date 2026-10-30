@@ -219,6 +219,18 @@ def validate_runtime(data: Dict[str, Any]) -> List[str]:
         thresholds = diagnostics.get("slow_request_thresholds_s")
         if not isinstance(thresholds, list) or not thresholds or not all(isinstance(item, (int, float)) and item > 0 for item in thresholds):
             errors.append("runtime.json: diagnostics.slow_request_thresholds_s must be non-empty positive number list")
+    content_filters = data.get("content_filters")
+    if content_filters is None:
+        pass
+    elif not isinstance(content_filters, dict):
+        errors.append("runtime.json: content_filters must be an object")
+    else:
+        blocked = content_filters.get("blocked_keywords")
+        if blocked is not None and (
+            not isinstance(blocked, list)
+            or not all(isinstance(item, str) and item.strip() for item in blocked)
+        ):
+            errors.append("runtime.json: content_filters.blocked_keywords must be a list of non-empty strings")
 
     cache = data.get("cache")
     if not isinstance(cache, dict):
@@ -266,7 +278,8 @@ def main() -> int:
             "news-hotspots-twitter.json": lambda path: validate_source_file(load_json_file(path), "twitter", "handle", topic_ids),
             "news-hotspots-topics.json": lambda path: validate_topics(load_json_file(path)),
             "news-hotspots-api.json": lambda path: validate_api_sources(load_json_file(path), topic_ids),
-            "news-hotspots-runtime.json": lambda path: validate_runtime(load_json_file(path)),
+            # runtime overlay 是深合并覆盖，单独校验会误报缺必填段；校验合并后的生效配置
+            "news-hotspots-runtime.json": lambda path: validate_runtime(load_merged_runtime_config(args.defaults, config_dir)),
         }
         for file_name, validator in overlay_checks.items():
             path = config_dir / file_name

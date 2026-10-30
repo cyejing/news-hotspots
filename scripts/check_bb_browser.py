@@ -72,6 +72,12 @@ PROBE_COMMANDS: List[Dict[str, Any]] = [
         "timeout": 20,
         "expect_key": "items",
     },
+    {
+        "name": "xueqiu_user",
+        "cmd": ["bb-browser", "site", "xueqiu/user", "1247347556", "3"],
+        "timeout": 25,
+        "expect_key": "items",
+    },
 ]
 
 RESULT: Dict[str, Any] = {
@@ -321,10 +327,10 @@ def do_restart(chrome_bin: str, display: str, cdp_port: int, wait_seconds: int) 
     kill_processes(daemon_pairs, "bb-browser daemon")
     time.sleep(2)
 
-    # 启动 Chrome
+    # 启动 Chrome（systemd-run 独立 user scope：避免被 exec 会话的 scope 清理连带杀掉）
     Path(FIXED_USER_DATA_DIR).mkdir(parents=True, exist_ok=True)
-    chrome_cmd = [
-        "env", f"DISPLAY={display}", "nohup", chrome_bin,
+    chrome_args = [
+        chrome_bin,
         f"--remote-debugging-port={cdp_port}",
         f"--user-data-dir={FIXED_USER_DATA_DIR}",
         "--no-first-run",
@@ -335,22 +341,18 @@ def do_restart(chrome_bin: str, display: str, cdp_port: int, wait_seconds: int) 
         "--disable-features=Translate,MediaRouter",
         "--disable-session-crashed-bubble",
         "--hide-crash-restore-bubble",
+        # 锚点标签页：防最后一个真实标签被关时导致 Chrome 整体退出
+        "about:blank",
+        "about:blank",
         DEFAULT_ZHIHU_URL,
     ]
-    shell_parts = []
-    for p in chrome_cmd:
-        if " " in p:
-            shell_parts.append(f'"{p}"')
-        else:
-            shell_parts.append(p)
-    shell_cmd = " ".join(shell_parts)
-    log(f"[INFO] Launching Chrome: {shell_cmd}")
-    subprocess.Popen(
-        f"nohup {shell_cmd} > {CHROME_LOG} 2>&1 &",
-        shell=True,
-        executable="/bin/bash",
-        start_new_session=True,
-    )
+    chrome_cmd = ["systemd-run", "--user", "--unit=browser-chrome", "--same-dir",
+                  f"env DISPLAY={display}", *chrome_args]
+    log(f"[INFO] Launching Chrome (isolated systemd scope): {' '.join(chrome_cmd)}")
+    # 若旧 unit 残留，先停掉避免冲突
+    subprocess.run(["systemctl", "--user", "stop", "browser-chrome.service"],
+                   capture_output=True, timeout=15)
+    subprocess.run(chrome_cmd, capture_output=True, timeout=30)
 
     # 等待 CDP 就绪
     cdp = wait_for_cdp(cdp_port, timeout=30)

@@ -97,6 +97,33 @@ def load_topic_metadata(defaults_dir: Path, config_dir: Optional[Path]) -> Dict[
     return metadata
 
 
+def normalize_blocked_keywords(raw: Any) -> List[str]:
+    keywords: List[str] = []
+    for item in raw or []:
+        keyword = str(item or "").strip().lower()
+        if keyword and keyword not in keywords:
+            keywords.append(keyword)
+    return keywords
+
+
+def load_blocked_keywords(runtime_config: Dict[str, Any]) -> List[str]:
+    filters = runtime_config.get("content_filters")
+    if not isinstance(filters, dict):
+        return []
+    return normalize_blocked_keywords(filters.get("blocked_keywords"))
+
+
+def article_matches_blocked_keywords(article: Dict[str, Any], blocked_keywords: List[str]) -> bool:
+    if not blocked_keywords:
+        return False
+    parts = (
+        str(article.get("title") or ""),
+        str(article.get("summary") or article.get("snippet") or ""),
+    )
+    text = " ".join(part for part in parts if part).lower()
+    return any(keyword in text for keyword in blocked_keywords)
+
+
 def get_sorted_articles(source_type_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     articles = source_type_data.get("articles", [])
     if not isinstance(articles, list):
@@ -271,17 +298,23 @@ def build_topic_candidates(
     topic_filter: Optional[str],
     seen_titles: Set[str],
     seen_links: Set[str],
-) -> Tuple[Dict[str, Dict[str, List[Dict[str, Any]]]], Dict[str, int], Dict[str, int], List[str]]:
+    blocked_keywords: Optional[List[str]] = None,
+) -> Tuple[Dict[str, Dict[str, List[Dict[str, Any]]]], Dict[str, int], Dict[str, int], List[str], int]:
     source_types = data.get("source_types", {})
     topic_candidates: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
     available_counts: Dict[str, int] = {}
     remaining_counts: Dict[str, int] = {}
     all_articles: List[Dict[str, Any]] = []
+    filtered_blocked = 0
+    effective_blocked_keywords = blocked_keywords or []
     source_type_order = {source_type: index for index, source_type in enumerate(source_types.keys())}
 
     for source_type, source_type_data in source_types.items():
         sorted_articles = get_sorted_articles(source_type_data)
         for article in sorted_articles:
+            if effective_blocked_keywords and article_matches_blocked_keywords(article, effective_blocked_keywords):
+                filtered_blocked += 1
+                continue
             topic_id = str(article.get("primary_topic") or "uncategorized")
             if topic_filter and topic_id != topic_filter:
                 continue
@@ -309,7 +342,7 @@ def build_topic_candidates(
         if topic_id not in seen_topics:
             topic_order.append(topic_id)
 
-    return topic_candidates, available_counts, remaining_counts, topic_order
+    return topic_candidates, available_counts, remaining_counts, topic_order, filtered_blocked
 
 
 def select_topic_articles(topic_source_candidates: Dict[str, List[Dict[str, Any]]], top_n: int) -> List[Dict[str, Any]]:
@@ -415,6 +448,7 @@ def build_hotspots(
     seen_titles: Optional[Set[str]] = None,
     seen_links: Optional[Set[str]] = None,
     topic_metadata: Optional[Dict[str, Dict[str, str]]] = None,
+    blocked_keywords: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     topic_entries: List[Dict[str, Any]] = []
     candidate_source_breakdown: Dict[str, int] = {
@@ -427,11 +461,13 @@ def build_hotspots(
     effective_seen_titles = seen_titles or set()
     effective_seen_links = seen_links or set()
     source_rank_index = build_source_rank_index(data)
-    topic_candidates, available_counts, remaining_counts, ordered_topics = build_topic_candidates(
+    effective_blocked_keywords = list(blocked_keywords or [])
+    topic_candidates, available_counts, remaining_counts, ordered_topics, filtered_blocked = build_topic_candidates(
         data,
         topic_filter,
         effective_seen_titles,
         effective_seen_links,
+        blocked_keywords=effective_blocked_keywords,
     )
     for topic_id in ordered_topics:
         topic_source_candidates = topic_candidates.get(topic_id, {})
@@ -470,6 +506,11 @@ def build_hotspots(
         "source_type_counts": selected_source_breakdown,
         "candidate_total_articles": data.get("output_stats", {}).get("total_articles", 0),
         "candidate_source_type_counts": candidate_source_breakdown,
+        "content_filter": {
+            "applied": bool(effective_blocked_keywords),
+            "blocked_keywords": effective_blocked_keywords,
+            "filtered_articles": filtered_blocked,
+        },
         "topics": topic_entries,
     }
 
@@ -556,6 +597,7 @@ def main() -> int:
     json_dir, markdown_dir = ensure_archive_dirs(args.archive)
     seen_titles, seen_links = load_seen_daily_keys(json_dir)
     topic_metadata = load_topic_metadata(args.defaults, args.config)
+    blocked_keywords = load_blocked_keywords(runtime_config)
 
     hotspots_json = build_hotspots(
         data,
@@ -564,7 +606,11 @@ def main() -> int:
         seen_titles=seen_titles,
         seen_links=seen_links,
         topic_metadata=topic_metadata,
+        blocked_keywords=blocked_keywords,
     )
+    content_filter = hotspots_json.get("content_filter", {})
+    if content_filter.get("applied"):
+        print(f"CONTENT_FILTER_BLOCKED={content_filter.get('filtered_articles', 0)}")
     json_output, markdown_output = resolve_archive_pair(json_dir, markdown_dir, stem=args.mode)
     archive_suffix = archive_suffix_from_output_stem(json_output.stem, args.mode)
     hotspots_json["source_type_failed_counts"] = load_failed_source_counts(args.archive, suffix=archive_suffix)

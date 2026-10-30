@@ -675,6 +675,31 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def parse_bb_browser_report(stdout: str) -> Dict[str, Any]:
+    """
+    从 check_bb_browser.py 的 stdout 中健壮解析 JSON 报告。
+
+    check_bb_browser.py 会在 stdout 开头打印带 emoji banner 的探测过程文字，
+    真正的 JSON 只在末尾一段。直接用 json.loads 解析整段 stdout 会因前缀文字
+    失败，必须从 stdout 中提取最后一个 {...} 块。
+
+    历史上这一解析 bug 导致「探测实际成功却被误判为不可用」，进而把
+    Twitter/Google 等 bb-browser 源误 skip。务必用本函数而不是裸 json.loads。
+    """
+    if not stdout or not stdout.strip():
+        return {"final_ok": False, "message": "check_bb_browser.py 输出为空"}
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError:
+        pass
+    try:
+        start = stdout.index("{")
+        end = stdout.rindex("}") + 1
+        return json.loads(stdout[start:end])
+    except (ValueError, json.JSONDecodeError):
+        return {"final_ok": False, "message": stdout[:200]}
+
+
 def ensure_bb_browser_ready(skipped: set[str], logger: logging.Logger) -> bool:
     """
     前置检查：如果 pipeline 需要 bb-browser 源（Twitter/Google/Zhihu/Weibo/Toutiao/Xueqiu），
@@ -712,10 +737,9 @@ def ensure_bb_browser_ready(skipped: set[str], logger: logging.Logger) -> bool:
             # 原 180s 会在重启中途被 SIGTERM 掐断（方案 B 修复）
             timeout=600,
         )
-        try:
-            report = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            report = {"final_ok": False, "message": result.stdout[:200]}
+        # 注意：check_bb_browser.py 的 stdout 开头有 emoji banner 文字，
+        # JSON 仅在末尾，必须用健壮解析而非裸 json.loads（详见 parse_bb_browser_report）。
+        report = parse_bb_browser_report(result.stdout)
 
         probe_results = report.get("probe_results", {})
         ok_names = [n for n, r in probe_results.items() if r.get("ok")]

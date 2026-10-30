@@ -1,7 +1,7 @@
 ---
 name: news-hotspots
 description: 聚合 RSS、Twitter、Google News 等多源科技与 AI 新闻，生成每日/每周热点报告。支持生成今日新闻热点、创建每日定时任务、换一批新闻热点（重新抓取）、查看抓取健康诊断。
-version: "5.2.0"
+version: "5.3.0"
 homepage: https://github.com/cyejing/news-hotspots
 source: https://github.com/cyejing/news-hotspots
 metadata:
@@ -52,6 +52,7 @@ pipeline 启动时（`run-pipeline.py`）会自动执行 **bb-browser 可用性�
    - `bb-browser site twitter/search "AI"`（Twitter 搜索）
    - `bb-browser site weibo/hot`（微博热榜）
    - `bb-browser site toutiao/hot`（头条热榜）
+   - `bb-browser site xueqiu/user 1247347556 3`（雪球用户动态，轻量取 3 条；依赖已有登录态）
    - 只要**任意一条成功**（返回条目数 > 0）即判定 bb-browser 可用
 2. **全部失败 → 自动恢复**：参考 `browser-restart` 技能，调用其 `restart_browser.py` 重启 Chrome + 重建 bb-browser daemon
 3. **重启后再次探测**：仍失败则继续主流程，但日志明确警告 bb-browser 源可能失败
@@ -88,6 +89,7 @@ python3 <SKILL_DIR>/scripts/check_bb_browser.py
 | "换一批" / "再看一批" / "刷新一下热点" | 重新跑 pipeline（同 daily 命令，`--force` 已保证重新抓取） |
 | "设置每日定时任务" / "每周生成一次报告" | 参考 `references/automation-template.md` 组装 cron，payload 指向本流程 |
 | "抓取情况怎么样" / "源健康吗" / "为什么没有 Twitter" | 运行 `source-health.py`（见指令 4） |
+| "检查浏览器抓取状态" / "bb-browser 可用吗" / "抓取正常吗" | 运行 `python3 <SKILL_DIR>/scripts/check_bb_browser.py`，向用户汇报各探测命令结果与可用性判定（含是否触发自动重启），不跑 pipeline |
 
 ### 指令 4：查看抓取健康情况
 
@@ -108,10 +110,10 @@ uv run <SKILL_DIR>/scripts/source-health.py \
 
 ## 输出约束（详见 references/execution-guide.md）
 
-主会话最终发给用户的报告必须包含三部分：
-1. **抓取概要句**（从归档 `summary` frontmatter 转写）
-2. **分主题结构化总结**（标题 + bullet，跨源共振就地 `🔥` 加亮，去除噪音）
-3. **热点总结块**（`## 📌 热点总结`，唯一允许的叙述段落）
+主会话最终发给用户的报告必须包含三部分（固定模板骨架与格式细则见 `references/execution-guide.md`）：
+1. **渠道健康行**（标题下 `**数据规模**：` 一行，每源 `{✅/⚠️/❌}{源名} {总条数}→{筛选后条数}`，按 API、Google、RSS、头条、推特、微博、雪球、知乎固定顺序，数据取自归档 `summary` frontmatter）
+2. **分主题结构化总结**（标题 + bullet，每条 `- **总结词**:一句话归纳`，跨源共振就地 `🔥` 加亮，去除噪音）
+3. **热点总结块**（`## 📌 热点总结`，归纳式：同类新闻合并成一条归纳，无共性才按「有价值+有热点」单列，唯一允许的叙述段落）
 
 ## 路径占位符
 
@@ -123,3 +125,4 @@ uv run <SKILL_DIR>/scripts/source-health.py \
 
 - 同一机器不要并发运行多个热点任务（固定 debug/archive 路径会互相覆盖）
 - pipeline 部分源失败仍会产出 daily.md（status=partial），报告照常输出；源健康细节走指令 4
+- 内容过滤：工作区覆盖配置 `<WORKSPACE>/config/news-hotspots-runtime.json` 的 `content_filters.blocked_keywords`（标题/摘要关键词，不区分大小写）会在最终热点输出前剔除命中条目（如老板要求过滤 `["比特币", "bitcoin", "btc"]`）；过滤统计写入 daily JSON 的 `content_filter` 字段
