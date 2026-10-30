@@ -353,3 +353,31 @@ class TestMergeHotspots(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestJunkKeywordFilter(unittest.TestCase):
+    def test_default_junk_keywords_block_spam(self):
+        merge_hotspots = __import__("importlib.util", fromlist=["util"])
+        spec = importlib.util.spec_from_file_location(
+            "merge_hotspots_junk", ROOT / "scripts" / "merge-hotspots.py"
+        )
+        mh = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mh)
+        article = {"title": "(18+ VIDEO) Mehjabin Viral Video Latest", "summary": ""}
+        self.assertTrue(
+            any(k in article["title"].lower() for k in mh._DEFAULT_JUNK_KEYWORDS)
+        )
+        clean = {"title": "OpenAI releases new model", "summary": ""}
+        self.assertFalse(
+            any(k in clean["title"].lower() for k in mh._DEFAULT_JUNK_KEYWORDS)
+        )
+
+    def test_blocked_keyword_filter_still_works(self):
+        article = {"title": "Bitcoin price surges", "summary": ""}
+        blocked = ["bitcoin"]
+        spec = importlib.util.spec_from_file_location(
+            "merge_hotspots_junk2", ROOT / "scripts" / "merge-hotspots.py"
+        )
+        mh = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mh)
+        self.assertTrue(mh.article_matches_blocked_keywords(article, blocked))

@@ -97,7 +97,14 @@ SCORE_COMPONENT_KEYS = (
     "cross_source_hot_score",
     "recency_score",
     "local_extra_score",
+    "relevance_penalty_score",
 )
+
+# 主题相关度降权：fetch-google 给标题+摘要均未命中主题特征词的条目打
+# relevance_gate_pass=False 标记，merge 阶段扣分使其沉到 top-N 截断线下。
+# 不硬丢弃：Google 是全文匹配，正经新闻标题也常不含查询词
+# （实测 2026-10-31 离线验证：硬拦 70/204 中六成是误伤）。
+RELEVANCE_PENALTY_SCORE = -2.0
 
 SCORE_ENGAGEMENT_VIRAL = 5
 SCORE_ENGAGEMENT_HIGH = 3
@@ -1338,12 +1345,16 @@ def recalculate_final_scores(articles: List[Dict[str, Any]]) -> None:
         score_components = ensure_score_components(article)
         recency_details = calculate_recency_score_details(article)
         score_components["recency_score"] = recency_details["score"]
+        # 主题相关度降权：google 源未过 relevance gate 的条目扣分（不硬丢弃）
+        if article.get("relevance_gate_pass") is False:
+            score_components["relevance_penalty_score"] = RELEVANCE_PENALTY_SCORE
         final_score = (
             score_components["base_priority_score"]
             + score_components["fetch_local_rank_score"]
             + score_components["history_score"]
             + score_components["cross_source_hot_score"]
             + score_components["recency_score"]
+            + score_components.get("relevance_penalty_score", 0.0)
         )
         set_article_final_score(article, final_score)
         set_final_score_debug(article, score_components)
@@ -1757,6 +1768,7 @@ def project_article_output(article: Dict[str, Any]) -> Dict[str, Any]:
         "published_at",
         "cross_source_matches",
         "topic_candidates",
+        "relevance_gate_pass",
     )
     for field in optional_fields:
         if field in projected_source:

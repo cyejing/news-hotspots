@@ -25,6 +25,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -60,6 +61,12 @@ except ImportError:
 COOLDOWN_SECONDS = 12.0
 DEFAULT_TIMEOUT = 180
 RESULTS_PER_QUERY = 10
+# 主题相关度门槛（anti-SEO-spam）：宽泛查询词会命中垃圾站内容
+# （实测 2026-10-30："Laptop-Friendly Cafes" 咖啡馆软文混入 technology 主题）。
+# 规则：标题须命中 ≥1 个强特征词（专有名词/多词短语/CJK）或 ≥2 个
+#普通词。模块默认关闭，生产由 runtime.json 的
+# fetch.google.relevance_gate_enabled 开启。
+RELEVANCE_GATE_ENABLED = False
 _last_success_at: Optional[float] = None
 _last_request_elapsed_s: Optional[float] = None
 
@@ -91,13 +98,14 @@ def throttle_after_success() -> None:
 
 
 def apply_runtime_config(defaults_dir: Path, config_dir: Optional[Path] = None) -> Dict[str, Any]:
-    global COOLDOWN_SECONDS, DEFAULT_TIMEOUT, RESULTS_PER_QUERY
+    global COOLDOWN_SECONDS, DEFAULT_TIMEOUT, RESULTS_PER_QUERY, RELEVANCE_GATE_ENABLED
     runtime = load_merged_runtime_config(defaults_dir, config_dir)
     fetch_config = runtime.get("fetch", {}).get("google", {})
     diagnostics_config = runtime.get("diagnostics", {})
     COOLDOWN_SECONDS = float(fetch_config.get("cooldown_s", COOLDOWN_SECONDS) or 0)
     DEFAULT_TIMEOUT = int(fetch_config.get("request_timeout_s", DEFAULT_TIMEOUT) or DEFAULT_TIMEOUT)
     RESULTS_PER_QUERY = int(fetch_config.get("results_per_query", RESULTS_PER_QUERY) or RESULTS_PER_QUERY)
+    RELEVANCE_GATE_ENABLED = bool(fetch_config.get("relevance_gate_enabled", RELEVANCE_GATE_ENABLED))
     configure_slow_request_thresholds(diagnostics_config.get("slow_request_thresholds_s", []))
     return runtime
 
@@ -168,6 +176,93 @@ def build_google_query(base_query: str, exclude: List[str]) -> str:
     return " ".join(part for part in parts if part)
 
 
+# 主题相关度门槛的核心词表：从编译后查询词抽取强/普通特征词。
+# 强特征：引号短语、专有名词（合驼峰/全大写）、≥7 字符长词、CJK；
+# 普通词：其余 ≥3 字符词（整词匹配）；<3 字符忽略（"ai"/"us" 太泛）。
+# 停用词在分词阶段过滤。
+_GATE_STOPWORDS = frozenset(
+    (
+        "or and the a an of for with new in on to from by at is are be as that this it its "
+        "will would could should may might can not no but if then than when where what how why "
+        "study says report reports latest news update updates "
+        "vs guide best top trends trend "
+        "launch release releases announce announces announced "
+        "use uses used using make makes made get gets "
+        "about into over under after before during between "
+        "more most less least very much many few "
+        "one two three first second next last "
+        "all any some each every other another "
+        "have has had do does did done "
+    ).split()
+)
+
+
+def _strip_exclude_terms(query: str) -> str:
+    """去掉 -word / -"phrase" 排除项，只留正向词。"""
+    query = re.sub(r'-"[^"]+"', " ", query)
+    query = re.sub(r"(?<![\w-])-\w+", " ", query)
+    return query
+
+
+def _extract_gate_terms(query: str) -> tuple:
+    """从查询词抽取 (强特征词集合, 普通词集合)。"""
+    strong: set = set()
+    plain: set = set()
+    positive = _strip_exclude_terms(query)
+    # 引号短语 → 强特征（保留内部空格，匹配时子串印射）
+    for phrase in re.findall(r'"([^"]+)"', positive):
+        cleaned = " ".join(phrase.lower().split())
+        if cleaned and cleaned not in _GATE_STOPWORDS:
+            strong.add(cleaned)
+    quoted_spans = re.findall(r'"[^"]+"', positive)
+    bare = positive
+    for span in quoted_spans:
+        bare = bare.replace(span, " ")
+    for raw in re.split(r"[\s()]+", bare):
+        token = raw.strip('"-').strip()
+        if not token or token.upper() in ("OR", "AND"):
+            continue
+        lower = token.lower()
+        if lower in _GATE_STOPWORDS:
+            continue
+        if any("\u4e00" <= ch <= "\u9fff" for ch in token):
+            strong.add(lower)
+            continue
+        has_internal_caps = any(ch.isupper() for ch in token[1:])
+        if has_internal_caps or (token[:1].isupper() and len(token) >= 3):
+            strong.add(lower)  # OpenAI / TSMC / AMD / Nvidia 等专有名词
+            continue
+        if len(lower) >= 7:
+            strong.add(lower)  # semiconductor / earnings 等长术语
+        elif len(lower) >= 3:
+            plain.add(lower)
+    return strong, plain
+
+
+def _title_passes_gate(title: str, strong: set, plain: set) -> bool:
+    """标题命中 ≥1 强特征词或 ≥2 普通词才故行。"""
+    if not strong and not plain:
+        return True  # 无可用特征词时不过滤（保守）
+    title_lower = title.lower()
+    if any(term in title_lower for term in strong):
+        return True
+    hits = 0
+    for term in plain:
+        if re.search(r"\b" + re.escape(term) + r"\b", title_lower):
+            hits += 1
+            if hits >= 2:
+                return True
+    return False
+
+
+def passes_relevance_gate(title: str, compiled_query: str) -> bool:
+    """对外入口：判断 google 结果标题是否与查询主题相关。"""
+    if not RELEVANCE_GATE_ENABLED:
+        return True
+    strong, plain = _extract_gate_terms(compiled_query)
+    return _title_passes_gate(title, strong, plain)
+
+
 def fetch_topic(topic: Dict[str, Any], logger: logging.Logger) -> Dict[str, Any]:
     search = topic.get("search", {})
     queries = list(search.get("google_queries", []))
@@ -178,6 +273,7 @@ def fetch_topic(topic: Dict[str, Any], logger: logging.Logger) -> Dict[str, Any]
     request_traces: List[Dict[str, Any]] = []
     total_request_elapsed_s = 0.0
     ok_queries = 0
+    marked_irrelevant = 0
 
     for query in queries:
         compiled_query = build_google_query(query, exclude)
@@ -201,6 +297,14 @@ def fetch_topic(topic: Dict[str, Any], logger: logging.Logger) -> Dict[str, Any]
                 }
                 if not article["title"] or not article["link"]:
                     continue
+                # 相关度门槛：不硬丢弃（Google 全文匹配，正经新闻标题也常不含查询词），
+                # 未过关的打标记，由 merge-sources 扣分降权
+                gate_text = article["title"] + " " + (article["summary"] or "")
+                if not passes_relevance_gate(gate_text, compiled_query):
+                    article["relevance_gate_pass"] = False
+                    marked_irrelevant += 1
+                else:
+                    article["relevance_gate_pass"] = True
                 dedup_by_url.setdefault(article["link"], article)
                 kept += 1
             total_request_elapsed_s += elapsed_s
@@ -250,6 +354,7 @@ def fetch_topic(topic: Dict[str, Any], logger: logging.Logger) -> Dict[str, Any]
         "items": len(articles),
         "count": len(articles),
         "articles": articles,
+        "marked_irrelevant": marked_irrelevant,
     }
 
 def parse_args() -> argparse.Namespace:
@@ -286,8 +391,11 @@ def main() -> int:
         topics = load_merged_topics(args.defaults, effective_config_dir)
         step_started_at = time.monotonic()
         logger.info("Fetching Google News for %d topics sequentially", len(topics))
-        logger.info("Google bb-browser cooldown: %.1fs", COOLDOWN_SECONDS)
+        logger.info("Google bb-browser cooldown: %.1fs | relevance gate: %s", COOLDOWN_SECONDS, "on" if RELEVANCE_GATE_ENABLED else "off")
         topic_results = [fetch_topic(topic, logger) for topic in topics if topic.get("search", {}).get("google_queries")]
+        total_marked_irrelevant = sum(int(result.get("marked_irrelevant", 0) or 0) for result in topic_results)
+        if total_marked_irrelevant:
+            logger.info("🧹 Relevance gate marked %d off-topic results for down-weighting", total_marked_irrelevant)
         ok_topics = sum(1 for result in topic_results if result["status"] == "ok")
         total_articles = sum(result.get("count", 0) for result in topic_results)
         total_queries = sum(int(result.get("calls_total", 0) or 0) for result in topic_results)

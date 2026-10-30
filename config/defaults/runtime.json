@@ -18,7 +18,8 @@
     "google": {
       "request_timeout_s": 20,
       "cooldown_s": 5.0,
-      "results_per_query": 10
+      "results_per_query": 10,
+      "relevance_gate_enabled": true
     },
     "twitter": {
       "request_timeout_s": 20,

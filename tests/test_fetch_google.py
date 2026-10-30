@@ -143,3 +143,45 @@ class TestFetchGoogle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRelevanceGate(unittest.TestCase):
+    def setUp(self):
+        self.original_gate = fetch_google.RELEVANCE_GATE_ENABLED
+        fetch_google.RELEVANCE_GATE_ENABLED = True
+
+    def tearDown(self):
+        fetch_google.RELEVANCE_GATE_ENABLED = self.original_gate
+
+    def test_gate_blocks_offtopic_and_passes_relevant(self):
+        query = '"consumer tech" OR smartphone OR laptop OR gadget'
+        # 噪音样本（2026-10-30 实录）：咖啡馆软文，仅命中 laptop 一个普通词
+        noise = "5 Laptop-Friendly Cafes for Remote Work Around the Main Line Best coffee shops"
+        # 正常新闻：命中 smartphone 强词
+        relevant = "Apple launches M6 MacBook Pro with on-device AI smartphone chip"
+        self.assertFalse(fetch_google.passes_relevance_gate(noise, query))
+        self.assertTrue(fetch_google.passes_relevance_gate(relevant, query))
+
+    def test_gate_disabled_passes_everything(self):
+        fetch_google.RELEVANCE_GATE_ENABLED = False
+        query = '"consumer tech" OR smartphone'
+        noise = "Totally unrelated cafe listicle"
+        self.assertTrue(fetch_google.passes_relevance_gate(noise, query))
+
+    def test_gate_topic_marks_not_drops(self):
+        topic = {"id": "technology", "search": {"google_queries": ['"consumer tech" OR smartphone']}}
+        payload = {
+            "results": [
+                {"title": "5 Laptop-Friendly Cafes for Remote Work", "url": "https://x.com/1",
+                 "snippet": "Best cafes with wifi", "timestamp": 1775124000, "source": "Spam"},
+                {"title": "New smartphone launch event", "url": "https://x.com/2",
+                 "snippet": "", "timestamp": 1775124000, "source": "Ok"},
+            ]
+        }
+        with patch.object(fetch_google, "run_bb_browser_site", return_value=payload):
+            result = fetch_google.fetch_topic(topic, fetch_google.logging.getLogger("test"))
+        self.assertEqual(len(result["articles"]), 2)  # 不丢弃
+        marks = {a["link"]: a["relevance_gate_pass"] for a in result["articles"]}
+        self.assertFalse(marks["https://x.com/1"])
+        self.assertTrue(marks["https://x.com/2"])
+        self.assertEqual(result["marked_irrelevant"], 1)

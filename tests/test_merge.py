@@ -67,6 +67,7 @@ class TestMergeSources(unittest.TestCase):
                 "cross_source_hot_score": 2.0,
                 "recency_score": 1.0,
                 "local_extra_score": 0.5,
+                "relevance_penalty_score": 0.0,
             },
         )
         self.assertNotIn("unused_field", projected["score_components"])

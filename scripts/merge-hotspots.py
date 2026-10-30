@@ -113,6 +113,15 @@ def load_blocked_keywords(runtime_config: Dict[str, Any]) -> List[str]:
     return normalize_blocked_keywords(filters.get("blocked_keywords"))
 
 
+def load_junk_keywords(runtime_config: Dict[str, Any]) -> List[str]:
+    """硬垃圾模式词表：与 blocked_keywords（用户主观偏好）分离，
+    专放 SEO 垃圾/标题党模式的通用信号词（18+ video、casino 等）。"""
+    filters = runtime_config.get("content_filters")
+    if not isinstance(filters, dict):
+        return []
+    return normalize_blocked_keywords(filters.get("junk_keywords"))
+
+
 def article_matches_blocked_keywords(article: Dict[str, Any], blocked_keywords: List[str]) -> bool:
     if not blocked_keywords:
         return False
@@ -122,6 +131,15 @@ def article_matches_blocked_keywords(article: Dict[str, Any], blocked_keywords: 
     )
     text = " ".join(part for part in parts if part).lower()
     return any(keyword in text for keyword in blocked_keywords)
+
+
+# 硬垃圾模式：标题命中即剔除，跨主题生效（SEO 垃圾/标题党通用信号）
+_DEFAULT_JUNK_KEYWORDS = [
+    "18+", "viral video", "watch full", "full video leak", "leaked video",
+    "casino", "betting tips", "porn", "onlyfans", "telegram channel",
+    "click here", "best deals", "coupon code", "promo code", "discount code",
+    "sponsored content", "paid promotion",
+]
 
 
 def get_sorted_articles(source_type_data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -601,6 +619,11 @@ def main() -> int:
     seen_titles, seen_links = load_seen_daily_keys(json_dir)
     topic_metadata = load_topic_metadata(args.defaults, args.config)
     blocked_keywords = load_blocked_keywords(runtime_config)
+    # 硬垃圾词 = 配置显式提供的 junk_keywords；未配置时启用内置默认词表
+    junk_keywords = load_junk_keywords(runtime_config)
+    if not junk_keywords:
+        junk_keywords = list(_DEFAULT_JUNK_KEYWORDS)
+    effective_filter_keywords = blocked_keywords + [k for k in junk_keywords if k not in blocked_keywords]
 
     hotspots_json = build_hotspots(
         data,
@@ -609,7 +632,7 @@ def main() -> int:
         seen_titles=seen_titles,
         seen_links=seen_links,
         topic_metadata=topic_metadata,
-        blocked_keywords=blocked_keywords,
+        blocked_keywords=effective_filter_keywords,
     )
     content_filter = hotspots_json.get("content_filter", {})
     if content_filter.get("applied"):
