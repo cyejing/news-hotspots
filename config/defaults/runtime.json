@@ -58,11 +58,6 @@
         "r.jina.ai": 1.0,
         "hacker-news.firebaseio.com": 1.0
       }
-    },
-    "bblive": {
-      "request_timeout_s": 45,
-      "cooldown_s": 5.0,
-      "limit": 20
     }
   },
   "diagnostics": {

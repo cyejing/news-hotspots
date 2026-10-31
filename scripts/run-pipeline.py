@@ -73,7 +73,7 @@ PROCESS_LOG_TAIL_LINES = 100
 META_ARCHIVE_NAME_RE = re.compile(r"^(?P<base>.+?)(?P<index>\d*)\.meta\.json$")
 
 # 依赖 bb-browser（Chrome）的源
-BB_BROWSER_STEPS = {"twitter", "google", "zhihu", "weibo", "toutiao", "xueqiu", "bblive"}
+BB_BROWSER_STEPS = {"twitter", "google", "zhihu", "weibo", "toutiao", "xueqiu"}
 @dataclass
 class StepSpec:
     step_key: str
