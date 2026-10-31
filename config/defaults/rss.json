@@ -438,9 +438,9 @@
       "type": "rss",
       "name": "FT中文网",
       "url": "https://www.ftchinese.com/rss/news",
-      "enabled": true,
+      "enabled": false,
       "priority": 4,
-      "note": "FT中文网，全球财经与商业分析（中文），归入 business",
+      "note": "FT中文网，全球财经与商业分析（中文），归入 business；2026-10-31 老板指示禁用（中文源减量，与 FT 英文主源重合）",
       "topic": "business"
     },
     {
@@ -648,9 +648,9 @@
       "type": "rss",
       "name": "爱范儿",
       "url": "https://www.ifanr.com/feed",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "爱范儿中文科技产品评测（已禁用，technology 降噪）；2026-10-31 实测 RSS 正常，复活",
+      "note": "爱范儿中文科技产品评测（已禁用，technology 降噪）；2026-10-31 实测 RSS 正常，复活；2026-10-31 老板指示禁用（对中文源减量）",
       "topic": "technology"
     },
     {
@@ -658,9 +658,9 @@
       "type": "rss",
       "name": "少数派",
       "url": "https://sspai.com/feed",
-      "enabled": true,
+      "enabled": false,
       "priority": 3,
-      "note": "少数派中文效率工具（已禁用，technology 降噪）；2026-10-31 实测 RSS 正常，复活",
+      "note": "少数派中文效率工具（已禁用，technology 降噪）；2026-10-31 实测 RSS 正常，复活；2026-10-31 老板指示禁用（对中文源减量）",
       "topic": "technology"
     },
     {
