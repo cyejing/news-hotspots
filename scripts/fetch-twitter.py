@@ -286,7 +286,7 @@ def parse_tweet(
 
 
 def fetch_explore_news(cutoff: datetime) -> Dict[str, Any]:
-    """X Explore 首页新闻卡片（时事热点标题 + 讨论量），归入 world 主题。"""
+    """X Explore 首页新闻卡片（时事热点标题 + 讨论量），归入 twitter 主题。"""
     try:
         clear_last_request_elapsed()
         payload = run_bb_browser_site(["twitter/news", "12"])
@@ -299,7 +299,7 @@ def fetch_explore_news(cutoff: datetime) -> Dict[str, Any]:
             "name": "X Explore News",
             "handle": None,
             "priority": 4,
-            "topic": "world",
+            "topic": "twitter",
             "status": "error",
             "attempts": 1,
             "error": str(exc)[:200],
@@ -341,7 +341,7 @@ def fetch_explore_news(cutoff: datetime) -> Dict[str, Any]:
                 "title": title,
                 "link": item.get("url") or ("https://x.com/search?q=" + urllib.parse.quote(title)),
                 "date": published.isoformat(),
-                "topic": "world",
+                "topic": "twitter",
                 "summary": (item.get("context") or "").strip(),
                 "source_name": "X Explore News",
                 "hot_score": posts,
@@ -355,7 +355,7 @@ def fetch_explore_news(cutoff: datetime) -> Dict[str, Any]:
         "name": "X Explore News",
         "handle": None,
         "priority": 4,
-        "topic": "world",
+        "topic": "twitter",
         "status": "ok",
         "attempts": 1,
         "elapsed_s": round(elapsed_s, 3),
