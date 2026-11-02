@@ -58,6 +58,9 @@
         "r.jina.ai": 1.0,
         "hacker-news.firebaseio.com": 1.0
       }
+    },
+    "tldr": {
+      "request_timeout_s": 20
     }
   },
   "diagnostics": {

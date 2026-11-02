@@ -127,5 +127,7 @@ uv run <SKILL_DIR>/scripts/source-health.py \
 - 同一机器不要并发运行多个热点任务（固定 debug/archive 路径会互相覆盖）
 - pipeline 部分源失败仍会产出 daily.md（status=partial），报告照常输出；源健康细节走指令 4
 - 中文 RSS：爱范儿/少数派已复活，量子位已接入；36氪/机器之心无 RSS，未接入
+- tldr 步骤（HTML 抓取型，非 RSS）：tldr.tech/ai → ai-frontier、tldr.tech/tech → technology；每日 issue 页 `<article>` 块解析，新旧两版页面结构兼容，Sponsor 条目过滤，当日无内容自动回退 4 天
+- X Explore 热点（fetch-twitter 内置）：`twitter/news` 自定义适配器（Explore GraphQL 端点逆向）拿新闻卡片（标题+讨论量 posts），整建制归 world 主题，hot_score=posts 讨论数
 - 内容过滤：工作区覆盖配置 `<WORKSPACE>/config/news-hotspots-runtime.json` 的 `content_filters.blocked_keywords`（标题/摘要关键词，不区分大小写）会在最终热点输出前剔除命中条目（如老板要求过滤 `["比特币", "bitcoin", "btc"]`）；过滤统计写入 daily JSON 的 `content_filter` 字段；`content_filters.junk_keywords` 可覆盖内置硬垃圾词表（18+ video、casino、promo code 等 SEO 垃圾模式，命中即剔除，默认内置 ~17 条）
 - Google 噪音降权：`fetch.google.relevance_gate_enabled`（默认 true）对标题+摘要均未命中主题特征词的 google 结果打 `relevance_gate_pass=false` 标记并在 merge 阶段扣分降权（不硬丢弃，避免误杀正经新闻）；惩罚分值 `merge-sources.py` 的 `RELEVANCE_PENALTY_SCORE`

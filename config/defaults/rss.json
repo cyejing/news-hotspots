@@ -832,6 +832,76 @@
       "priority": 4,
       "note": "国际时事质量标杆（2026-10-31 实测接入）",
       "topic": "world"
+    },
+    {
+      "id": "semianalysis-rss",
+      "type": "rss",
+      "name": "SemiAnalysis",
+      "url": "https://semianalysis.substack.com/feed",
+      "topic": "ai-frontier",
+      "enabled": true,
+      "note": "芯片/AI 深度分析，业内最硬",
+      "priority": 3
+    },
+    {
+      "id": "rundown-ai-rss",
+      "type": "rss",
+      "name": "Rundown AI",
+      "url": "https://www.rundown.ai/feed",
+      "topic": "ai-frontier",
+      "enabled": true,
+      "note": "AI 日报通讯",
+      "priority": 3
+    },
+    {
+      "id": "schneier-rss",
+      "type": "rss",
+      "name": "Schneier on Security",
+      "url": "https://www.schneier.com/feed/atom/",
+      "topic": "technology",
+      "enabled": true,
+      "note": "安全界泰斗",
+      "priority": 3
+    },
+    {
+      "id": "pragmatic-engineer-rss",
+      "type": "rss",
+      "name": "Pragmatic Engineer",
+      "url": "https://newsletter.pragmaticengineer.com/feed",
+      "topic": "technology",
+      "enabled": true,
+      "note": "软件工程第一通讯",
+      "priority": 3
+    },
+    {
+      "id": "platformer-rss",
+      "type": "rss",
+      "name": "Platformer",
+      "url": "https://www.platformer.news/feed",
+      "topic": "technology",
+      "enabled": true,
+      "note": "大厂/科技政策",
+      "priority": 3
+    },
+    {
+      "id": "stratechery-rss",
+      "type": "rss",
+      "name": "Stratechery",
+      "url": "https://stratechery.com/feed/",
+      "topic": "business",
+      "enabled": true,
+      "note": "科技商业分析天花板",
+      "priority": 3
+    },
+    {
+      "id": "acquired-rss",
+      "type": "rss",
+      "name": "Acquired.fm",
+      "url": "https://www.acquired.fm/episodes?format=rss",
+      "topic": "business",
+      "enabled": true,
+      "note": "公司史深度播客",
+      "priority": 3
     }
   ]
 }

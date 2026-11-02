@@ -31,6 +31,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -284,6 +285,100 @@ def parse_tweet(
     return article
 
 
+def fetch_explore_news(cutoff: datetime) -> Dict[str, Any]:
+    """X Explore 首页新闻卡片（时事热点标题 + 讨论量），归入 world 主题。"""
+    try:
+        clear_last_request_elapsed()
+        payload = run_bb_browser_site(["twitter/news", "12"])
+        elapsed_s = last_request_elapsed()
+    except Exception as exc:
+        elapsed_s = getattr(exc, "elapsed_s", last_request_elapsed())
+        return {
+            "source_id": "twitter-explore-news",
+            "source_type": "twitter",
+            "name": "X Explore News",
+            "handle": None,
+            "priority": 4,
+            "topic": "world",
+            "status": "error",
+            "attempts": 1,
+            "error": str(exc)[:200],
+            "elapsed_s": round(elapsed_s, 3),
+            "items": 0,
+            "count": 0,
+            "articles": [],
+            "request_traces": [
+                build_request_trace(
+                    "twitter-explore-news",
+                    "explore/news",
+                    elapsed_s,
+                    status=getattr(exc, "status", "error"),
+                    source_type="twitter",
+                    method="CLI",
+                    attempt=1,
+                    backend="bb-browser",
+                    adapter="twitter/news",
+                    error=str(exc)[:200],
+                )
+            ],
+            "failed_items": [],
+        }
+
+    raw_items = payload.get("result", payload).get("items") or []
+    articles: List[Dict[str, Any]] = []
+    now = local_now()
+    for item in raw_items:
+        title = (item.get("title") or "").strip()
+        if not title:
+            continue
+        posts = int(item.get("posts_count", 0) or 0)
+        age_hours = float(item.get("age_hours", 0) or 0)
+        published = (now - timedelta(hours=age_hours)) if age_hours > 0 else now
+        if published < cutoff:
+            continue
+        articles.append(
+            {
+                "title": title,
+                "link": item.get("url") or ("https://x.com/search?q=" + urllib.parse.quote(title)),
+                "date": published.isoformat(),
+                "topic": "world",
+                "summary": (item.get("context") or "").strip(),
+                "source_name": "X Explore News",
+                "hot_score": posts,
+                "metrics": {"posts_count": posts, "age_hours": age_hours, "category": item.get("category", "News")},
+                "twitter_query": "explore/news",
+            }
+        )
+    return {
+        "source_id": "twitter-explore-news",
+        "source_type": "twitter",
+        "name": "X Explore News",
+        "handle": None,
+        "priority": 4,
+        "topic": "world",
+        "status": "ok",
+        "attempts": 1,
+        "elapsed_s": round(elapsed_s, 3),
+        "items": len(articles),
+        "count": len(articles),
+        "articles": articles,
+        "request_traces": [
+            build_request_trace(
+                "twitter-explore-news",
+                "explore/news",
+                elapsed_s,
+                status="ok",
+                source_type="twitter",
+                method="CLI",
+                attempt=1,
+                backend="bb-browser",
+                adapter="twitter/news",
+            )
+        ],
+        "failed_items": [],
+    }
+
+
 def fetch_timeline(source: Dict[str, Any]) -> Dict[str, Any]:
     handle = source.get("handle")
     if not handle:
@@ -480,6 +575,8 @@ def main() -> int:
         logger.info("Twitter bb-browser cooldown: %.1fs", COOLDOWN_SECONDS)
 
         source_results = [fetch_source(source, cutoff) for source in sources]
+        explore_result = fetch_explore_news(cutoff)
+        source_results.append(explore_result)
         for result in source_results:
             if result["status"] == "ok":
                 logger.info("✅ %s: %d tweets", result["name"], result["count"])
