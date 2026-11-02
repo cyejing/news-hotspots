@@ -718,9 +718,9 @@
       "type": "rss",
       "name": "Krebs on Security",
       "url": "https://krebsonsecurity.com/feed/",
-      "enabled": false,
+      "enabled": true,
       "priority": 3,
-      "note": "Krebs on Security 网络安全（已禁用，technology 降噪）",
+      "note": "Krebs on Security 网络安全事件调查（与 Schneier 选题互补：Krebs 偏调查、Schneier 偏观点）",
       "topic": "technology"
     },
     {
